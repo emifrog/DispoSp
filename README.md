@@ -13,7 +13,7 @@ pnpm dev
 
 Ouvrir http://127.0.0.1:3000. Pour vérifier une version de production : `pnpm build`, puis `pnpm start`.
 
-L'application démarre avec une **démonstration locale clairement identifiée** : douze agents fictifs et la campagne d'octobre 2026, ouverte du 1er au 30 septembre 2026. Au-delà de la fenêtre, créer une nouvelle campagne pour tester la saisie. Les informations sont conservées dans le navigateur, sous `disposp-demo-v1`. Le profil de démonstration est conservé dans la session du navigateur. Aucun compte réel, email, appel métier distant ou paiement n'est créé.
+L'application démarre avec une **démonstration locale clairement identifiée** : douze agents fictifs et une campagne calculée à partir de la date du jour. Les réponses sont collectées pendant le mois en cours, pour le mois suivant ; la démonstration est donc toujours ouverte à la saisie, quel que soit le jour où elle est lancée. Les informations sont conservées dans le navigateur, sous `disposp-demo-v1`. Le profil de démonstration est conservé dans la session du navigateur. Aucun compte réel, email, appel métier distant ou paiement n'est créé.
 
 ## Parcours livrés
 
@@ -45,12 +45,12 @@ Voir `DECISIONS_FONCTIONNELLES.md`. Jour 8 h–20 h, Nuit 20 h–8 h le lendemai
 
 ## Raccordement Supabase restant à réaliser
 
-Aucun projet dédié DISPO SP n'a été identifié et aucun projet existant n'a été modifié. Copier `.env.example` dans `.env.local` puis renseigner l'URL et la clé publiable d'un projet de développement dédié ne suffit pas encore à basculer la démonstration vers le mode connecté.
+Le projet de développement dédié est désigné : ses coordonnées sont dans `.env` (URL et clé publiable), qui n'est pas versionné. Aucun schéma n'y a encore été déployé et l'interface ne l'appelle pas — les clients de `src/lib/supabase/` ne sont importés nulle part, et les valeurs n'apparaissent donc pas dans le paquet livré au navigateur.
 
 La prochaine tranche doit :
 
-1. Désigner ou créer le projet de développement et initialiser les migrations via la CLI Supabase.
-2. Exécuter et vérifier le schéma sur ce projet, vérifier les advisors, provisionner la première organisation et ses membres.
+1. Initialiser les migrations sur ce projet via la CLI Supabase.
+2. Exécuter et vérifier le schéma, vérifier les advisors, provisionner la première organisation et ses membres.
 3. Ajouter authentification, renouvellement de session, invitations et opérations serveur autorisées ; remplacer le stockage local par les accès à la base.
 4. Compléter les tables de qualifications, besoins, affectations, publications et audit ; implémenter les transactions serveur de validation et de publication.
 

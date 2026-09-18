@@ -20,7 +20,7 @@ const Store = createContext<Context | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(createDemoState);
   const [actor, setActor] = useState<Actor>({ id: "julien", role: "MANAGER" });
-  const [campaignId, setCampaignId] = useState("campaign-2026-10");
+  const [campaignId, setCampaignId] = useState(() => state.campaigns[0].id);
   const [ready, setReady] = useState(false);
   const [message, setMessage] = useState("");
   const router = useRouter();
@@ -33,8 +33,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const result = stateSchema.safeParse(JSON.parse(saved));
-        if (result.success) setState(result.data);
-        else setMessage("La sauvegarde locale n’est pas compatible. Les données d’exemple sont affichées.");
+        if (result.success && result.data.campaigns.length) {
+          setState(result.data);
+          // A saved state predates today's demonstration window, so its campaigns
+          // are not the ones just seeded: point at one it actually contains.
+          setCampaignId(id => (result.data.campaigns.some(c => c.id === id) ? id : result.data.campaigns[0].id));
+        } else setMessage("La sauvegarde locale n’est pas compatible. Les données d’exemple sont affichées.");
       }
       const session = sessionStorage.getItem("disposp-demo-actor");
       if (session) {

@@ -6,9 +6,24 @@ import {
   responseKey,
   shiftKey,
   availableAgents,
+  lastDayOfMonth,
+  localMonth,
+  shiftMonth,
 } from "./domain";
 
-export function createDemoState(): AppState {
+// "de septembre" but "d’octobre": months opening on a vowel take the elided form.
+function campaignName(month: string) {
+  const label = new Date(`${month}-01T12:00:00`).toLocaleDateString("fr-FR", { month: "long" });
+  return `Disponibilités ${/^[aeiouâàéèêîôû]/i.test(label) ? "d’" : "de "}${label}`;
+}
+
+// The demonstration has to stay usable whichever day it is opened: responses are
+// collected during the current month, for the month that follows.
+export function createDemoState(now = new Date()): AppState {
+  const responseMonth = localMonth(now);
+  const month = shiftMonth(responseMonth, 1);
+  const opensOn = `${responseMonth}-01`;
+  const closesOn = lastDayOfMonth(responseMonth);
   const state: AppState = {
     version: 1,
     organization: { name: "CIS Val de Loire", dayStart: 8, nightStart: 20 },
@@ -64,11 +79,11 @@ export function createDemoState(): AppState {
     ],
     campaigns: [
       {
-        id: "campaign-2026-10",
-        name: "Disponibilités d’octobre",
-        month: "2026-10",
-        opensOn: "2026-09-01",
-        closesOn: "2026-09-30",
+        id: `campaign-${month}`,
+        name: campaignName(month),
+        month,
+        opensOn,
+        closesOn,
         closed: false,
         dayStart: 8,
         nightStart: 20,
@@ -91,7 +106,8 @@ export function createDemoState(): AppState {
         comment: "",
       };
     });
-    if (index > 0 && index < 10) state.responses[responseKey(campaign.id, agent.id)] = "2026-09-17T09:30:00Z";
+    if (index > 0 && index < 10)
+      state.responses[responseKey(campaign.id, agent.id)] = new Date(now.getTime() - 86_400_000).toISOString();
   });
   for (const date of monthDays(campaign.month)) {
     for (const shift of ["DAY", "NIGHT"] as const) {
@@ -103,10 +119,10 @@ export function createDemoState(): AppState {
   }
   state.audit.push({
     id: "initial-campaign",
-    at: "2026-09-01T08:00:00Z",
+    at: new Date(`${opensOn}T08:00:00`).toISOString(),
     actor: "Julien Bernard",
     action: "Campagne ouverte",
-    detail: "Disponibilités d’octobre · 12 agents invités",
+    detail: `${campaign.name} · ${state.agents.length} agents invités`,
   });
   return state;
 }

@@ -27,19 +27,28 @@ import {
   hours,
   isOpen,
   isValidated,
+  lastDayOfMonth,
   localDate,
+  localMonth,
   monthDays,
   monthLabel,
   shiftKey,
+  shiftMonth,
 } from "@/lib/domain";
 import { download, personalCalendar } from "@/lib/exports";
 
 export function Campaigns() {
   const { state, run, setCampaignId } = useApp();
   const [open, setOpen] = useState(false);
+  // Propose the first month no campaign covers yet, and collect responses during
+  // the month before it, so the dialog never opens on a window already past.
+  const nextMonth = state.campaigns.reduce(
+    (month, c) => (c.month >= month ? shiftMonth(c.month, 1) : month),
+    shiftMonth(localMonth(), 1),
+  );
   const form = useForm<z.infer<typeof campaignFormSchema>>({
     resolver: zodResolver(campaignFormSchema),
-    defaultValues: { name: "", month: "2026-11", closesOn: "2026-10-23" },
+    defaultValues: { name: "", month: nextMonth, closesOn: lastDayOfMonth(shiftMonth(nextMonth, -1)) },
   });
   return (
     <>

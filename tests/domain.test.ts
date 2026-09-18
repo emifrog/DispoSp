@@ -5,10 +5,14 @@ import {
   coverage,
   execute,
   filledDays,
+  isOpen,
   isValidated,
+  localDate,
+  localMonth,
   monthDays,
   responseKey,
   shiftKey,
+  shiftMonth,
 } from "../src/lib/domain";
 import { personalCalendar, availabilityCsv } from "../src/lib/exports";
 
@@ -17,7 +21,7 @@ const campaignId = "campaign-2026-10";
 const actor = { id: "julien", role: "MANAGER" as const };
 function fullResponse() {
   return execute(
-    createDemoState(),
+    createDemoState(now),
     actor,
     { type: "availability", campaignId, dates: monthDays("2026-10"), value: "FULL_24H", comment: "" },
     now,
@@ -32,10 +36,10 @@ describe("Réponses aux campagnes", () => {
     expect(isValidated(submitted, campaignId, actor.id)).toBe(true);
   });
   it("refuse une validation incomplète et les dates hors campagne", () => {
-    expect(() => execute(createDemoState(), actor, { type: "validate", campaignId }, now)).toThrow("chaque jour");
+    expect(() => execute(createDemoState(now), actor, { type: "validate", campaignId }, now)).toThrow("chaque jour");
     expect(() =>
       execute(
-        createDemoState(),
+        createDemoState(now),
         actor,
         { type: "availability", campaignId, dates: ["2026-11-01"], value: "DAY", comment: "" },
         now,
@@ -57,7 +61,7 @@ describe("Réponses aux campagnes", () => {
     expect(isValidated(submitted, campaignId, actor.id)).toBe(true);
   });
   it("refuse toute saisie après clôture ou en dehors de la fenêtre", () => {
-    const closed = execute(createDemoState(), actor, { type: "close", campaignId, closed: true }, now);
+    const closed = execute(createDemoState(now), actor, { type: "close", campaignId, closed: true }, now);
     const command = {
       type: "availability" as const,
       campaignId,
@@ -66,7 +70,35 @@ describe("Réponses aux campagnes", () => {
       comment: "",
     };
     expect(() => execute(closed, actor, command, now)).toThrow("fermée");
-    expect(() => execute(createDemoState(), actor, command, new Date("2026-10-01T10:00:00Z"))).toThrow("fermée");
+    expect(() => execute(createDemoState(now), actor, command, new Date("2026-10-01T10:00:00Z"))).toThrow("fermée");
+  });
+});
+describe("Jeu de démonstration", () => {
+  it("s’ouvre à la saisie quelle que soit la date à laquelle il est chargé", () => {
+    const days = ["2026-09-18", "2026-09-30", "2026-10-01", "2026-12-31", "2027-01-01", "2028-02-29"];
+    for (const day of days) {
+      const at = new Date(`${day}T10:00:00`);
+      const state = createDemoState(at);
+      const campaign = state.campaigns[0];
+      expect(campaign.month, day).toBe(shiftMonth(localMonth(at), 1));
+      expect(campaign.id, day).toBe(`campaign-${campaign.month}`);
+      expect(isOpen(campaign, localDate(at)), day).toBe(true);
+      // The symptom a fixed window produced: an agent could no longer save.
+      expect(() =>
+        execute(
+          state,
+          { id: "julien", role: "AGENT" },
+          {
+            type: "availability",
+            campaignId: campaign.id,
+            dates: [monthDays(campaign.month)[0]],
+            value: "DAY",
+            comment: "",
+          },
+          at,
+        ),
+      ).not.toThrow();
+    }
   });
 });
 describe("Couverture et publication", () => {
@@ -88,7 +120,7 @@ describe("Couverture et publication", () => {
     expect(state.assignments[key]).toEqual([actor.id]);
   });
   it("bloque publication déficitaire, affectation non éligible et rôle agent", () => {
-    const state = createDemoState();
+    const state = createDemoState(now);
     expect(() => execute(state, actor, { type: "publish", campaignId, date: "2026-10-15", shift: "DAY" }, now)).toThrow(
       "Couvrez",
     );
@@ -123,7 +155,7 @@ describe("Couverture et publication", () => {
     expect(draft.publications[key].revision).toBe(1);
   });
   it("conserve les horaires des campagnes existantes après réglage", () => {
-    const state = execute(createDemoState(), actor, { type: "settings", dayStart: 7, nightStart: 19 }, now);
+    const state = execute(createDemoState(now), actor, { type: "settings", dayStart: 7, nightStart: 19 }, now);
     expect(state.campaigns[0].dayStart).toBe(8);
     const updated = execute(
       state,
@@ -136,7 +168,7 @@ describe("Couverture et publication", () => {
 });
 describe("Exports", () => {
   it("exporte uniquement les publications personnelles et traverse le changement d'heure de Paris", () => {
-    const state = createDemoState();
+    const state = createDemoState(now);
     state.publications[shiftKey(campaignId, "2026-10-24", "NIGHT")] = {
       agents: [actor.id],
       revision: 2,
@@ -150,7 +182,7 @@ describe("Exports", () => {
     expect(personalCalendar(state, state.campaigns[0], "marie")).not.toContain("BEGIN:VEVENT");
   });
   it("neutralise les formules et conserve les caractères français du CSV", () => {
-    const state = createDemoState();
+    const state = createDemoState(now);
     state.agents[0].name = '=HYPERLINK("bad")';
     const csv = availabilityCsv(state, state.campaigns[0]);
     expect(csv).toContain('"\'=HYPERLINK(""bad"")"');

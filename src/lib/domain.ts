@@ -81,6 +81,13 @@ export const monthDays = (month: string) =>
   );
 export const localDate = (d = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+export const localMonth = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+export const shiftMonth = (month: string, delta: number) =>
+  localMonth(new Date(Number(month.slice(0, 4)), Number(month.slice(5)) - 1 + delta, 1));
+export const lastDayOfMonth = (month: string) => {
+  const days = monthDays(month);
+  return days[days.length - 1];
+};
 export const dateLabel = (date: string, options: Intl.DateTimeFormatOptions = { day: "numeric", month: "long" }) =>
   new Date(`${date}T12:00:00`).toLocaleDateString("fr-FR", options);
 export const monthLabel = (month: string) => dateLabel(`${month}-01`, { month: "long", year: "numeric" });
