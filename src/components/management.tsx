@@ -32,13 +32,14 @@ import {
   localMonth,
   monthDays,
   monthLabel,
+  plural,
   shiftKey,
   shiftMonth,
 } from "@/lib/domain";
 import { download, personalCalendar } from "@/lib/exports";
 
 export function Campaigns() {
-  const { state, run, setCampaignId } = useApp();
+  const { state, run, setCampaignId, connected } = useApp();
   const [open, setOpen] = useState(false);
   // Propose the first month no campaign covers yet, and collect responses during
   // the month before it, so the dialog never opens on a window already past.
@@ -92,7 +93,7 @@ export function Campaigns() {
                   <span>
                     Réponses validées
                     <strong>
-                      {count} / {state.agents.length} agents
+                      {count} / {state.agents.length} {plural(state.agents.length, "agent")}
                     </strong>
                   </span>
                 </span>
@@ -122,8 +123,8 @@ export function Campaigns() {
       <div className="info-card horizontal">
         <Megaphone size={24} />
         <p>
-          La création ouvre la campagne à tous les agents de cette démonstration. Les emails et rappels automatiques
-          seront raccordés avec le service de notifications.
+          La création ouvre la campagne à tous les agents {connected ? "de votre centre" : "de cette démonstration"}.
+          Les emails et rappels automatiques seront raccordés avec le service de notifications.
         </p>
       </div>
       <Modal
@@ -179,7 +180,7 @@ export function Agents() {
       <PageTitle
         eyebrow="VOTRE COLLECTIF"
         title="Agents & équipes"
-        description={`${state.agents.length} agents réunis au sein du ${state.organization.name}.`}
+        description={`${state.agents.length} ${plural(state.agents.length, "agent")} ${plural(state.agents.length, "réuni")} au sein du ${state.organization.name}.`}
       />
       <label className="search-field standalone-search">
         <Search size={17} />
@@ -213,13 +214,13 @@ export function Agents() {
 }
 
 export function Audit() {
-  const { state } = useApp();
+  const { state, connected } = useApp();
   return (
     <>
       <PageTitle
         eyebrow="TRAÇABILITÉ"
         title="Historique des actions"
-        description="Retrouvez les saisies, validations et publications de cette démonstration."
+        description={`Retrouvez les saisies, validations et publications ${connected ? "de votre centre" : "de cette démonstration"}.`}
       />
       <Panel title="Dernières modifications" subtitle={`${state.audit.length} action(s) enregistrée(s)`}>
         <ol className="audit-list">
@@ -374,7 +375,7 @@ export function PersonalPlanning() {
 }
 
 export function Profile() {
-  const { state, actor, agent, selectAgent } = useApp();
+  const { state, actor, agent, selectAgent, connected } = useApp();
   return (
     <>
       <PageTitle
@@ -393,21 +394,25 @@ export function Profile() {
             </div>
           </div>
         </Panel>
-        <Panel title="Tester un autre agent" subtitle="Contrôle réservé à cet espace de démonstration.">
-          <label className="field">
-            Agent de démonstration
-            <select value={actor.id} onChange={e => selectAgent(e.target.value)}>
-              {state.agents.map(a => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="muted small">
-            Ce choix ne constitue pas une connexion à un compte. Les données restent fictives et locales.
-          </p>
-        </Panel>
+        {/* Simulation control. On real data it would present someone else's
+            record as fictional, so it never renders in connected mode. */}
+        {!connected && (
+          <Panel title="Tester un autre agent" subtitle="Contrôle réservé à cet espace de démonstration.">
+            <label className="field">
+              Agent de démonstration
+              <select value={actor.id} onChange={e => selectAgent(e.target.value)}>
+                {state.agents.map(a => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="muted small">
+              Ce choix ne constitue pas une connexion à un compte. Les données restent fictives et locales.
+            </p>
+          </Panel>
+        )}
       </div>
     </>
   );

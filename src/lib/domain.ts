@@ -91,6 +91,11 @@ export const lastDayOfMonth = (month: string) => {
 export const dateLabel = (date: string, options: Intl.DateTimeFormatOptions = { day: "numeric", month: "long" }) =>
   new Date(`${date}T12:00:00`).toLocaleDateString("fr-FR", options);
 export const monthLabel = (month: string) => dateLabel(`${month}-01`, { month: "long", year: "numeric" });
+// « de septembre » but « d’octobre » : a label opening on a vowel takes the elided form.
+export const elide = (label: string) => `${/^[aeiouâàéèêîôû]/i.test(label) ? "d’" : "de "}${label}`;
+export const ofMonth = (month: string) => elide(monthLabel(month));
+// French keeps the singular for 0 and 1: « 0 agent », « 1 agent », « 2 agents ».
+export const plural = (count: number, one: string, many = `${one}s`) => (count > 1 ? many : one);
 export const hours = (campaign: Pick<Campaign, "dayStart" | "nightStart">, shift: Shift | "FULL_24H") =>
   shift === "DAY"
     ? `${campaign.dayStart} h – ${campaign.nightStart} h`
@@ -104,9 +109,18 @@ export const isValidated = (state: AppState, campaignId: string, userId: string)
   Boolean(state.responses[responseKey(campaignId, userId)]);
 export const filledDays = (state: AppState, campaign: Campaign, userId: string) =>
   monthDays(campaign.month).filter(d => state.entries[entryKey(campaign.id, userId, d)]).length;
-export const defaultRequirement = { total: 6, qualifications: { Chef: 1, "Conducteur PL": 1, SAP: 3 } };
-export function requirement(state: AppState, campaignId: string, date: string, shift: Shift) {
-  return state.requirements[shiftKey(campaignId, date, shift)] ?? defaultRequirement;
+export type Requirement = AppState["requirements"][string];
+// Starting point for the needs form and for the demonstration seed. It is never a
+// measurement: a shift holds no requirement until one is actually recorded.
+export const suggestedRequirement: Requirement = {
+  total: 6,
+  qualifications: { Chef: 1, "Conducteur PL": 1, SAP: 3 },
+};
+// null when nothing is recorded. A shift without requirement is neither covered
+// nor in deficit, and private.publish_schedule_shift() refuses to publish it:
+// inventing a figure here would make the interface disagree with the database.
+export function requirement(state: AppState, campaignId: string, date: string, shift: Shift): Requirement | null {
+  return state.requirements[shiftKey(campaignId, date, shift)] ?? null;
 }
 export function availableAgents(state: AppState, campaignId: string, date: string, shift: Shift) {
   return state.agents.filter(
@@ -128,7 +142,7 @@ export function coverage(
       ? availableAgents(state, campaignId, date, shift)
       : state.agents.filter(a => ids.includes(a.id));
   const need = requirement(state, campaignId, date, shift);
-  const qualifications = Object.entries(need.qualifications).map(([name, count]) => ({
+  const qualifications = Object.entries(need?.qualifications ?? {}).map(([name, count]) => ({
     name,
     need: count,
     actual: agents.filter(a => a.qualifications.includes(name)).length,
@@ -143,10 +157,16 @@ export function coverage(
         );
   return {
     actual: agents.length,
-    need: need.total,
+    /** null while no requirement is recorded: screens show « — », never a figure. */
+    need: need?.total ?? null,
+    defined: need !== null,
     qualifications,
     invalid,
-    covered: agents.length >= need.total && qualifications.every(q => q.actual >= q.need) && invalid.length === 0,
+    covered:
+      need !== null &&
+      agents.length >= need.total &&
+      qualifications.every(q => q.actual >= q.need) &&
+      invalid.length === 0,
   };
 }
 
@@ -216,6 +236,10 @@ export function execute(state: AppState, actor: Actor, command: Command, now = n
     detail = `${next.agents.find(a => a.id === command.userId)?.name} · ${dateLabel(command.date)} · ${labels[command.shift].label}`;
   } else if (command.type === "publish" && campaign) {
     if (!monthDays(campaign.month).includes(command.date)) throw new Error("Date hors campagne.");
+    // Same order as private.publish_schedule_shift(), so the interface refuses
+    // what the database would refuse, and says the same thing.
+    if (!requirement(next, campaign.id, command.date, command.shift))
+      throw new Error("Définissez les besoins de ce créneau avant de publier.");
     if (!coverage(next, campaign.id, command.date, command.shift, "planned").covered)
       throw new Error("Couvrez les effectifs et qualifications avec des disponibilités validées avant publication.");
     const key = shiftKey(campaign.id, command.date, command.shift);

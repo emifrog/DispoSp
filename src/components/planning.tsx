@@ -24,8 +24,10 @@ import {
   dateLabel,
   hours,
   monthDays,
+  plural,
   requirement,
   shiftKey,
+  suggestedRequirement,
   type Agent,
   type Shift,
 } from "@/lib/domain";
@@ -46,9 +48,13 @@ export function Planning() {
   const [publishOpen, setPublishOpen] = useState(false);
   const date = days.includes(selectedDate) ? selectedDate : days[0];
   const key = shiftKey(campaignId, date, shift);
+  // null until a requirement is recorded: the panel then says so instead of
+  // showing a figure, and publication stays refused as the database refuses it.
   const need = requirement(state, campaignId, date, shift);
-  const [total, setTotal] = useState(need.total);
-  const [qualifications, setQualifications] = useState<Record<string, number>>(need.qualifications);
+  const [total, setTotal] = useState((need ?? suggestedRequirement).total);
+  const [qualifications, setQualifications] = useState<Record<string, number>>({
+    ...(need ?? suggestedRequirement).qualifications,
+  });
   const pool = availableAgents(state, campaignId, date, shift);
   const assignedIds = state.assignments[key] ?? [];
   const assigned = state.agents.filter(a => assignedIds.includes(a.id));
@@ -63,8 +69,8 @@ export function Planning() {
   const published = state.publications[key];
   const changed = published && JSON.stringify([...published.agents].sort()) !== JSON.stringify([...assignedIds].sort());
   function openNeeds() {
-    setTotal(need.total);
-    setQualifications(need.qualifications);
+    setTotal((need ?? suggestedRequirement).total);
+    setQualifications({ ...(need ?? suggestedRequirement).qualifications });
     setNeedsOpen(true);
   }
   function agentCard(agent: Agent, retained: boolean) {
@@ -203,7 +209,7 @@ export function Planning() {
           subtitle="Affectations du brouillon"
           action={
             <span className="pill pill-blue">
-              {assigned.length} / {need.total}
+              {assigned.length} / {need ? need.total : "—"}
             </span>
           }
         >
@@ -228,50 +234,71 @@ export function Planning() {
             </Button>
           }
         >
-          <div className={`need-summary ${result.covered ? "need-covered" : ""}`}>
-            <Users size={23} />
-            <div>
-              <strong>
-                {assigned.length}
-                <span> / {need.total} agents</span>
-              </strong>
-              <div className="mini-progress">
-                <i style={{ width: `${Math.min(100, (assigned.length / need.total) * 100)}%` }} />
-              </div>
-            </div>
-          </div>
-          <h3 className="qualifications-title">Qualifications requises</h3>
-          <div className="qualification-list">
-            {result.qualifications
-              .filter(q => q.need > 0)
-              .map(q => (
-                <div key={q.name}>
-                  <span className="qualification-symbol">
-                    <ShieldCheck size={18} />
-                  </span>
-                  <span>
-                    <strong>{q.name}</strong>
-                    <small>Au moins {q.need}</small>
-                  </span>
-                  <b className={q.actual >= q.need ? "text-green" : "text-red"}>
-                    {q.actual}/{q.need}
-                  </b>
-                  {q.actual >= q.need ? (
-                    <Check size={17} className="text-green" />
-                  ) : (
-                    <CircleAlert size={17} className="text-red" />
-                  )}
+          {need ? (
+            <>
+              <div className={`need-summary ${result.covered ? "need-covered" : ""}`}>
+                <Users size={23} />
+                <div>
+                  <strong>
+                    {assigned.length}
+                    <span>
+                      {" "}
+                      / {need.total} {plural(need.total, "agent")}
+                    </span>
+                  </strong>
+                  <div className="mini-progress">
+                    <i style={{ width: `${Math.min(100, (assigned.length / need.total) * 100)}%` }} />
+                  </div>
                 </div>
-              ))}
-          </div>
-          <div className={result.covered ? "success-note" : "warning"}>
-            {result.covered ? <Check size={20} /> : <CircleAlert size={20} />}
-            <span>
-              {result.covered
-                ? "Ce créneau peut être publié."
-                : `${Math.max(0, need.total - assigned.length)} agent(s) et ${result.qualifications.filter(q => q.actual < q.need).length} qualification(s) à compléter.`}
-            </span>
-          </div>
+              </div>
+              <h3 className="qualifications-title">Qualifications requises</h3>
+              <div className="qualification-list">
+                {result.qualifications
+                  .filter(q => q.need > 0)
+                  .map(q => (
+                    <div key={q.name}>
+                      <span className="qualification-symbol">
+                        <ShieldCheck size={18} />
+                      </span>
+                      <span>
+                        <strong>{q.name}</strong>
+                        <small>Au moins {q.need}</small>
+                      </span>
+                      <b className={q.actual >= q.need ? "text-green" : "text-red"}>
+                        {q.actual}/{q.need}
+                      </b>
+                      {q.actual >= q.need ? (
+                        <Check size={17} className="text-green" />
+                      ) : (
+                        <CircleAlert size={17} className="text-red" />
+                      )}
+                    </div>
+                  ))}
+              </div>
+              <div className={result.covered ? "success-note" : "warning"}>
+                {result.covered ? <Check size={20} /> : <CircleAlert size={20} />}
+                <span>
+                  {result.covered
+                    ? "Ce créneau peut être publié."
+                    : `${Math.max(0, need.total - assigned.length)} agent(s) et ${result.qualifications.filter(q => q.actual < q.need).length} qualification(s) à compléter.`}
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="warning">
+                <CircleAlert size={20} />
+                <span>
+                  <strong>Besoins non définis.</strong> Tant qu’aucun effectif n’est enregistré pour cette garde, la
+                  couverture ne peut pas être mesurée et la publication est refusée.
+                </span>
+              </div>
+              <Button variant="secondary" className="full-width" onClick={openNeeds}>
+                <Settings2 size={16} />
+                Définir les besoins
+              </Button>
+            </>
+          )}
           {result.invalid.length > 0 && (
             <p className="text-red small">
               {result.invalid.length} affectation(s) ne correspondent plus à une disponibilité validée.
@@ -352,7 +379,9 @@ export function Planning() {
       >
         <div className="publish-summary">
           <CalendarCheck2 size={35} />
-          <h3>{assigned.length} agents affectés</h3>
+          <h3>
+            {assigned.length} {plural(assigned.length, "agent")} {plural(assigned.length, "affecté")}
+          </h3>
           <p>
             Cette version sera visible dans le planning personnel des agents concernés. Les autres créneaux restent
             inchangés.

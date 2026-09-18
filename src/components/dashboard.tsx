@@ -5,7 +5,18 @@ import { ArrowRight, CalendarCheck2, Check, ChevronRight, CircleAlert, Clock3, M
 import { useApp } from "./provider";
 import { PageTitle, Panel, Avatar } from "./common";
 import { Button } from "./ui/button";
-import { coverage, dateLabel, filledDays, isOpen, isValidated, monthDays, monthLabel, type Shift } from "@/lib/domain";
+import {
+  coverage,
+  dateLabel,
+  filledDays,
+  isOpen,
+  isValidated,
+  monthDays,
+  monthLabel,
+  ofMonth,
+  plural,
+  type Shift,
+} from "@/lib/domain";
 export function Dashboard() {
   const { state, campaignId, campaign } = useApp();
   const [mode, setMode] = useState<"potential" | "planned">("potential");
@@ -15,16 +26,20 @@ export function Dashboard() {
   const data = days.flatMap(date =>
     (["DAY", "NIGHT"] as Shift[]).map(shift => ({ date, shift, ...coverage(state, campaignId, date, shift, mode) })),
   );
-  const dayDeficits = data.filter(c => c.shift === "DAY" && !c.covered).length;
-  const nightDeficits = data.filter(c => c.shift === "NIGHT" && !c.covered).length;
-  const covered = data.filter(c => c.covered).length;
+  // A shift without requirement is neither covered nor in deficit: it is left out
+  // of both counts rather than measured against a figure nobody recorded.
+  const measured = data.filter(c => c.defined);
+  const dayDeficits = measured.filter(c => c.shift === "DAY" && !c.covered).length;
+  const nightDeficits = measured.filter(c => c.shift === "NIGHT" && !c.covered).length;
+  const covered = measured.filter(c => c.covered).length;
+  const unset = data.length - measured.length;
   const percent = Math.round((respondents.length / state.agents.length) * 100);
   return (
     <>
       <PageTitle
         eyebrow="VUE D’ENSEMBLE"
         title="Une équipe prête, ensemble."
-        description={`Pilotez les disponibilités et la couverture de ${monthLabel(campaign.month)}.`}
+        description={`Pilotez les disponibilités et la couverture ${ofMonth(campaign.month)}.`}
         action={
           <Button asChild>
             <Link href="/planning">
@@ -93,7 +108,10 @@ export function Dashboard() {
             <i style={{ width: `${percent}%` }} />
           </div>
           <p>
-            <span className="text-blue">{pending.length} réponses</span> restent à valider
+            <span className="text-blue">
+              {pending.length} {plural(pending.length, "réponse")}
+            </span>{" "}
+            {plural(pending.length, "reste", "restent")} à valider
           </p>
         </div>
         <div className="stat-card">
@@ -105,7 +123,7 @@ export function Dashboard() {
           </div>
           <div className="stat-number">
             {dayDeficits}
-            <span>journées</span>
+            <span>{plural(dayDeficits, "journée")}</span>
           </div>
           <p>
             <span className="dot orange" />
@@ -121,7 +139,7 @@ export function Dashboard() {
           </div>
           <div className="stat-number">
             {nightDeficits}
-            <span>nuits</span>
+            <span>{plural(nightDeficits, "nuit")}</span>
           </div>
           <p>
             <span className="dot purple" />
@@ -137,13 +155,19 @@ export function Dashboard() {
           </div>
           <div className="stat-number">
             {covered}
-            <span>/ {days.length * 2}</span>
+            <span>/ {measured.length}</span>
           </div>
           <p>
-            <span className="dot green" />
-            {Math.round((covered / data.length) * 100)} % de couverture{" "}
-            {mode === "potential" ? "potentielle" : "planifiée"}
+            <span className={`dot ${measured.length ? "green" : "gray"}`} />
+            {measured.length
+              ? `${Math.round((covered / measured.length) * 100)} % de couverture ${mode === "potential" ? "potentielle" : "planifiée"}`
+              : "Aucun besoin défini sur le mois"}
           </p>
+          {unset > 0 && (
+            <p className="muted small">
+              {unset} {plural(unset, "créneau", "créneaux")} sans besoins définis
+            </p>
+          )}
         </div>
       </div>
       <Panel
@@ -158,6 +182,10 @@ export function Dashboard() {
             <span>
               <i className="deficit" />
               Déficit
+            </span>
+            <span>
+              <i className="unset" />
+              Besoins non définis
             </span>
           </div>
         }
@@ -182,16 +210,25 @@ export function Dashboard() {
                 </div>
                 {days.map(date => {
                   const c = coverage(state, campaignId, date, shift, mode);
+                  const slot = `${dateLabel(date)} ${shift === "DAY" ? "jour" : "nuit"}`;
                   return (
                     <Link
                       key={date}
-                      className={`heatmap-cell ${c.covered ? "covered" : "deficit"}`}
+                      className={`heatmap-cell ${!c.defined ? "unset" : c.covered ? "covered" : "deficit"}`}
                       href={`/planning?date=${date}&shift=${shift}`}
-                      aria-label={`${dateLabel(date)} ${shift === "DAY" ? "jour" : "nuit"} : ${c.actual} sur ${c.need}, ${c.covered ? "couvert" : "déficit"}`}
-                      title={`${c.actual}/${c.need} agents · ${c.covered ? "Qualifications couvertes" : "Besoins non couverts"}`}
+                      aria-label={
+                        c.defined
+                          ? `${slot} : ${c.actual} sur ${c.need}, ${c.covered ? "couvert" : "déficit"}`
+                          : `${slot} : besoins non définis`
+                      }
+                      title={
+                        c.defined
+                          ? `${c.actual}/${c.need} agents · ${c.covered ? "Qualifications couvertes" : "Besoins non couverts"}`
+                          : "Besoins non définis pour ce créneau"
+                      }
                     >
                       {c.actual}
-                      <small>/{c.need}</small>
+                      <small>/{c.defined ? c.need : "—"}</small>
                     </Link>
                   );
                 })}
@@ -201,7 +238,8 @@ export function Dashboard() {
         </div>
         <div className="panel-footnote">
           <CircleAlert size={14} />
-          Un créneau est couvert lorsque les effectifs et les qualifications sont réunis.
+          Un créneau est couvert lorsque les effectifs et les qualifications sont réunis. Sans besoins définis, il n’est
+          ni couvert ni en déficit.
           <Link href="/disponibilites">
             Voir les disponibilités
             <ArrowRight size={14} />
@@ -212,7 +250,11 @@ export function Dashboard() {
         <Panel
           title="La mobilisation de votre équipe"
           subtitle="Seules les réponses explicitement validées sont comptabilisées."
-          action={<span className="pill pill-blue">{state.agents.length} agents</span>}
+          action={
+            <span className="pill pill-blue">
+              {state.agents.length} {plural(state.agents.length, "agent")}
+            </span>
+          }
         >
           <div className="response-overview">
             <div className="donut" style={{ background: `conic-gradient(var(--blue) ${percent}%, #edf1f7 0)` }}>

@@ -19,6 +19,9 @@ type Context = {
   run: (command: Command) => boolean;
   notice: (text: string) => void;
   ready: boolean;
+  /** True when the screens read the database. Demonstration-only controls and
+      wording must be hidden behind it: on real data they would be a lie. */
+  connected: boolean;
 };
 const Store = createContext<Context | null>(null);
 export function AppProvider({
@@ -124,6 +127,7 @@ export function AppProvider({
         run,
         notice: setMessage,
         ready,
+        connected,
       }}
     >
       {children}

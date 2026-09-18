@@ -131,6 +131,26 @@ describe("Couverture et publication", () => {
       "responsable",
     );
   });
+  it("ne mesure ni ne publie un créneau sans besoins définis", () => {
+    const state = execute(fullResponse(), actor, { type: "validate", campaignId }, now);
+    const date = "2026-10-15";
+    const shift = "DAY" as const;
+    const key = shiftKey(campaignId, date, shift);
+    // The seed records its requirements; a centre that has not defined any is the
+    // case that used to be filled in with an invented figure.
+    expect(coverage(state, campaignId, date, shift, "potential").defined).toBe(true);
+    delete state.requirements[key];
+    const result = coverage(state, campaignId, date, shift, "planned");
+    expect(result.defined).toBe(false);
+    expect(result.need).toBeNull();
+    expect(result.covered).toBe(false);
+    // An eligible agent is affected: the missing requirement is the only obstacle,
+    // and private.publish_schedule_shift() refuses that same case.
+    state.assignments[key] = [actor.id];
+    expect(() => execute(state, actor, { type: "publish", campaignId, date, shift }, now)).toThrow(
+      "Définissez les besoins",
+    );
+  });
   it("garde la version publiée jusqu'à republication", () => {
     let state = execute(fullResponse(), actor, { type: "validate", campaignId }, now);
     const date = "2026-10-15";

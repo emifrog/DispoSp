@@ -18,8 +18,11 @@ declare
   -- PostgreSQL refuse « column reference "team_id" is ambiguous ».
   v_org uuid;
   v_team uuid;
+  -- Le serveur est en UTC ; toutes les dates de ce script sont celles du centre.
+  v_today constant date := (now() at time zone 'Europe/Paris')::date;
   v_first date;
   v_last date;
+  v_month text;
   v_campaign uuid;
   v_schedule uuid;
   v_day smallint;
@@ -37,7 +40,7 @@ begin
     raise exception 'Organisation "%" ou équipe "%" introuvable. Lancez d''abord premiere-organisation.sql.', org_name, team_name;
   end if;
 
-  v_first := (date_trunc('month', current_date) + (month_offset || ' month')::interval)::date;
+  v_first := (date_trunc('month', v_today) + (month_offset || ' month')::interval)::date;
   v_last  := (v_first + interval '1 month - 1 day')::date;
   if exists (select 1 from public.availability_campaigns c where c.organization_id = v_org and c.starts_on = v_first) then
     raise exception 'Une campagne existe déjà pour %.', to_char(v_first, 'MM/YYYY');
@@ -49,14 +52,21 @@ begin
     from public.shift_types st
    where st.organization_id = v_org;
 
+  -- « de septembre » mais « d'octobre » : avril, août et octobre prennent l'élision.
+  v_month := months[extract(month from v_first)::int];
+
   insert into public.availability_campaigns
       (organization_id, team_id, name, starts_on, ends_on, opens_at, closes_at, day_start, night_start)
     values (v_org, v_team,
-            'Disponibilités de ' || months[extract(month from v_first)::int] || ' ' || extract(year from v_first)::text,
+            'Disponibilités ' || case when v_month ~ '^[aeiouâéèêîô]' then 'd''' else 'de ' end
+              || v_month || ' ' || extract(year from v_first)::text,
             v_first, v_last,
-            -- Ouverte depuis le début du mois en cours, close à sa toute fin.
-            date_trunc('month', current_date),
-            date_trunc('month', current_date) + interval '1 month' - interval '1 second',
+            -- Ouverte depuis le début du mois en cours, close à sa toute fin, en
+            -- heure du centre : sans « at time zone », une clôture écrite en UTC
+            -- s'affiche le lendemain à 01:59 pour un agent à Paris.
+            (date_trunc('month', v_today)::timestamp at time zone 'Europe/Paris'),
+            ((date_trunc('month', v_today) + interval '1 month')::timestamp at time zone 'Europe/Paris')
+              - interval '1 second',
             v_day, v_night)
     returning id into v_campaign;
 

@@ -6,15 +6,15 @@ import {
   responseKey,
   shiftKey,
   availableAgents,
+  elide,
   lastDayOfMonth,
   localMonth,
   shiftMonth,
+  suggestedRequirement,
 } from "./domain";
 
-// "de septembre" but "d’octobre": months opening on a vowel take the elided form.
 function campaignName(month: string) {
-  const label = new Date(`${month}-01T12:00:00`).toLocaleDateString("fr-FR", { month: "long" });
-  return `Disponibilités ${/^[aeiouâàéèêîôû]/i.test(label) ? "d’" : "de "}${label}`;
+  return `Disponibilités ${elide(new Date(`${month}-01T12:00:00`).toLocaleDateString("fr-FR", { month: "long" }))}`;
 }
 
 // The demonstration has to stay usable whichever day it is opened: responses are
@@ -111,6 +111,12 @@ export function createDemoState(now = new Date()): AppState {
   });
   for (const date of monthDays(campaign.month)) {
     for (const shift of ["DAY", "NIGHT"] as const) {
+      // The demonstration records its requirements as a real centre would. Nothing
+      // is inferred for a shift that has none: it is simply not measured.
+      state.requirements[shiftKey(campaign.id, date, shift)] = {
+        total: suggestedRequirement.total,
+        qualifications: { ...suggestedRequirement.qualifications },
+      };
       const pool = availableAgents(state, campaign.id, date, shift);
       state.assignments[shiftKey(campaign.id, date, shift)] = pool
         .slice(0, Number(date.slice(-2)) % 3 === 0 ? 3 : 4)

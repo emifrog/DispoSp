@@ -759,6 +759,11 @@ label {
   background: #fff0ec;
   color: #ce8878;
 }
+/* Neither covered nor in deficit: no requirement has been recorded for the shift. */
+.unset {
+  background: #f1f4f8;
+  color: #93a2b5;
+}
 .heatmap-scroll {
   overflow-x: auto;
   margin: 0 22px 22px;
