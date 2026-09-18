@@ -95,7 +95,9 @@ Le mot-symbole est fourni en deux versions dans `public/` : `logo-disposp.png` (
 
 Le bleu nuit de la marque est `#092b4e` et son rouge `#de1525`. Le premier est devenu celui de l'interface — barre latérale, variable `--navy`, teinte de la barre d'état — pour que le logo ne se détache pas de son propre fond.
 
-Les icônes d'application reprennent les lettres « SP » découpées dans le mot-symbole lui-même : rien n'est redessiné, l'icône partage donc exactement la graisse et le dessin de la marque. **Elles sont provisoires** : le pack livré contenait un symbole dont l'export vectoriel a échoué — icônes, favicons et déclinaisons monochromes sont vides ou réduits à des fragments d'un pixel. Dès que le symbole sera réexporté, les icônes se refont à partir de lui.
+Les icônes d'application portent le symbole — une flamme et un calendrier — en blanc sur le bleu nuit : `icon-192`, `icon-512`, une version `maskable` pour Android, `apple-touch-icon` pour iOS et `src/app/icon.png` pour l'onglet. Le symbole seul est aussi disponible en bleu nuit et en blanc, `symbole-disposp.png` et `symbole-disposp-blanc.png`.
+
+**Ce symbole est une silhouette d'une seule couleur, et c'est une limite connue.** Les deux fichiers reçus du studio étaient des vectorisations automatiques d'une image compressée : le dessin s'y trouvait morcelé en soixante-quatre tracés, avec le bruit de compression transformé en trous à l'intérieur des cases du calendrier. La géométrie a été récupérée par fermeture morphologique — dilatation puis érosion du même rayon, ce qui referme les trous plus petits que le rayon et laisse intactes les gouttières entre les cases. Ce qui n'a pas pu l'être : la répartition bleu nuit / rouge, éparpillée entre les couleurs par le calque, et la coche d'une case, refermée avec le reste. Un vrai fichier vectoriel les rendrait.
 
 ### Application installable
 
