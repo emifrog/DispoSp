@@ -18,6 +18,8 @@ import { PageTitle, Panel, Avatar } from "./common";
 import { Button } from "./ui/button";
 import {
   coverage,
+  coverageLevel,
+  coverageLevelLabels,
   dateLabel,
   filledDays,
   isOpen,
@@ -191,6 +193,10 @@ export function Dashboard() {
               Couvert
             </span>
             <span>
+              <i className="tight" />
+              Limite
+            </span>
+            <span>
               <i className="deficit" />
               Déficit
             </span>
@@ -221,20 +227,21 @@ export function Dashboard() {
                 </div>
                 {days.map(date => {
                   const c = coverage(state, campaignId, date, shift, mode);
+                  const level = coverageLevel(c);
                   const slot = `${dateLabel(date)} ${shift === "DAY" ? "jour" : "nuit"}`;
                   return (
                     <Link
                       key={date}
-                      className={`heatmap-cell ${!c.defined ? "unset" : c.covered ? "covered" : "deficit"}`}
+                      className={`heatmap-cell ${level}`}
                       href={`/planning?date=${date}&shift=${shift}`}
                       aria-label={
                         c.defined
-                          ? `${slot} : ${c.actual} sur ${c.need}, ${c.covered ? "couvert" : "déficit"}`
+                          ? `${slot} : ${c.actual} sur ${c.need}, ${coverageLevelLabels[level].toLowerCase()}`
                           : `${slot} : besoins non définis`
                       }
                       title={
                         c.defined
-                          ? `${c.actual}/${c.need} agents · ${c.covered ? "Qualifications couvertes" : "Besoins non couverts"}`
+                          ? `${c.actual}/${c.need} agents · ${level === "tight" ? "Couvert sans marge" : coverageLevelLabels[level]}`
                           : "Besoins non définis pour ce créneau"
                       }
                     >

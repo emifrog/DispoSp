@@ -85,6 +85,10 @@ export const stateSchema = z.object({
     )
     .default([]),
   qualificationCatalogue: z.array(z.string()).default([]),
+  /** La disponibilité habituelle du §4, par jour de semaine ISO : « 1 » = lundi.
+      Ce n’est pas une disponibilité : rien n’entre dans une couverture tant que
+      l’agent ne l’a pas appliquée à une campagne. */
+  template: z.record(z.string(), availabilitySchema).default({}),
   invitations: z
     .array(
       z.object({
@@ -172,6 +176,16 @@ export const hours = (campaign: Pick<Campaign, "dayStart" | "nightStart">, shift
     : shift === "NIGHT"
       ? `${campaign.nightStart} h – ${campaign.dayStart} h (+1 j)`
       : `${campaign.dayStart} h – ${campaign.dayStart} h (+1 j)`;
+// ISO 8601 numérote la semaine à partir du lundi ; getDay() à partir du dimanche.
+export const isoWeekday = (date: string) => ((new Date(`${date}T12:00:00`).getDay() + 6) % 7) + 1;
+export const weekdayNames = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
+/** Ce qu’un modèle donnerait sur un mois, sans rien écrire. Les jours de semaine
+ *  que le modèle ne mentionne pas restent tels qu’ils sont. */
+export function templateEntries(template: AppState["template"], month: string) {
+  return monthDays(month)
+    .map(date => ({ date, type: template[String(isoWeekday(date))] }))
+    .filter((entry): entry is { date: string; type: Availability } => Boolean(entry.type));
+}
 export const isAvailable = (type: Availability | undefined, shift: Shift) => type === shift || type === "FULL_24H";
 export const isOpen = (campaign: Campaign, today = localDate()) =>
   !campaign.closed && today >= campaign.opensOn && today <= campaign.closesOn;
@@ -192,6 +206,50 @@ export const suggestedRequirement: Requirement = {
 export function requirement(state: AppState, campaignId: string, date: string, shift: Shift): Requirement | null {
   return state.requirements[shiftKey(campaignId, date, shift)] ?? null;
 }
+// §9 asks for three levels, not two. « Limite » is a shift that is covered with
+// nothing to spare: one absence and it is short. Naming it is the whole point —
+// a manager reads the orange cells first.
+export type CoverageLevel = "unset" | "deficit" | "tight" | "covered";
+export const coverageLevel = (c: {
+  defined: boolean;
+  covered: boolean;
+  actual: number;
+  need: number | null;
+  qualifications: { need: number; actual: number }[];
+}): CoverageLevel => {
+  if (!c.defined) return "unset";
+  if (!c.covered) return "deficit";
+  const spare = c.actual - (c.need ?? 0);
+  const qualificationAtLimit = c.qualifications.some(q => q.need > 0 && q.actual === q.need);
+  return spare === 0 || qualificationAtLimit ? "tight" : "covered";
+};
+export const coverageLevelLabels: Record<CoverageLevel, string> = {
+  unset: "Besoins non définis",
+  deficit: "Déficit",
+  tight: "Limite",
+  covered: "Couvert",
+};
+
+// §8 asks for Jour, Nuit and 24 h per agent. An assignment is made to one shift,
+// so « 24 h » is not a kind of its own: it is holding both slots of the same day.
+export function workload(state: AppState, campaignId: string, userId: string) {
+  const days = new Map<string, Set<Shift>>();
+  for (const [key, ids] of Object.entries(state.assignments)) {
+    if (!key.startsWith(`${campaignId}/`) || !ids.includes(userId)) continue;
+    const [, date, shift] = key.split("/");
+    days.set(date, (days.get(date) ?? new Set()).add(shift as Shift));
+  }
+  let day = 0;
+  let night = 0;
+  let full = 0;
+  for (const shifts of days.values()) {
+    if (shifts.has("DAY") && shifts.has("NIGHT")) full += 1;
+    else if (shifts.has("DAY")) day += 1;
+    else night += 1;
+  }
+  return { day, night, full, total: day + night + full * 2 };
+}
+
 export function availableAgents(state: AppState, campaignId: string, date: string, shift: Shift) {
   return state.agents.filter(
     a =>
@@ -302,6 +360,11 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("revokeInvitation"), invitationId: id }),
   z.object({ type: z.literal("readNotifications"), ids: z.array(id).min(1).max(100) }),
   z.object({ type: z.literal("remind"), campaignId: id }),
+  z.object({
+    type: z.literal("template"),
+    days: z.record(z.string().regex(/^[1-7]$/), availabilitySchema.nullable()),
+  }),
+  z.object({ type: z.literal("applyTemplate"), campaignId: id }),
   z.object({ type: z.literal("team"), teamId: z.string().max(64).optional(), name: z.string().trim().min(1).max(60) }),
   z.object({
     type: z.literal("settings"),
@@ -316,7 +379,11 @@ export type Command = z.infer<typeof commandSchema>;
 // The trail groups by table; a reader groups by subject. One place decides which
 // is which, and the history screen offers nothing the vocabulary cannot fill.
 export const auditFamilies = [
-  { key: "availability", label: "Disponibilités", entities: ["availability_entry", "campaign_participant"] },
+  {
+    key: "availability",
+    label: "Disponibilités",
+    entities: ["availability_entry", "campaign_participant", "availability_template"],
+  },
   { key: "planning", label: "Planning", entities: ["schedule_assignment", "schedule_shift"] },
   { key: "needs", label: "Besoins", entities: ["staffing_requirement"] },
   { key: "campaigns", label: "Campagnes", entities: ["availability_campaign"] },
@@ -343,6 +410,8 @@ export const commandEntities: Record<Command["type"], string> = {
   team: "team",
   readNotifications: "notification",
   remind: "notification",
+  template: "availability_template",
+  applyTemplate: "availability_entry",
 };
 export const notificationLabels: Record<string, string> = {
   CAMPAIGN_OPENED: "Campagne ouverte",
@@ -364,6 +433,8 @@ export const commandLabels: Record<Command["type"], string> = {
   team: "Équipe enregistrée",
   readNotifications: "Notifications marquées comme lues",
   remind: "Relance envoyée",
+  template: "Disponibilité habituelle enregistrée",
+  applyTemplate: "Disponibilité habituelle appliquée",
 };
 
 // Pure business layer shared by the demonstration and the future server commands.
@@ -465,6 +536,20 @@ export function execute(state: AppState, actor: Actor, command: Command, now = n
     campaign.closed = command.closed;
     action = command.closed ? "Campagne verrouillée" : "Campagne déverrouillée";
     detail = campaign.name;
+  } else if (command.type === "template") {
+    next.template = {};
+    for (const [weekday, value] of Object.entries(command.days)) if (value) next.template[weekday] = value;
+    action = "Disponibilité habituelle enregistrée";
+    detail = `${Object.keys(next.template).length} ${plural(Object.keys(next.template).length, "jour")} de semaine`;
+  } else if (command.type === "applyTemplate" && campaign) {
+    if (!isOpen(campaign, today)) throw new Error("La campagne est fermée à la saisie.");
+    const applied = templateEntries(next.template, campaign.month);
+    if (!applied.length) throw new Error("Votre disponibilité habituelle est vide : renseignez-la d’abord.");
+    for (const { date, type } of applied) next.entries[entryKey(campaign.id, actor.id, date)] = { type, comment: "" };
+    // Écrire une disponibilité invalide la réponse, quel que soit le chemin.
+    delete next.responses[responseKey(campaign.id, actor.id)];
+    action = "Disponibilité habituelle appliquée";
+    detail = `${applied.length} ${plural(applied.length, "jour")} · réponse à valider`;
   } else if (command.type === "readNotifications") {
     // Deliberately unaudited: reading a notice is not an act on the centre.
     for (const notification of next.notifications)

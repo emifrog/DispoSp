@@ -32,6 +32,7 @@ export type Raw = {
   }[];
   teams: { id: string; name: string }[];
   qualificationCatalogue: { name: string }[];
+  template: { weekday: number; availability_type: string }[];
   invitations: {
     id: string;
     email: string;
@@ -248,6 +249,13 @@ export function buildState(raw: Raw, fallbackOrganizationName: string): AppState
       readAt: row.read_at,
     })),
     qualificationCatalogue: raw.qualificationCatalogue.map(q => q.name).sort((a, b) => a.localeCompare(b, "fr")),
+    template: Object.fromEntries(
+      raw.template.flatMap(row =>
+        availabilitySchema.safeParse(row.availability_type).success
+          ? [[String(row.weekday), row.availability_type as AppState["template"][string]]]
+          : [],
+      ),
+    ),
     // Empty for anyone but an administrator: the policy filters, we do not.
     invitations: raw.invitations.map(row => ({
       id: row.id,

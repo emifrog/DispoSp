@@ -54,14 +54,15 @@ Le projet de développement dédié est désigné : ses coordonnées sont dans `
 
 Le schéma est découpé en migrations successives, à appliquer dans l'ordre et une seule fois chacune :
 
-| Fichier                                             | Contenu                                                                                                  | État                           |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `supabase/migrations/0001_foundation.sql`           | Organisations, équipes, profils, droits, campagnes, participants, disponibilités                         | Appliquée le 18 septembre 2026 |
-| `supabase/migrations/0002_planning.sql`             | Qualifications, créneaux types, besoins, plannings, affectations, notifications, audit                   | Appliquée le 18 septembre 2026 |
-| `supabase/migrations/0003_client_writes.sql`        | Publication joignable depuis le client, horaires du centre, catalogue de qualifications, journal d'audit | Appliquée le 18 septembre 2026 |
-| `supabase/migrations/0004_agent_administration.sql` | Fiche agent, invitations, administration des équipes et qualifications                                   | Appliquée le 18 septembre 2026 |
-| `supabase/migrations/0005_notifications.sql`        | Notification à l'ouverture d'une campagne                                                                | Appliquée le 18 septembre 2026 |
-| `supabase/migrations/0006_email_dispatch.sql`       | Adresse des agents, file d'envoi, rappel avant clôture                                                   | **À appliquer**                |
+| Fichier                                               | Contenu                                                                                                  | État                           |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `supabase/migrations/0001_foundation.sql`             | Organisations, équipes, profils, droits, campagnes, participants, disponibilités                         | Appliquée le 18 septembre 2026 |
+| `supabase/migrations/0002_planning.sql`               | Qualifications, créneaux types, besoins, plannings, affectations, notifications, audit                   | Appliquée le 18 septembre 2026 |
+| `supabase/migrations/0003_client_writes.sql`          | Publication joignable depuis le client, horaires du centre, catalogue de qualifications, journal d'audit | Appliquée le 18 septembre 2026 |
+| `supabase/migrations/0004_agent_administration.sql`   | Fiche agent, invitations, administration des équipes et qualifications                                   | Appliquée le 18 septembre 2026 |
+| `supabase/migrations/0005_notifications.sql`          | Notification à l'ouverture d'une campagne                                                                | Appliquée le 18 septembre 2026 |
+| `supabase/migrations/0006_email_dispatch.sql`         | Adresse des agents, file d'envoi, rappel avant clôture                                                   | Appliquée le 18 septembre 2026 |
+| `supabase/migrations/0007_availability_templates.sql` | Disponibilité habituelle par jour de semaine                                                             | **À appliquer**                |
 
 Chaque fichier est une transaction : la moindre erreur annule la migration entière, sans état partiel. Aucun n'est rejouable — ce sont des `create`, pas des `create if not exists`, pour qu'un second passage échoue au lieu d'écraser silencieusement une base déjà en service. `0002` commence par vérifier que `0001` est présente et qu'elle-même ne l'est pas, et s'arrête sur un message explicite plutôt que sur un « relation already exists ».
 
@@ -71,6 +72,12 @@ Pour vérifier ce qui est déjà en place sur un projet :
 select string_agg(table_name, ', ' order by table_name)
 from information_schema.tables where table_schema = 'public';
 ```
+
+### Exports
+
+Le classeur Excel du §11 est construit par une route serveur, `/api/export`, et non par une action : la réponse est un fichier, et ce choix garde ExcelJS hors de tous les paquets livrés au navigateur — vérifié, la bibliothèque n'apparaît dans aucun morceau client. Six feuilles : disponibilités, synthèse, couverture, affectations, qualifications, statistiques. Toutes bâties depuis l'`AppState` que les écrans lisent, pour qu'un export ne puisse jamais raconter autre chose que l'écran dont il sort.
+
+Le PDF passe par l'impression du navigateur, avec une feuille de style dédiée qui retire la navigation et empêche les coupures au milieu d'une ligne. Une limite à connaître : **la matrice des disponibilités est virtualisée**, donc seules les lignes rendues sortiraient à l'impression. C'est pour elle qu'existe l'export Excel. La vue par journée et le planning personnel, eux, s'impriment entiers.
 
 ### Notifications et envoi des emails
 

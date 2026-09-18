@@ -10,6 +10,7 @@ const MIGRATIONS = [
   "0004_agent_administration.sql",
   "0005_notifications.sql",
   "0006_email_dispatch.sql",
+  "0007_availability_templates.sql",
 ];
 const baseAuthSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
 const orgA = "10000000-0000-0000-0000-000000000001";
@@ -1085,5 +1086,85 @@ describe("File d’envoi ouverte par 0006", () => {
   it("refuse la relance d’une campagne que l’on n’encadre pas", async () => {
     await be(agent);
     await expect(live.query("select public.remind_campaign($1)", [campaign])).rejects.toThrow("Not allowed to remind");
+  });
+});
+
+// Le modèle de quelqu'un ne dit pas ce qu'il fera, mais ce qu'il fait d'habitude.
+// Aucun écran de pilotage n'en a besoin, et la base le garde pour lui.
+describe("Disponibilité habituelle ouverte par 0007", () => {
+  const org = "10000000-0000-0000-0000-000000000050";
+  const team = "20000000-0000-0000-0000-000000000050";
+  const manager = "30000000-0000-0000-0000-000000000050";
+  const agent = "30000000-0000-0000-0000-000000000051";
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+
+  beforeAll(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const m of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    await live.exec(`insert into auth.users(id) values ('${manager}'), ('${agent}');
+      insert into public.profiles(user_id,display_name) values ('${manager}','Responsable'), ('${agent}','Agent');
+      insert into public.organizations(id,name) values ('${org}','Centre 0007');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Hotel');
+      insert into public.memberships values
+        ('${org}','${manager}','${team}','GESTIONNAIRE',true),
+        ('${org}','${agent}','${team}','AGENT',true);`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("laisse un agent composer sa semaine", async () => {
+    await be(agent);
+    await live.query(
+      `insert into public.availability_templates(organization_id,user_id,weekday,availability_type)
+       values ($1,$2,1,'DAY'), ($1,$2,6,'FULL_24H')`,
+      [org, agent],
+    );
+    expect(
+      (await live.query("select weekday, availability_type from public.availability_templates order by weekday")).rows,
+    ).toEqual([
+      { weekday: 1, availability_type: "DAY" },
+      { weekday: 6, availability_type: "FULL_24H" },
+    ]);
+  });
+
+  it("refuse un jour hors semaine et un type inconnu", async () => {
+    await be(agent);
+    await expect(
+      live.query(
+        "insert into public.availability_templates(organization_id,user_id,weekday,availability_type) values ($1,$2,8,'DAY')",
+        [org, agent],
+      ),
+    ).rejects.toThrow();
+    await expect(
+      live.query(
+        "insert into public.availability_templates(organization_id,user_id,weekday,availability_type) values ($1,$2,2,'PEUT-ÊTRE')",
+        [org, agent],
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("garde le modèle hors de portée des autres, gestionnaire compris", async () => {
+    await be(manager);
+    expect((await live.query("select * from public.availability_templates")).rows).toHaveLength(0);
+    // Ni lecture, ni écriture au nom d’un autre.
+    await expect(
+      live.query(
+        "insert into public.availability_templates(organization_id,user_id,weekday,availability_type) values ($1,$2,3,'NIGHT')",
+        [org, agent],
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("n’entre dans aucune disponibilité tant que rien n’est appliqué", async () => {
+    await be(agent);
+    expect((await live.query("select * from public.availability_entries")).rows).toHaveLength(0);
   });
 });

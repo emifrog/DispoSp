@@ -12,40 +12,48 @@ export async function loadState(session: AttachedSession): Promise<AppState> {
   const supabase = await createReadClient();
   const organizationId = session.membership.organizationId;
 
-  const [organization, members, memberQualifications, campaigns, teams, notifications, catalogue, invitations] =
-    await Promise.all([
-      supabase.from("organizations").select("name, day_start, night_start").eq("id", organizationId).maybeSingle(),
-      // Deactivated members are loaded too: the administration screen has to show
-      // them to bring anyone back. buildState keeps the two rosters apart.
-      supabase
-        .from("memberships")
-        .select("user_id, role, team_id, active, profiles(display_name, grade, matricule, phone), teams(name)")
-        .eq("organization_id", organizationId),
-      supabase
-        .from("user_qualifications")
-        .select("user_id, qualifications(name)")
-        .eq("organization_id", organizationId),
-      supabase
-        .from("availability_campaigns")
-        .select("id, name, starts_on, opens_at, closes_at, locked, day_start, night_start")
-        .eq("organization_id", organizationId)
-        .order("starts_on", { ascending: true }),
-      supabase.from("teams").select("id, name").eq("organization_id", organizationId).order("name"),
-      supabase
-        .from("notifications")
-        .select("id, kind, subject, body, created_at, read_at")
-        .order("created_at", { ascending: false })
-        .limit(50),
-      supabase.from("qualifications").select("name").eq("organization_id", organizationId),
-      // Readable by administrators only; anyone else gets an empty list from RLS
-      // rather than a refusal, which is exactly what the screen should show.
-      supabase
-        .from("invitations")
-        .select("id, email, display_name, role, team_id, created_at")
-        .eq("organization_id", organizationId)
-        .is("accepted_at", null)
-        .order("created_at", { ascending: false }),
-    ]);
+  const [
+    organization,
+    members,
+    memberQualifications,
+    campaigns,
+    teams,
+    notifications,
+    catalogue,
+    template,
+    invitations,
+  ] = await Promise.all([
+    supabase.from("organizations").select("name, day_start, night_start").eq("id", organizationId).maybeSingle(),
+    // Deactivated members are loaded too: the administration screen has to show
+    // them to bring anyone back. buildState keeps the two rosters apart.
+    supabase
+      .from("memberships")
+      .select("user_id, role, team_id, active, profiles(display_name, grade, matricule, phone), teams(name)")
+      .eq("organization_id", organizationId),
+    supabase.from("user_qualifications").select("user_id, qualifications(name)").eq("organization_id", organizationId),
+    supabase
+      .from("availability_campaigns")
+      .select("id, name, starts_on, opens_at, closes_at, locked, day_start, night_start")
+      .eq("organization_id", organizationId)
+      .order("starts_on", { ascending: true }),
+    supabase.from("teams").select("id, name").eq("organization_id", organizationId).order("name"),
+    supabase
+      .from("notifications")
+      .select("id, kind, subject, body, created_at, read_at")
+      .order("created_at", { ascending: false })
+      .limit(50),
+    supabase.from("qualifications").select("name").eq("organization_id", organizationId),
+    // RLS limite déjà au propriétaire : le modèle de quelqu un ne regarde que lui.
+    supabase.from("availability_templates").select("weekday, availability_type"),
+    // Readable by administrators only; anyone else gets an empty list from RLS
+    // rather than a refusal, which is exactly what the screen should show.
+    supabase
+      .from("invitations")
+      .select("id, email, display_name, role, team_id, created_at")
+      .eq("organization_id", organizationId)
+      .is("accepted_at", null)
+      .order("created_at", { ascending: false }),
+  ]);
 
   const campaignIds = ((campaigns.data ?? []) as { id: string }[]).map(c => c.id);
   const [participants, entries, requirements, schedules, shifts, assignments, audit] = await Promise.all([
@@ -79,6 +87,7 @@ export async function loadState(session: AttachedSession): Promise<AppState> {
     teams: rows<"teams">(teams),
     notifications: rows<"notifications">(notifications),
     qualificationCatalogue: rows<"qualificationCatalogue">(catalogue),
+    template: rows<"template">(template),
     invitations: rows<"invitations">(invitations),
     participants: rows<"participants">(participants),
     entries: rows<"entries">(entries),

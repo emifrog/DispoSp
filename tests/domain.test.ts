@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import { createDemoState } from "../src/lib/seed";
 import {
   availableAgents,
+  entryKey,
   coverage,
+  coverageLevel,
   execute,
   filledDays,
   isOpen,
+  isoWeekday,
   isValidated,
   localDate,
   localMonth,
@@ -13,6 +16,8 @@ import {
   responseKey,
   shiftKey,
   shiftMonth,
+  templateEntries,
+  workload,
 } from "../src/lib/domain";
 import { personalCalendar, availabilityCsv } from "../src/lib/exports";
 
@@ -208,5 +213,88 @@ describe("Exports", () => {
     expect(csv).toContain('"\'=HYPERLINK(""bad"")"');
     expect(csv).toContain("Équipe");
     expect(csv.startsWith("\uFEFF")).toBe(true);
+  });
+});
+
+describe("Lecture du cahier des charges", () => {
+  const base = {
+    defined: true,
+    covered: true,
+    actual: 5,
+    need: 4,
+    qualifications: [] as { need: number; actual: number }[],
+  };
+
+  it("distingue le troisième niveau du §9 : couvert, limite, déficit", () => {
+    expect(coverageLevel({ ...base, defined: false, covered: false })).toBe("unset");
+    expect(coverageLevel({ ...base, covered: false, actual: 2 })).toBe("deficit");
+    expect(coverageLevel(base)).toBe("covered");
+    // Juste assez : une absence et le créneau est court.
+    expect(coverageLevel({ ...base, actual: 4 })).toBe("tight");
+    // L’effectif a de la marge, mais une qualification est à son minimum exact.
+    expect(coverageLevel({ ...base, qualifications: [{ need: 1, actual: 1 }] })).toBe("tight");
+    // Un minimum à zéro n’est jamais « limite » : il n’exige rien.
+    expect(coverageLevel({ ...base, qualifications: [{ need: 0, actual: 0 }] })).toBe("covered");
+  });
+
+  it("ventile la charge en Jour, Nuit et 24 h, comme le demande le §8", () => {
+    let state = execute(fullResponse(), actor, { type: "validate", campaignId }, now);
+    const hold = (date: string, shift: "DAY" | "NIGHT") => {
+      state.assignments[shiftKey(campaignId, date, shift)] = [actor.id];
+    };
+    for (const key of Object.keys(state.assignments)) state.assignments[key] = [];
+    hold("2026-10-01", "DAY");
+    hold("2026-10-02", "NIGHT");
+    // Les deux créneaux d’une même date : une garde de 24 h, pas deux gardes.
+    hold("2026-10-03", "DAY");
+    hold("2026-10-03", "NIGHT");
+    expect(workload(state, campaignId, actor.id)).toEqual({ day: 1, night: 1, full: 1, total: 4 });
+    expect(workload(state, campaignId, "marie")).toEqual({ day: 0, night: 0, full: 0, total: 0 });
+  });
+});
+
+describe("Disponibilité habituelle", () => {
+  it("numérote la semaine comme ISO 8601, lundi en tête", () => {
+    // 2026-10-01 est un jeudi ; 2026-10-04, un dimanche.
+    expect(isoWeekday("2026-10-01")).toBe(4);
+    expect(isoWeekday("2026-10-04")).toBe(7);
+    expect(isoWeekday("2026-10-05")).toBe(1);
+  });
+
+  it("ne touche qu’aux jours de semaine que le modèle mentionne", () => {
+    const entries = templateEntries({ "6": "FULL_24H", "7": "UNAVAILABLE" }, "2026-10");
+    // Octobre 2026 : cinq samedis et quatre dimanches.
+    expect(entries.filter(e => e.type === "FULL_24H")).toHaveLength(5);
+    expect(entries.filter(e => e.type === "UNAVAILABLE")).toHaveLength(4);
+    expect(entries.every(e => [6, 7].includes(isoWeekday(e.date)))).toBe(true);
+    expect(templateEntries({}, "2026-10")).toEqual([]);
+  });
+
+  it("enregistre un modèle sans rien écrire dans les disponibilités", () => {
+    const state = execute(createDemoState(now), actor, { type: "template", days: { "1": "DAY", "2": null } }, now);
+    expect(state.template).toEqual({ "1": "DAY" });
+    // Un modèle n’est pas une disponibilité : rien n’a bougé.
+    expect(Object.keys(state.entries)).toEqual(Object.keys(createDemoState(now).entries));
+  });
+
+  it("applique le modèle, écrase les jours concernés et invalide la réponse", () => {
+    const validated = execute(fullResponse(), actor, { type: "validate", campaignId }, now);
+    expect(isValidated(validated, campaignId, actor.id)).toBe(true);
+    const withTemplate = execute(validated, actor, { type: "template", days: { "1": "UNAVAILABLE" } }, now);
+    const applied = execute(withTemplate, actor, { type: "applyTemplate", campaignId }, now);
+    const mondays = monthDays("2026-10").filter(d => isoWeekday(d) === 1);
+    for (const date of mondays) expect(applied.entries[entryKey(campaignId, actor.id, date)].type).toBe("UNAVAILABLE");
+    // Les autres jours gardent ce qu’ils avaient.
+    const tuesday = monthDays("2026-10").find(d => isoWeekday(d) === 2)!;
+    expect(applied.entries[entryKey(campaignId, actor.id, tuesday)].type).toBe("FULL_24H");
+    expect(isValidated(applied, campaignId, actor.id)).toBe(false);
+  });
+
+  it("refuse d’appliquer un modèle vide ou une campagne fermée", () => {
+    const state = createDemoState(now);
+    expect(() => execute(state, actor, { type: "applyTemplate", campaignId }, now)).toThrow("est vide");
+    const withTemplate = execute(state, actor, { type: "template", days: { "1": "DAY" } }, now);
+    const closed = execute(withTemplate, actor, { type: "close", campaignId, closed: true }, now);
+    expect(() => execute(closed, actor, { type: "applyTemplate", campaignId }, now)).toThrow("fermée");
   });
 });

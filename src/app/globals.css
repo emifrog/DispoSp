@@ -390,6 +390,11 @@ label {
   background: #27a483;
   display: inline-block;
 }
+.heading-buttons {
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
+}
 .page-heading {
   display: flex;
   align-items: center;
@@ -759,10 +764,134 @@ label {
   background: #fff0ec;
   color: #ce8878;
 }
+/* Covered with nothing to spare: one absence and the shift is short. §9 asks for
+   this third level, and a manager reads the orange cells first. */
+.tight {
+  background: #fff5e6;
+  color: #b8802f;
+}
 /* Neither covered nor in deficit: no requirement has been recorded for the shift. */
 .unset {
   background: #f1f4f8;
   color: #93a2b5;
+}
+.day-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+  gap: 14px;
+  padding: 0 22px 22px;
+}
+.day-group {
+  border: 1px solid #eff2f7;
+  border-radius: 11px;
+  overflow: hidden;
+}
+.day-group header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10px 13px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.day-group header strong {
+  font-size: 17px;
+}
+.day-group.day header {
+  background: #e9f7ef;
+  color: #2f8f63;
+}
+.day-group.night header {
+  background: #e8f0fe;
+  color: #2f68b8;
+}
+.day-group.full header {
+  background: #f3ecfd;
+  color: #7a4fbe;
+}
+.day-group.unavailable header {
+  background: #fdecea;
+  color: #c0453f;
+}
+.day-group.unknown header,
+.day-group.pending header {
+  background: #f1f4f8;
+  color: #6b7c94;
+}
+.day-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 6px 13px 11px;
+}
+.day-group li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 0;
+}
+.day-group li .avatar {
+  width: 26px;
+  height: 26px;
+  font-size: 10px;
+}
+.day-group li strong {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.day-group li small {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.day-group > p {
+  padding: 9px 13px 13px;
+  margin: 0;
+}
+.equity-table-scroll {
+  overflow-x: auto;
+  padding: 0 22px 22px;
+}
+.equity-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.equity-table th,
+.equity-table td {
+  padding: 9px 10px;
+  text-align: right;
+  border-bottom: 1px solid #eff2f7;
+  white-space: nowrap;
+}
+.equity-table thead th {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.equity-table tbody th {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 500;
+  text-align: left;
+}
+.equity-table tbody th .avatar {
+  width: 26px;
+  height: 26px;
+  font-size: 10px;
+}
+.equity-table thead th:first-child {
+  text-align: left;
+}
+.equity-table tbody tr:last-child th,
+.equity-table tbody tr:last-child td {
+  border-bottom: none;
+}
+/* A zero is context, not news: it should not compete with the figures. */
+.equity-table td.nil {
+  color: #b6c1cf;
 }
 .heatmap-scroll {
   overflow-x: auto;
@@ -2777,4 +2906,109 @@ fieldset.field legend {
   align-items: center;
   gap: 6px;
   margin: 4px 0 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Impression — le PDF du §11 passe par le navigateur.
+   Le classeur Excel reste l'outil de la matrice, qui est virtualisée : à
+   l'impression, seules les lignes rendues sortiraient. La vue par journée et le
+   planning personnel, eux, n'ont pas ce problème.
+   --------------------------------------------------------------------------- */
+@media print {
+  .sidebar,
+  .topbar,
+  .demo-banner,
+  .skip-link,
+  .campaign-context,
+  .table-filters,
+  .sidebar-backdrop,
+  .toast,
+  .heading-action,
+  .heading-buttons,
+  .no-print {
+    display: none !important;
+  }
+  body,
+  .app-shell,
+  .main-shell {
+    display: block;
+    background: #fff;
+  }
+  main {
+    padding: 0 !important;
+  }
+  .panel {
+    box-shadow: none;
+    border: 1px solid #d8dfe8;
+    break-inside: avoid;
+  }
+  .page-heading {
+    padding: 0 0 12px;
+  }
+  .day-group,
+  .notice-list li,
+  .audit-list li,
+  .equity-table tr {
+    break-inside: avoid;
+  }
+  .day-groups {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .table-scroll,
+  .heatmap-scroll,
+  .equity-table-scroll {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  a[href]::after {
+    content: "";
+  }
+}
+
+.weekly-template {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 22px 14px;
+}
+.weekly-template > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.weekly-template > div > span {
+  font-size: 12.5px;
+  text-transform: capitalize;
+}
+.weekly-choices {
+  display: flex;
+  gap: 5px;
+}
+.weekly-choices button {
+  width: 30px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.45;
+  transition:
+    opacity 0.15s,
+    border-color 0.15s;
+}
+.weekly-choices button:hover {
+  opacity: 0.8;
+}
+/* Le choix retenu se voit par le contraste, pas par une couleur de plus :
+   les cinq états ont déjà la leur, partout dans l'application. */
+.weekly-choices button.chosen {
+  opacity: 1;
+  border-color: currentColor;
+}
+.template-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 22px 6px;
 }

@@ -2,7 +2,7 @@ import "server-only";
 import { fromZonedTime } from "date-fns-tz";
 import { frenchMessage, type DatabaseFailure } from "./command-errors";
 import { dispatch } from "./mailer.server";
-import { lastDayOfMonth, monthDays, type Command, type Shift } from "./domain";
+import { lastDayOfMonth, monthDays, templateEntries, type Availability, type Command, type Shift } from "./domain";
 import type { AttachedSession } from "./session";
 import { createActionClient } from "./supabase/server";
 
@@ -49,7 +49,70 @@ export async function runCommand(session: AttachedSession, command: Command): Pr
       return markNotificationsRead(client, command);
     case "remind":
       return remindCampaign(client, session, command);
+    case "template":
+      return writeTemplate(client, session, command);
+    case "applyTemplate":
+      return applyTemplate(client, session, command);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Disponibilité habituelle (§4)
+// ---------------------------------------------------------------------------
+
+async function writeTemplate(client: Client, session: AttachedSession, command: Of<"template">) {
+  const organizationId = session.membership.organizationId;
+  // La semaine entière est remplacée : l’écran envoie toujours les sept jours,
+  // et un jour absent veut dire « rien d’habituel », pas « inchangé ».
+  const { error: clearFailure } = await client
+    .from("availability_templates")
+    .delete()
+    .eq("organization_id", organizationId)
+    .eq("user_id", session.userId);
+  if (clearFailure) fail(clearFailure);
+  const rows = Object.entries(command.days)
+    .filter(([, value]) => value)
+    .map(([weekday, value]) => ({
+      organization_id: organizationId,
+      user_id: session.userId,
+      weekday: Number(weekday),
+      availability_type: value,
+    }));
+  if (!rows.length) return;
+  const { error } = await client.from("availability_templates").insert(rows);
+  if (error) fail(error);
+}
+
+async function applyTemplate(client: Client, session: AttachedSession, command: Of<"applyTemplate">) {
+  const { data: campaign, error: campaignFailure } = await client
+    .from("availability_campaigns")
+    .select("starts_on")
+    .eq("id", command.campaignId)
+    .maybeSingle();
+  if (campaignFailure) fail(campaignFailure);
+  if (!campaign) throw new Error("Campagne introuvable.");
+
+  const { data: rows, error: templateFailure } = await client
+    .from("availability_templates")
+    .select("weekday, availability_type")
+    .eq("user_id", session.userId);
+  if (templateFailure) fail(templateFailure);
+  const template = Object.fromEntries(
+    (rows ?? []).map(row => [String(row.weekday), row.availability_type as Availability]),
+  );
+  const entries = templateEntries(template, (campaign.starts_on as string).slice(0, 7));
+  if (!entries.length) throw new Error("Votre disponibilité habituelle est vide : renseignez-la d’abord.");
+
+  // Un type à la fois : la commande de saisie écrit déjà une valeur sur plusieurs
+  // dates, et c’est elle qui porte les règles — fenêtre ouverte, invalidation.
+  for (const type of new Set(entries.map(entry => entry.type)))
+    await writeAvailability(client, session.userId, {
+      type: "availability",
+      campaignId: command.campaignId,
+      dates: entries.filter(entry => entry.type === type).map(entry => entry.date),
+      value: type,
+      comment: "",
+    });
 }
 
 // Nobody runs a clock, so a reminder is an act a manager takes. The database

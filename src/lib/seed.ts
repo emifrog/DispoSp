@@ -164,6 +164,7 @@ export function createDemoState(now = new Date()): AppState {
     inactiveAgents: [],
     teams: [],
     qualificationCatalogue: [],
+    template: {},
     invitations: [],
     notifications: [
       {

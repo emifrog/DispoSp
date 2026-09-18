@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { CalendarDays, Check, CheckCheck, CircleAlert, Clock3, Moon, Sun, X, Zap } from "lucide-react";
+import { CalendarDays, Check, CheckCheck, CircleAlert, Clock3, Moon, Repeat, Sun, X, Zap } from "lucide-react";
 import { useApp } from "./provider";
 import { PageTitle, Panel, Legend } from "./common";
 import { Button } from "./ui/button";
@@ -15,8 +15,17 @@ import {
   monthDays,
   monthLabel,
   dateLabel,
-  type Availability as AvailabilityType,
+  plural,
+  templateEntries,
+  weekdayNames,
+  type Availability,
+  type AppState,
 } from "@/lib/domain";
+
+// Un jour de semaine sans choix ne fait pas partie du modèle : on le retire,
+// pour que la comparaison avec ce que la base porte soit exacte.
+const clean = (days: Record<string, Availability | undefined>): AppState["template"] =>
+  Object.fromEntries(Object.entries(days).filter(([, value]) => value)) as AppState["template"];
 export function Availability() {
   const { state, actor, campaignId, campaign, run } = useApp();
   const days = monthDays(campaign.month);
@@ -27,7 +36,12 @@ export function Availability() {
   const [multiple, setMultiple] = useState(false);
   const [editing, setEditing] = useState(false);
   const [quick, setQuick] = useState(false);
-  const [value, setValue] = useState<AvailabilityType | null>("DAY");
+  // Le modèle se compose avant d’être enregistré : tant qu’il diffère de ce que
+  // la base porte, l’appliquer n’aurait pas le sens que l’écran montre.
+  const [draft, setDraft] = useState<Record<string, Availability | undefined>>(() => ({ ...state.template }));
+  const templateChanged = JSON.stringify(clean(draft)) !== JSON.stringify(clean(state.template));
+  const planned = templateEntries(clean(draft), campaign.month);
+  const [value, setValue] = useState<Availability | null>("DAY");
   const [comment, setComment] = useState("");
   const [start, setStart] = useState(days[0]);
   const [end, setEnd] = useState(days[days.length - 1]);
@@ -188,6 +202,68 @@ export function Availability() {
               {validated ? "Réponse validée" : "Valider mes disponibilités"}
             </Button>
           </Panel>
+          <Panel
+            title="Ma disponibilité habituelle"
+            subtitle="Un modèle par jour de semaine, réutilisable d’une campagne à l’autre."
+          >
+            <div className="weekly-template">
+              {weekdayNames.map((name, index) => {
+                const weekday = String(index + 1);
+                const current = draft[weekday];
+                return (
+                  <div key={weekday}>
+                    <span>{name}</span>
+                    <div className="weekly-choices">
+                      {(Object.keys(labels) as Availability[]).map(type => (
+                        <button
+                          key={type}
+                          type="button"
+                          aria-pressed={current === type}
+                          aria-label={`${name} : ${labels[type].label}`}
+                          className={`badge ${labels[type].className} ${current === type ? "chosen" : ""}`}
+                          onClick={() => setDraft(d => ({ ...d, [weekday]: current === type ? undefined : type }))}
+                        >
+                          {labels[type].short}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="muted small">
+              {planned.length
+                ? `${planned.length} ${plural(planned.length, "jour")} ${plural(planned.length, "serait", "seraient")} renseignés sur ${monthLabel(campaign.month)}.`
+                : "Aucun jour de semaine renseigné : le modèle ne s’applique à rien."}
+            </p>
+            <div className="template-buttons">
+              <Button
+                variant="secondary"
+                disabled={!templateChanged}
+                onClick={() =>
+                  run({
+                    type: "template",
+                    // Sept jours toujours envoyés : un jour absent voudrait dire
+                    // « inchangé », or l’écran veut dire « rien d’habituel ».
+                    days: Object.fromEntries(weekdayNames.map((_, i) => [String(i + 1), draft[String(i + 1)] ?? null])),
+                  })
+                }
+              >
+                Enregistrer le modèle
+              </Button>
+              <Button
+                className="full-width"
+                disabled={!open || !planned.length || templateChanged}
+                onClick={() => run({ type: "applyTemplate", campaignId })}
+              >
+                <Repeat size={17} />
+                Appliquer à {monthLabel(campaign.month)}
+              </Button>
+            </div>
+            <p className="muted small">
+              Appliquer écrase les jours concernés et remet votre réponse à valider. Les autres jours ne bougent pas.
+            </p>
+          </Panel>
           <div className="info-card">
             <Clock3 size={22} />
             <h3>Comment fonctionne le 24 h ?</h3>
@@ -265,7 +341,7 @@ export function Availability() {
               key={key}
               aria-pressed={value === key}
               className={`${label.className} ${value === key ? "chosen" : ""}`}
-              onClick={() => setValue(key as AvailabilityType)}
+              onClick={() => setValue(key as Availability)}
             >
               <strong>{label.short}</strong>
               <span>{label.label}</span>

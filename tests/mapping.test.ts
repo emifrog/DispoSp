@@ -24,6 +24,11 @@ function raw(overrides: Partial<Raw> = {}): Raw {
     ],
     teams: [{ id: "t1", name: "Section Test" }],
     qualificationCatalogue: [{ name: "SAP" }, { name: "Chef" }],
+    template: [
+      { weekday: 1, availability_type: "DAY" },
+      { weekday: 6, availability_type: "FULL_24H" },
+      { weekday: 3, availability_type: "INCONNU" },
+    ],
     invitations: [
       {
         id: "i1",

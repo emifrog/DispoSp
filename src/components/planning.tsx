@@ -29,6 +29,7 @@ import {
   requirement,
   shiftKey,
   suggestedRequirement,
+  workload,
   type Agent,
   type Shift,
 } from "@/lib/domain";
@@ -315,23 +316,44 @@ export function Planning() {
           <p className="save-caption">Le brouillon est enregistré à chaque modification.</p>
         </Panel>
       </div>
-      <Panel title="Répartition des gardes" subtitle="Charge dans le brouillon du mois, pour guider vos choix.">
-        <div className="workload-list">
-          {state.agents.map(a => {
-            const count = Object.entries(state.assignments).filter(
-              ([k, ids]) => k.startsWith(campaignId + "/") && ids.includes(a.id),
-            ).length;
-            return (
-              <div key={a.id}>
-                <Avatar agent={a} />
-                <span>{a.name}</span>
-                <strong>
-                  {count}
-                  <small> {plural(count, "créneau", "créneaux")}</small>
-                </strong>
-              </div>
-            );
-          })}
+      <Panel
+        title="Répartition des gardes"
+        subtitle="Charge dans le brouillon du mois, pour guider vos choix."
+        action={
+          <span className="muted small">24 h = les deux créneaux d’une même date · le total compte les créneaux</span>
+        }
+      >
+        <div className="equity-table-scroll">
+          <table className="equity-table">
+            <thead>
+              <tr>
+                <th scope="col">Agent</th>
+                <th scope="col">Jour</th>
+                <th scope="col">Nuit</th>
+                <th scope="col">24 h</th>
+                <th scope="col">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {state.agents
+                .map(a => ({ agent: a, load: workload(state, campaignId, a.id) }))
+                .sort((x, y) => y.load.total - x.load.total || x.agent.name.localeCompare(y.agent.name, "fr"))
+                .map(({ agent, load }) => (
+                  <tr key={agent.id}>
+                    <th scope="row">
+                      <Avatar agent={agent} />
+                      {agent.name}
+                    </th>
+                    <td className={load.day ? "" : "nil"}>{load.day}</td>
+                    <td className={load.night ? "" : "nil"}>{load.night}</td>
+                    <td className={load.full ? "" : "nil"}>{load.full}</td>
+                    <td>
+                      <strong>{load.total}</strong>
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
         </div>
       </Panel>
       <Modal
