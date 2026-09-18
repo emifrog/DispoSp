@@ -35,11 +35,10 @@ const agentNav = [
   { href: "/profil", label: "Mon profil", icon: UserRound },
 ];
 export function Shell({ children }: { children: ReactNode }) {
-  const { state, actor, switchRole, campaignId, setCampaignId, ready } = useApp();
+  const { state, actor, agent, switchRole, campaignId, setCampaignId, ready } = useApp();
   const path = usePathname();
   const [menu, setMenu] = useState(false);
   const nav = actor.role === "MANAGER" ? managerNav : agentNav;
-  const agent = state.agents.find(a => a.id === actor.id)!;
   const managerOnly = [...managerNav.map(n => n.href), "/historique", "/parametres"].includes(path);
   return (
     <div className="app-shell">

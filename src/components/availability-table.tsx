@@ -15,8 +15,7 @@ import { Button } from "./ui/button";
 import { availabilityCsv, download } from "@/lib/exports";
 import { type Agent, dateLabel, entryKey, isValidated, monthDays, monthLabel } from "@/lib/domain";
 export function AvailabilityTable() {
-  const { state, campaignId } = useApp();
-  const campaign = state.campaigns.find(c => c.id === campaignId)!;
+  const { state, campaignId, campaign } = useApp();
   const [search, setSearch] = useState("");
   const [team, setTeam] = useState("");
   const [status, setStatus] = useState("");

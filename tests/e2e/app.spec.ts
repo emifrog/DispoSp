@@ -86,3 +86,66 @@ test("tableau de bord, navigation et affichage sans débordement", async ({ page
   await page.screenshot({ path: `test-results/dashboard-${test.info().project.name}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });
+test("une sauvegarde locale inutilisable ne fait pas planter l’application", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  // Schema-valid but unusable: a campaign exists, so the state is accepted, yet
+  // there is no agent behind the demonstration profile. Every screen used to
+  // resolve that lookup with a non-null assertion and crashed on it.
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "disposp-demo-v1",
+      JSON.stringify({
+        version: 1,
+        organization: { name: "Centre vide", dayStart: 8, nightStart: 20 },
+        agents: [],
+        campaigns: [
+          {
+            id: "campaign-2026-10",
+            name: "Campagne orpheline",
+            month: "2026-10",
+            opensOn: "2026-09-01",
+            closesOn: "2026-09-30",
+            closed: false,
+            dayStart: 8,
+            nightStart: 20,
+          },
+        ],
+        entries: {},
+        responses: {},
+        requirements: {},
+        assignments: {},
+        publications: {},
+        audit: [],
+      }),
+    );
+    sessionStorage.setItem("disposp-demo-actor", JSON.stringify({ id: "inconnu", role: "MANAGER" }));
+  });
+  // Each screen must render for real. Asserting on <main> alone would pass on the
+  // error boundary, which also renders a <main>.
+  const screens = [
+    ["/tableau-de-bord", "Une équipe prête, ensemble."],
+    ["/planning", "Construire le planning"],
+    ["/disponibilites", "Toutes les disponibilités"],
+    ["/mes-disponibilites", "Mes disponibilités"],
+    ["/mon-planning", "Mon planning"],
+  ];
+  for (const [route, heading] of screens) {
+    await page.goto(route);
+    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+    await expect(page.getByText("Cet écran n’a pas pu s’afficher.")).toBeHidden();
+  }
+  await expect(page.getByText("La sauvegarde locale n’est pas compatible.")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("une sauvegarde locale illisible repart des données d’exemple", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.clock.setFixedTime(new Date("2026-09-18T10:00:00Z"));
+  await page.addInitScript(() => localStorage.setItem("disposp-demo-v1", "{ceci n’est pas du JSON"));
+  await page.goto("/tableau-de-bord");
+  await expect(page.getByRole("heading", { name: "Une équipe prête, ensemble." })).toBeVisible();
+  await expect(page.getByText("La sauvegarde locale n’a pas pu être lue.")).toBeVisible();
+  expect(errors).toEqual([]);
+});

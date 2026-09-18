@@ -1,13 +1,17 @@
 "use client";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { execute, stateSchema, type AppState, type Command, type Actor } from "@/lib/domain";
+import { execute, stateSchema, type Agent, type AppState, type Campaign, type Command, type Actor } from "@/lib/domain";
 import { createDemoState } from "@/lib/seed";
+import { ACTOR_KEY, STATE_KEY } from "@/lib/storage";
 
-const STORAGE_KEY = "disposp-demo-v1";
 type Context = {
   state: AppState;
   actor: Actor;
+  /** The selected campaign, already resolved: consumers never look it up again. */
+  campaign: Campaign;
+  /** The agent behind the current demonstration profile, already resolved. */
+  agent: Agent;
   campaignId: string;
   setCampaignId: (id: string) => void;
   switchRole: (role: Actor["role"]) => void;
@@ -30,17 +34,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = localStorage.getItem(STATE_KEY);
       if (saved) {
         const result = stateSchema.safeParse(JSON.parse(saved));
-        if (result.success && result.data.campaigns.length) {
+        // A state without agents or campaigns passes the schema but has no screen
+        // to show; keep the seeded demonstration rather than render an empty shell.
+        if (result.success && result.data.campaigns.length && result.data.agents.length) {
           setState(result.data);
           // A saved state predates today's demonstration window, so its campaigns
           // are not the ones just seeded: point at one it actually contains.
           setCampaignId(id => (result.data.campaigns.some(c => c.id === id) ? id : result.data.campaigns[0].id));
         } else setMessage("La sauvegarde locale n’est pas compatible. Les données d’exemple sont affichées.");
       }
-      const session = sessionStorage.getItem("disposp-demo-actor");
+      const session = sessionStorage.getItem(ACTOR_KEY);
       if (session) {
         const parsed = JSON.parse(session);
         if (
@@ -64,7 +70,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       const next = execute(state, actor, command);
       // Save first: do not announce success if storage is blocked or full.
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      localStorage.setItem(STATE_KEY, JSON.stringify(next));
       setState(next);
       setMessage(next.audit[0].action + ".");
       return true;
@@ -74,21 +80,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }
   function switchRole(role: Actor["role"]) {
-    sessionStorage.setItem("disposp-demo-actor", JSON.stringify({ ...actor, role }));
+    sessionStorage.setItem(ACTOR_KEY, JSON.stringify({ ...actor, role }));
     setActor(a => ({ ...a, role }));
     if (role === "AGENT") router.push("/mes-disponibilites");
     else if (path.startsWith("/mes-") || path === "/profil") router.push("/tableau-de-bord");
   }
+  // Resolved once here so no screen has to assert that a lookup succeeded. Both
+  // lists are non-empty: the seed fills them and the restore path above rejects
+  // any saved state that does not.
+  const campaign = state.campaigns.find(c => c.id === campaignId) ?? state.campaigns[0];
+  const agent = state.agents.find(a => a.id === actor.id) ?? state.agents[0];
   return (
     <Store.Provider
       value={{
         state,
         actor,
+        campaign,
+        agent,
         campaignId,
         setCampaignId,
         switchRole,
         selectAgent: id => {
-          sessionStorage.setItem("disposp-demo-actor", JSON.stringify({ ...actor, id }));
+          sessionStorage.setItem(ACTOR_KEY, JSON.stringify({ ...actor, id }));
           setActor(a => ({ ...a, id }));
         },
         run,

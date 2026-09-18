@@ -177,7 +177,8 @@ export function execute(state: AppState, actor: Actor, command: Command, now = n
   if ("campaignId" in command && !campaign) throw new Error("Campagne introuvable.");
   if (!["availability", "validate"].includes(command.type) && actor.role !== "MANAGER")
     throw new Error("Cette action est réservée au responsable.");
-  if (!next.agents.some(a => a.id === actor.id)) throw new Error("Agent introuvable.");
+  const author = next.agents.find(a => a.id === actor.id);
+  if (!author) throw new Error("Agent introuvable.");
   let action = "";
   let detail = "";
   if (command.type === "availability" && campaign) {
@@ -271,7 +272,7 @@ export function execute(state: AppState, actor: Actor, command: Command, now = n
   next.audit.unshift({
     id: crypto.randomUUID(),
     at: stamp,
-    actor: next.agents.find(a => a.id === actor.id)!.name,
+    actor: author.name,
     action,
     detail,
   });

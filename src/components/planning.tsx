@@ -31,8 +31,7 @@ import {
 } from "@/lib/domain";
 
 export function Planning() {
-  const { state, campaignId, run } = useApp();
-  const campaign = state.campaigns.find(c => c.id === campaignId)!;
+  const { state, campaignId, campaign, run } = useApp();
   const days = monthDays(campaign.month);
   const [selectedDate, setDate] = useState(() =>
     typeof window === "undefined" ? days[14] : (new URLSearchParams(window.location.search).get("date") ?? days[14]),

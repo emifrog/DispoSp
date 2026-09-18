@@ -7,9 +7,8 @@ import { PageTitle, Panel, Avatar } from "./common";
 import { Button } from "./ui/button";
 import { coverage, dateLabel, filledDays, isOpen, isValidated, monthDays, monthLabel, type Shift } from "@/lib/domain";
 export function Dashboard() {
-  const { state, campaignId } = useApp();
+  const { state, campaignId, campaign } = useApp();
   const [mode, setMode] = useState<"potential" | "planned">("potential");
-  const campaign = state.campaigns.find(c => c.id === campaignId)!;
   const days = monthDays(campaign.month);
   const respondents = state.agents.filter(a => isValidated(state, campaignId, a.id));
   const pending = state.agents.filter(a => !isValidated(state, campaignId, a.id));

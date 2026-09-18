@@ -305,8 +305,7 @@ export function Settings() {
 }
 
 export function PersonalPlanning() {
-  const { state, actor, campaignId } = useApp();
-  const campaign = state.campaigns.find(c => c.id === campaignId)!;
+  const { state, actor, campaignId, campaign } = useApp();
   const shifts = monthDays(campaign.month).flatMap(date =>
     (["DAY", "NIGHT"] as const).flatMap(shift => {
       const published = state.publications[shiftKey(campaignId, date, shift)];
@@ -375,8 +374,7 @@ export function PersonalPlanning() {
 }
 
 export function Profile() {
-  const { state, actor, selectAgent } = useApp();
-  const agent = state.agents.find(a => a.id === actor.id)!;
+  const { state, actor, agent, selectAgent } = useApp();
   return (
     <>
       <PageTitle

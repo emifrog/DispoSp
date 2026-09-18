@@ -18,8 +18,7 @@ import {
   type Availability as AvailabilityType,
 } from "@/lib/domain";
 export function Availability() {
-  const { state, actor, campaignId, run } = useApp();
-  const campaign = state.campaigns.find(c => c.id === campaignId)!;
+  const { state, actor, campaignId, campaign, run } = useApp();
   const days = monthDays(campaign.month);
   const filled = filledDays(state, campaign, actor.id);
   const validated = isValidated(state, campaignId, actor.id);
