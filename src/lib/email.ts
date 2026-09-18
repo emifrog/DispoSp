@@ -18,6 +18,7 @@ export function message(notice: Pending, appUrl: string): Message {
   const text = [body, "", `${call} : ${link}`, "", "DispoSP"].filter(line => line !== undefined).join("\n");
   const html = [
     `<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:15px;line-height:1.55;color:#1d2a3a">`,
+    `<img src="${escape(link)}/logo-disposp.png" alt="DispoSP" width="132" height="30" style="display:block;margin:0 0 18px;border:0">`,
     `<p style="margin:0 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#7186a2">${escape(kind)}</p>`,
     `<h1 style="margin:0 0 14px;font-size:18px;font-weight:600">${escape(notice.subject)}</h1>`,
     body ? `<p style="margin:0 0 18px">${escape(body)}</p>` : "",

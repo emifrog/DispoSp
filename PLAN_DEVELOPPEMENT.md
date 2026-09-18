@@ -47,6 +47,8 @@ Les six contrôles de l’intégration continue sont le formatage, le lint, les 
 
 ## 2. Priorités vers une première utilisation
 
+La vérification de ces priorités sur le site public est détaillée pas à pas dans [la recette](RECETTE.md).
+
 | Priorité | Action                                                                | Résultat attendu                                                              |
 | -------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | 1        | Confirmer le mode connecté sur l’hébergement et les URL Supabase Auth | Connexion et confirmation d’adresse depuis l’URL publique                     |

@@ -20,7 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { Brand } from "./brand";
+import { Brand, BrandMark } from "./brand";
 import { useApp } from "./provider";
 import { Button } from "./ui/button";
 import { monthLabel } from "@/lib/domain";
@@ -130,6 +130,12 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
           <button className="mobile-only icon-button" aria-label="Ouvrir le menu" onClick={() => setMenu(true)}>
             <Menu />
           </button>
+          {/* Sur un téléphone, la barre latérale est escamotée et le fil
+              d'Ariane masqué : sans cela, l'application ne porterait jamais son
+              nom sur l'appareil par lequel la plupart des agents y viennent. */}
+          <div className="topbar-brand">
+            <BrandMark size={28} />
+          </div>
           <div className="breadcrumb">
             Espace de travail <span>/</span>{" "}
             <strong>
@@ -211,6 +217,10 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
             </Link>
           </div>
         )}
+        <div className="print-header" aria-hidden="true">
+          <Brand width={132} />
+          <span>{state.organization.name}</span>
+        </div>
         <main id="main" tabIndex={-1}>
           <div className="campaign-context">
             <span>

@@ -212,6 +212,35 @@ test("la synthèse ne rend qu’une fraction des lignes à grand effectif", asyn
   expect(await page.locator("tbody tr:not(.virtual-spacer)").count()).toBeLessThan(60);
 });
 
+// La barre latérale porte le mot-symbole, mais elle est escamotée sur un
+// téléphone : sans marque dans la barre du haut, l'application ne dirait jamais
+// son nom sur l'appareil par lequel la plupart des agents y viennent.
+test("la marque est présente quel que soit l’appareil", async ({ page, isMobile }) => {
+  await page.goto("/tableau-de-bord");
+  if (isMobile) {
+    await expect(page.locator(".topbar-brand img")).toBeVisible();
+    await expect(page.locator(".sidebar-brand")).toBeHidden();
+  } else {
+    await expect(page.locator(".sidebar-brand img")).toBeVisible();
+    await expect(page.locator(".topbar-brand")).toBeHidden();
+  }
+});
+
+// Un planning imprimé quitte l'application : affiché en caserne, glissé dans un
+// dossier, transmis. La barre latérale — donc la marque — disparaît au moment de
+// l'impression, d'où cet en-tête, qui ne doit pas pour autant peser à l'écran.
+test("le document imprimé porte la marque et le nom du centre", async ({ page }) => {
+  await page.goto("/disponibilites");
+  await expect(page.locator(".print-header")).toBeHidden();
+  await page.emulateMedia({ media: "print" });
+  const header = page.locator(".print-header");
+  await expect(header).toBeVisible();
+  await expect(header.locator("img")).toBeVisible();
+  await expect(header).toContainText("CIS Val de Loire");
+  await expect(page.locator(".sidebar")).toBeHidden();
+  await page.emulateMedia({ media: "screen" });
+});
+
 test("l’historique se filtre par période et s’exporte", async ({ page }) => {
   await page.goto("/historique");
   await expect(page.getByText("1 action sur 1")).toBeVisible();

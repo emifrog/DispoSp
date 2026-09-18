@@ -17,3 +17,9 @@ export function Brand({ tone = "navy", width = 176 }: { tone?: "navy" | "light";
     />
   );
 }
+
+/** Le symbole seul, carré. Là où la largeur manque — la barre du haut d'un
+    téléphone — il dit la même chose que le mot en quatre fois moins de place. */
+export function BrandMark({ size = 28 }: { size?: number }) {
+  return <Image className="brand-mark" src="/symbole-disposp.png" alt="DispoSP" width={size} height={size} priority />;
+}

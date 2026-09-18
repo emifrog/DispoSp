@@ -37,6 +37,15 @@ describe("Message envoyé à un agent", () => {
     expect(built.subject).toBeTruthy();
   });
 
+  // L'image est distante : beaucoup de messageries la bloquent par défaut. Elle
+  // ne doit donc rien porter d'essentiel, et son adresse doit être absolue.
+  it("porte la marque sans lui confier d’information", () => {
+    const built = message(notice(), "https://dispo-sp.example.fr/");
+    expect(built.html).toContain('src="https://dispo-sp.example.fr/logo-disposp.png"');
+    expect(built.html).toContain('alt="DispoSP"');
+    expect(built.text).toContain("Renseigner mes disponibilités : https://dispo-sp.example.fr");
+    expect(built.text).not.toContain("logo-disposp");
+  });
   it("échappe ce qui vient de la base, sujet compris", () => {
     const built = message(
       notice({ subject: "Rappel <script>alert(1)</script>", body: 'Équipe "Alpha" & Bravo' }),

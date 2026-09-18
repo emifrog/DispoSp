@@ -234,6 +234,10 @@ label {
   justify-content: space-between;
   gap: 16px;
 }
+/* Réservée au mobile, où elle remplace le fil d'Ariane. */
+.topbar-brand {
+  display: none;
+}
 .breadcrumb {
   font-size: 12px;
   color: #91a0b3;
@@ -1096,6 +1100,10 @@ label {
 }
 .small-note svg {
   color: #9fbbdf;
+}
+/* Réservé au papier : à l'écran, la marque est déjà dans la barre latérale. */
+.print-header {
+  display: none;
 }
 .page-footer {
   padding: 0 36px 24px;
@@ -2353,6 +2361,19 @@ fieldset.field legend {
   .breadcrumb {
     display: none;
   }
+  .topbar-brand {
+    display: block;
+    flex: none;
+  }
+  .brand-mark {
+    display: block;
+  }
+  /* La pastille « Démo locale » répète le bandeau qui la suit immédiatement :
+     sur un écran étroit, la marque vaut mieux que la redite. Celle du mode
+     connecté reste, elle, parce qu'elle dit qu'on est sur de vraies données. */
+  .demo-tag:not(.connected) {
+    display: none;
+  }
   .topbar-actions {
     margin-left: auto;
   }
@@ -2958,6 +2979,23 @@ fieldset.field legend {
   }
   .page-heading {
     padding: 0 0 12px;
+  }
+  .print-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 0 0 14px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid #d8dfe8;
+  }
+  .print-header span {
+    font-size: 11px;
+    color: #4a5c74;
+  }
+  /* Répété en haut de chaque feuille d'un tirage de plusieurs pages. */
+  .print-header img {
+    break-after: avoid;
   }
   .day-group,
   .notice-list li,

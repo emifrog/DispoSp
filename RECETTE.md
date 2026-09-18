@@ -1,0 +1,300 @@
+# Recette avant mise en service — DispoSP
+
+Cette liste se parcourt **sur l'adresse publique**, pas en local. Elle sert à vérifier ce qu'aucun test automatique ne peut atteindre : la configuration de l'hébergement, l'arrivée réelle des emails, et le parcours de bout en bout avec de vraies personnes.
+
+Chaque étape dit ce qu'on fait, ce qu'on doit voir, et quoi conclure si on voit autre chose. **Une étape qui échoue arrête la recette** : les suivantes en dépendent.
+
+## Avant de commencer
+
+**Il faut** : deux comptes de messagerie distincts (un administrateur, un agent) et, si possible, un téléphone. Comptez une demi-journée d'attention, étalée sur deux ou trois jours — l'essentiel du délai vient de la vérification du domaine d'expédition et de l'attente des emails.
+
+**Choisissez un mois qui ne sert pas encore.** La recette crée une vraie campagne avec de vraies données : ne la faites pas sur le mois en cours.
+
+**Notez au fur et à mesure.** Un tableau vide est fourni à la fin.
+
+---
+
+## Partie 0 — La configuration
+
+C'est la partie la plus importante, et celle qu'on saute le plus volontiers.
+
+### 0.1 Le site public affiche-t-il les vraies données ?
+
+**Faire** — Ouvrir l'adresse publique dans une fenêtre de navigation privée.
+
+**Attendu** — Un écran de connexion. Rien d'autre.
+
+**Sinon** — Si vous voyez un tableau de bord avec des agents et un bandeau bleu « Espace de démonstration · données fictives sauvegardées dans ce navigateur », **arrêtez tout**. Le site tourne en démonstration. Un responsable pourrait planifier un mois entier sur des agents qui n'existent pas, sans jamais s'en apercevoir. C'est le pire mode de panne du projet, et il est silencieux.
+
+Corriger : sur l'hébergeur, `NEXT_PUBLIC_DISPOSP_MODE=connected`, puis **reconstruire et redéployer**. Cette variable est figée dans les fichiers au moment de la construction ; la changer sans reconstruire ne fait rien.
+
+### 0.2 Les adresses de retour d'authentification
+
+**Faire** — Dans Supabase, Authentication → URL Configuration, vérifier que l'adresse publique figure en Site URL et dans les Redirect URLs.
+
+**Attendu** — L'adresse exacte du site, avec `https://`.
+
+**Sinon** — Les liens de confirmation d'adresse renverront vers `localhost` ou vers une page d'erreur. L'agent ne pourra jamais activer son compte. Ça ne se verra qu'à l'étape 1.3, trop tard pour lui.
+
+### 0.3 L'expéditeur des emails
+
+**Faire** — Vérifier les trois variables sur l'hébergeur : `RESEND_API_KEY`, `RESEND_FROM`, `APP_URL`. Dans Resend, vérifier que le domaine d'expédition est validé (SPF et DKIM).
+
+**Attendu** — Les trois présentes, le domaine au vert chez Resend.
+
+**Sinon** — Sans ces trois variables, **aucun email ne part**. L'application continue de fonctionner : les notifications s'affichent dans son centre de messages et la file d'attente se garde. Mais personne n'est prévenu de rien, et une application de disponibilités dont on n'est pas prévenu est une application qu'on oublie.
+
+Un domaine non validé donne pire : les messages partent et atterrissent en indésirables.
+
+---
+
+## Partie 1 — L'arrivée d'un agent
+
+Si cette partie échoue, rien d'autre ne sert : personne n'entre.
+
+### 1.1 Enregistrer une invitation
+
+**Faire** — Connecté en administrateur, écran **Agents & équipes**, bouton **Inviter un agent**. Saisir l'adresse du second compte, choisir l'équipe et le rôle _Agent_.
+
+**Attendu** — L'invitation apparaît dans « Invitations en attente ».
+
+**Sinon** — Si un message d'erreur en français apparaît, il vient de la base et dit la vraie raison. S'il est générique (« La modification n'a pas pu être enregistrée »), la migration `0004` n'est peut-être pas appliquée.
+
+### 1.2 Créer le compte invité
+
+**Faire** — Transmettre l'adresse du site à l'invité. Depuis l'autre messagerie, créer un compte **avec exactement l'adresse invitée**.
+
+**Attendu** — Le compte se crée, un email de confirmation arrive.
+
+**Sinon** — Si l'email de confirmation n'arrive pas, regarder les indésirables, puis les logs d'authentification Supabase. C'est Supabase qui envoie celui-là, pas Resend.
+
+**À vérifier aussi** — Essayez une fois avec une adresse **non invitée**. Le compte doit se créer mais rester sans centre, avec l'écran « Compte en attente de rattachement ». C'est voulu : personne ne se rattache seul.
+
+### 1.3 Confirmer l'adresse
+
+**Faire** — Cliquer le lien de confirmation.
+
+**Attendu** — Retour sur le site public, connecté.
+
+**Sinon** — Un retour vers `localhost` ou une erreur signifie que l'étape 0.2 est fausse.
+
+### 1.4 Le rattachement et les droits
+
+**Faire** — L'invité ouvre l'application.
+
+**Attendu** — Il voit son centre, son équipe, et **l'espace agent seulement** : Mes disponibilités, Mon planning, Notifications, Mon profil. Ni Planning, ni Campagnes, ni Agents & équipes, ni Historique, ni Paramètres.
+
+**Sinon** — S'il voit encore « Compte en attente de rattachement », le déclencheur n'a pas trouvé l'invitation : l'adresse saisie ne correspond pas exactement à l'adresse invitée. S'il voit les écrans d'administration, arrêtez et signalez-le — ce serait un défaut de droits, pas de confort.
+
+**Côté administrateur** — L'invitation doit avoir quitté « en attente », et l'agent apparaître dans la liste avec son grade, son matricule et son téléphone modifiables.
+
+---
+
+## Partie 2 — La campagne
+
+### 2.1 Ouvrir une campagne
+
+**Faire** — Écran **Campagnes**, **Nouvelle campagne**. Nom, mois choisi, date de clôture à venir.
+
+**Attendu** — La campagne s'ouvre et devient active. Sur le tableau de bord, le compteur de réponses affiche 0 sur le nombre d'agents actifs de l'équipe.
+
+**Sinon** — Un refus en français dit lequel des contrôles a mordu (nom trop court, mois invalide, clôture dans le passé). C'est normal et voulu.
+
+**À vérifier** — Ouvrir **Planning**, naviguer sur quelques dates du mois : chaque jour doit proposer un créneau Jour et un créneau Nuit, du 1ᵉʳ au dernier jour. S'il manque des jours ou si la liste des participants est incomplète, la campagne a été créée à moitié — ce que la version atomique doit précisément empêcher.
+
+### 2.2 L'email d'ouverture
+
+**Faire** — Regarder la messagerie de l'agent invité.
+
+**Attendu** — Un message annonçant l'ouverture, portant la marque DispoSP, avec un lien qui mène au site public — pas à `localhost`.
+
+**Sinon** — Si rien n'arrive, la notification existe quand même : l'agent la verra dans **Notifications**. C'est le filet de sécurité. Vérifiez alors les trois variables de l'étape 0.3, puis le tableau de bord Resend (message refusé, domaine non validé, quota).
+
+Rien n'est perdu : la file garde le message et le renverra à la prochaine action.
+
+---
+
+## Partie 3 — La saisie de l'agent
+
+### 3.1 La disponibilité habituelle
+
+**Faire** — Côté agent, **Mes disponibilités**. Dans « Ma disponibilité habituelle », composer une semaine — par exemple lundi indisponible, samedi 24 h. **Enregistrer**, puis **Appliquer au mois**.
+
+**Attendu** — Le panneau annonce d'abord combien de jours seraient renseignés ; après application, tous les lundis et samedis du mois portent la valeur choisie. Les autres jours ne bougent pas.
+
+**Sinon** — Si le bouton Appliquer reste inactif, c'est que le brouillon n'est pas enregistré : c'est voulu, il ne faut pas appliquer autre chose que ce qui est affiché.
+
+**À vérifier** — Se déconnecter, se reconnecter : le modèle doit être toujours là.
+
+### 3.2 La validation explicite
+
+**Faire** — Compléter les jours restants, puis **Valider mes disponibilités**.
+
+**Attendu** — Le bouton reste **inactif tant que le mois n'est pas complet**. Une fois validé, l'écran affiche « Votre réponse est validée » et le tableau de bord de l'administrateur compte une réponse de plus.
+
+**Sinon** — Si la validation passe avec des jours vides, signalez-le : la règle est tenue par la base, pas par l'écran.
+
+### 3.3 La modification après validation
+
+**Faire** — Changer un seul jour.
+
+**Attendu** — La réponse **repasse à valider**, immédiatement. Une nouvelle validation explicite est nécessaire.
+
+**Sinon** — Si la réponse reste validée, la couverture affichée ne correspondrait plus à ce que l'agent a réellement confirmé.
+
+---
+
+## Partie 4 — Le planning
+
+### 4.1 Les besoins d'un créneau
+
+**Faire** — Côté administrateur, **Planning**, choisir une date et un créneau. **Modifier les besoins** : un effectif et quelques minima de qualification.
+
+**Attendu** — Les besoins s'enregistrent. Sur le tableau de bord, le créneau quitte l'état « besoins non définis ».
+
+**Note** — Tant que les besoins ne sont pas définis, un créneau n'est **ni couvert ni en déficit**. L'application ne devine pas un effectif ; elle dit qu'elle ne sait pas.
+
+### 4.2 Affecter, puis publier
+
+**Faire** — Affecter des agents disponibles jusqu'à couvrir l'effectif et les qualifications. Puis **Publier ce créneau**.
+
+**Attendu** — Le bouton de publication reste **inactif tant que la couverture n'est pas atteinte**. Une fois publiée, la version est figée et datée.
+
+**À vérifier** — Essayez de publier un créneau volontairement déficitaire : le refus doit être explicite et dire ce qui manque.
+
+### 4.3 Ce que voit l'agent
+
+**Faire** — Côté agent, **Mon planning**.
+
+**Attendu** — Les gardes publiées uniquement. Les brouillons du responsable ne doivent pas apparaître.
+
+**Sinon** — Si un agent voit un brouillon, il pourrait s'organiser sur une affectation qui n'existe pas encore.
+
+### 4.4 L'email de publication
+
+**Attendu** — L'agent affecté reçoit un message de publication, avec un lien vers son planning.
+
+---
+
+## Partie 5 — Rappel et clôture
+
+### 5.1 Le rappel avant clôture
+
+**Faire** — Côté administrateur, déclencher le rappel depuis le tableau de bord ou l'écran Campagnes.
+
+**Attendu** — Seuls les agents **n'ayant pas validé** le reçoivent. Un second rappel pour la même campagne doit être refusé tant que le premier est en attente.
+
+**À savoir** — **Ce rappel est un geste manuel.** Rien ne le déclenche tout seul : il n'y a pas d'ordonnanceur. Si vous voulez qu'il parte trois jours avant la clôture, il faut que quelqu'un s'en charge. Notez-le dans vos habitudes de service.
+
+### 5.2 La clôture
+
+**Faire** — Clôturer la campagne.
+
+**Attendu** — La saisie n'est plus possible, avec un message clair côté agent.
+
+---
+
+## Partie 6 — Ce qui sort de l'application
+
+**Faire** — Depuis la synthèse : **Exporter en Excel**, **Exporter la vue CSV**, **Imprimer le mois**. Depuis Mon planning : **Exporter mon calendrier**.
+
+**Attendu**
+
+- Le classeur Excel s'ouvre avec ses six feuilles et les vraies données du mois.
+- Le CSV reprend la vue **filtrée** telle qu'elle est affichée, avec les accents corrects.
+- L'aperçu d'impression montre **tous les agents** et les 31 colonnes, en paysage, avec le logo et le nom du centre en haut de chaque page.
+- Le fichier `.ics` s'importe dans un agenda et y place les bonnes gardes aux bonnes heures.
+
+**Sinon** — Si l'impression ne montre qu'une partie des agents, dites-le : c'est exactement le défaut qui a été corrigé, et il serait revenu.
+
+---
+
+## Partie 7 — Les droits
+
+Ces vérifications ne sont pas du confort. Elles portent sur des données personnelles.
+
+**Faire, côté agent** — Tenter d'ouvrir directement `/agents`, `/historique`, `/parametres`, `/planning` en tapant l'adresse.
+
+**Attendu** — Un écran « Accès réservé », et **aucune donnée**.
+
+**Faire, côté administrateur** — Chercher la disponibilité habituelle d'un agent.
+
+**Attendu** — On ne la trouve nulle part. Le modèle personnel d'un agent n'est visible que de lui : il ne dit pas ce qu'il fera, mais ce qu'il fait d'habitude, et aucun écran de pilotage n'en a besoin.
+
+---
+
+## Partie 8 — Le téléphone
+
+**Faire** — Ouvrir le site public sur un téléphone. Sur Android : la bannière d'installation, ou **Mon profil → Installer l'application**. Sur iPhone : Safari, bouton Partager, « Sur l'écran d'accueil ».
+
+**Attendu** — Une icône DispoSP sur l'écran d'accueil. L'application s'ouvre en plein écran, sans barre d'adresse.
+
+**À vérifier** — Couper la connexion et ouvrir l'application : une page « Pas de connexion » doit s'afficher, et **aucune donnée ancienne**. C'est voulu : un planning servi depuis un cache serait présenté comme à jour sans l'être.
+
+---
+
+## Partie 9 — L'exploitation
+
+Ce ne sont pas des tests mais des préparations. Elles conditionnent la mise en service autant que le reste.
+
+### 9.1 La sauvegarde
+
+**Faire** — Vérifier la fréquence des sauvegardes du projet Supabase, puis **restaurer une sauvegarde sur un projet d'essai**.
+
+**Attendu** — La restauration aboutit et les données sont là.
+
+**Pourquoi** — Une sauvegarde qu'on n'a jamais restaurée n'est pas une sauvegarde. C'est une hypothèse.
+
+### 9.2 Les données personnelles
+
+L'application détient des noms, des numéros de téléphone, des matricules, des grades et les disponibilités de chacun. Trois décisions à écrire, une fois :
+
+- **Informer les agents** : ce qui est collecté, pourquoi, qui y accède, combien de temps.
+- **Fixer une durée de conservation** : combien de temps garde-t-on les campagnes passées et le journal d'audit.
+- **Décrire l'effacement** : que fait-on quand un agent quitte le centre. Aujourd'hui l'application permet de **désactiver** un agent — il ne compte plus dans aucune synthèse et ne peut plus être affecté — mais ne l'efface pas.
+
+### 9.3 Le suivi
+
+Prévoir où regarder quand quelque chose ne va pas : les logs de l'hébergeur, ceux de Supabase, le tableau de bord Resend pour les messages refusés.
+
+---
+
+## Ce que cette recette ne couvre pas
+
+À dire franchement, pour que personne ne croie le contraire :
+
+- **La charge.** Elle se fait à deux ou trois personnes. Le comportement avec trente agents connectés le même soir n'est pas mesuré.
+- **La concurrence.** Si deux responsables modifient le même brouillon de planning en même temps, le dernier qui écrit gagne, sans avertissement. À un seul responsable par équipe, cela ne se verra pas.
+- **Plusieurs centres.** Tout est éprouvé sur une seule organisation.
+- **La durée.** Un mois de recette ne dit rien de ce qui se passe au bout d'un an de campagnes accumulées.
+
+---
+
+## Journal de recette
+
+| Étape | Date | Par | Résultat | Remarque |
+| ----- | ---- | --- | -------- | -------- |
+| 0.1   |      |     |          |          |
+| 0.2   |      |     |          |          |
+| 0.3   |      |     |          |          |
+| 1.1   |      |     |          |          |
+| 1.2   |      |     |          |          |
+| 1.3   |      |     |          |          |
+| 1.4   |      |     |          |          |
+| 2.1   |      |     |          |          |
+| 2.2   |      |     |          |          |
+| 3.1   |      |     |          |          |
+| 3.2   |      |     |          |          |
+| 3.3   |      |     |          |          |
+| 4.1   |      |     |          |          |
+| 4.2   |      |     |          |          |
+| 4.3   |      |     |          |          |
+| 4.4   |      |     |          |          |
+| 5.1   |      |     |          |          |
+| 5.2   |      |     |          |          |
+| 6     |      |     |          |          |
+| 7     |      |     |          |          |
+| 8     |      |     |          |          |
+| 9.1   |      |     |          |          |
+| 9.2   |      |     |          |          |
+| 9.3   |      |     |          |          |
