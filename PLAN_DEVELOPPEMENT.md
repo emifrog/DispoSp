@@ -1,218 +1,201 @@
 # Plan de développement — DISPO SP
 
-État au 18 septembre 2026. Ce document recense ce qui est fait, ce qui reste, et ce qu'il faut précisément pour qu'un centre puisse utiliser l'application avec de vrais agents.
+État au 18 septembre 2026, mis à jour après confirmation de l’application de `0007_availability_templates.sql`. Les sept migrations sont appliquées sur le projet de développement. Les statuts ci-dessous distinguent les fonctionnalités implémentées des vérifications restant à effectuer sur le site hébergé.
 
-Il complète le cahier des charges V1.0 du 17 septembre 2026 et `DECISIONS_FONCTIONNELLES.md`, qui restent la référence fonctionnelle.
-
----
+Ce document complète le cahier des charges V1.0 du 17 septembre 2026 et `DECISIONS_FONCTIONNELLES.md`, qui restent la référence fonctionnelle. La configuration et les commandes sont détaillées dans le [README](README.md).
 
 ## 1. Où en est le projet
 
-L'application existe en deux modes. Le premier est une **démonstration locale** complète : les dix écrans fonctionnent, les données vivent dans le navigateur, aucun compte n'est nécessaire. Le second est le **mode connecté** : l'utilisateur s'authentifie, les écrans lisent la base de données réelle, et **la saisie s'y enregistre**.
+L’application fonctionne en **démonstration locale** ou en **mode connecté** : authentification, lecture et écriture des données Supabase selon les droits du compte. La présence des coordonnées Supabase ne suffit pas à activer ce second mode : `NEXT_PUBLIC_DISPOSP_MODE=connected` est également nécessaire lors de la construction.
 
-Le parcours complet a été observé sur un centre réel : un agent renseigne son mois, valide sa réponse, un responsable définit les besoins, affecte, publie, et l'agent retrouve sa garde. Un administrateur crée désormais les agents depuis l'application, sans passer par le SQL.
+Le parcours agent → validation → affectation → publication → consultation a déjà été consigné comme observé sur le centre de test. L’administration, les notifications, les exports et les disponibilités habituelles sont désormais implémentés. Cette mise à jour documentaire ne constitue pas une nouvelle recette du projet hébergé.
 
-L'application est déployée sur Vercel, mais **en mode démonstration** : le site public affiche les douze agents fictifs et ne demande aucun compte. Basculer le déploiement en mode connecté et déclarer l'adresse publique dans Supabase sont les deux gestes qui séparent l'état actuel d'un vrai usage.
+Le dernier état documenté du déploiement Vercel était une démonstration. Son mode actuel, les redirections d’authentification et la configuration Resend restent à confirmer avant la mise en service.
 
 ### Avancement par domaine
 
-| Domaine                 | État       | Détail                                                  |
-| ----------------------- | ---------- | ------------------------------------------------------- |
-| Socle technique         | ✅ terminé | Versionnement, formatage, lint, intégration continue    |
-| Base de données         | ✅ terminé | 18 tables déployées, droits et règles vérifiés          |
-| Authentification        | ✅ terminé | Connexion, session, déconnexion                         |
-| Lecture des données     | ✅ terminé | Les écrans lisent la base                               |
-| Écriture des données    | ✅ terminé | Les huit commandes écrivent en base, sous RLS           |
-| Historique et audit     | ✅ terminé | Journal tenu par la base, lisible et filtrable          |
-| Administration          | ✅ terminé | Agents, équipes, rôles et qualifications depuis l'écran |
-| Notifications           | 🟡 partiel | La table existe, aucun email n'est envoyé               |
-| Exports                 | 🟡 partiel | CSV et ICS faits, Excel et PDF absents                  |
-| Application installable | ❌ à faire | Le site est adapté au mobile, mais non installable      |
-| Hébergement             | 🟡 partiel | Déployé sur Vercel, mais en mode démonstration          |
+| Domaine                     | État                     | Détail                                                                                                   |
+| --------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------- |
+| Socle technique             | ✅ implémenté            | Versionnement, formatage, lint, types et intégration continue                                            |
+| Base de données             | ✅ migrations appliquées | 19 tables, migrations `0001` à `0007`, isolation RLS et règles métier                                    |
+| Authentification            | ✅ implémentée           | Inscription, confirmation d’adresse, connexion, session et déconnexion                                   |
+| Lecture et écriture         | ✅ implémentées          | Données et commandes métier raccordées à Supabase                                                        |
+| Administration              | ✅ implémentée           | Fiches agents, invitations, équipes, quatre rôles et qualifications                                      |
+| Disponibilités habituelles  | ✅ implémentées          | Modèle personnel par jour de semaine ; migration `0007` appliquée                                        |
+| Synthèse et couverture      | ✅ implémentées          | Matrice virtualisée, vue nominative par journée, niveaux de couverture et distinction potentiel/planifié |
+| Planning et équité          | ✅ implémentés           | Brouillon, publication contrôlée, répartition Jour/Nuit/24 h                                             |
+| Historique et audit         | 🟡 à compléter           | Journal et filtres sujet/auteur/recherche livrés ; période et export restants                            |
+| Notifications               | 🟡 recette à compléter   | Centre interne, lecture, rappels manuels et envoi Resend implémentés ; réception à vérifier              |
+| Exports                     | 🟡 à compléter           | CSV, ICS, Excel et impression PDF ; PDF mensuel complet de la matrice restant                            |
+| Application installable     | ❌ à faire               | Interface adaptée au mobile, installation PWA absente                                                    |
+| Hébergement et exploitation | 🟡 à confirmer           | Configuration connectée, emails, sauvegardes et recette à plusieurs comptes                              |
 
-### Ce qui est solide
+### Garanties métier
 
-Le socle de données porte les règles métier, et il est plus strict que l'interface. Publier un créneau déclenche une vérification en base de l'effectif, des qualifications et de l'éligibilité de chaque agent ; un agent affecté sans disponibilité validée fait échouer la publication. Le brouillon du responsable et la version publiée sont deux choses distinctes : modifier le brouillon ne change pas ce que les agents voient. Aucune session cliente ne peut écrire une version publiée.
+- Jour 8 h–20 h et Nuit 20 h–8 h le lendemain par défaut ; horaires configurables pour les nouvelles campagnes. La nuit est rattachée à sa date de début.
+- Une disponibilité 24 h couvre les besoins Jour et Nuit, sans affecter automatiquement l’agent.
+- La couverture potentielle repose sur les disponibilités validées ; la couverture planifiée repose sur les affectations du brouillon. Huit agents disponibles ne signifient pas huit agents affectés.
+- Modifier une disponibilité invalide la réponse ; une validation explicite reste nécessaire, y compris après application d’un modèle habituel.
+- La publication vérifie en base l’effectif, les qualifications et l’éligibilité des agents. Le brouillon reste distinct de la version publiée que consultent les agents.
+- Le journal d’audit est alimenté en base et conserve les anciennes et nouvelles valeurs.
 
-L'invalidation d'une réponse après modification est elle aussi tenue par la base : modifier un jour remet la réponse « à valider » sans que l'interface ait à y penser. Le journal d'audit est écrit par des déclencheurs, jamais par le navigateur : aucune session ne peut forger ni omettre une ligne.
+### Vérification et portée
 
-Ces garanties tiennent même si l'interface se trompe, ce qui est le bon endroit pour les placer.
+La suite couvre les règles métier, les migrations et droits sur PostgreSQL embarqué via PGlite, les exports et des parcours navigateur sur ordinateur et mobile. Un scénario à 300 agents vérifie notamment la virtualisation de la synthèse. Il ne remplace pas une mesure de charge du service hébergé avec plusieurs utilisateurs simultanés.
 
-### Mesure de la qualité
+Les six contrôles de l’intégration continue sont le formatage, le lint, les types, les tests unitaires et de base, la construction et les tests navigateur. Leurs résultats courants font foi ; aucun nouveau résultat de test applicatif n’est revendiqué par cette mise à jour documentaire.
 
-|                                     | Valeur                                                               |
-| ----------------------------------- | -------------------------------------------------------------------- |
-| Tests automatisés                   | 63 unitaires, 16 de bout en bout                                     |
-| Vérifications à chaque modification | 6, exécutées automatiquement                                         |
-| Tenue en charge mesurée             | 300 agents : ~25 lignes affichées au lieu de 300, 13 ms par commande |
+## 2. Priorités vers une première utilisation
 
----
+| Priorité | Action                                                                | Résultat attendu                                                              |
+| -------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| 1        | Confirmer le mode connecté sur l’hébergement et les URL Supabase Auth | Connexion et confirmation d’adresse depuis l’URL publique                     |
+| 2        | Tester l’invitation avec un second compte                             | Compte confirmé, rattaché au bon centre avec le bon rôle                      |
+| 3        | Configurer Resend et vérifier la réception                            | Emails d’ouverture, de rappel et de publication reçus avec des liens corrects |
+| 4        | Faire une recette métier avec plusieurs agents                        | Modèles habituels, validation, couverture, publication et exports cohérents   |
+| 5        | Fiabiliser les écritures composées                                    | Pas de campagne ou de modèle partiellement enregistré après un échec          |
+| 6        | Préparer l’exploitation                                               | Sauvegarde restaurable, suivi des erreurs et règles de conservation définis   |
 
-## 2. Le chemin critique vers une première utilisation
-
-Tout n'est pas également urgent. Voici ce qui **empêche réellement** un centre de se servir de l'application, par ordre de dépendance.
-
-| #     | Verrou                                 | Pourquoi c'est bloquant                     | Lot       |
-| ----- | -------------------------------------- | ------------------------------------------- | --------- |
-| ~~1~~ | ~~Les saisies ne s'enregistrent pas~~  | Levé le 18 septembre 2026                   | ~~Lot 1~~ |
-| ~~2~~ | ~~Aucun écran pour créer un agent~~    | Levé le 18 septembre 2026                   | ~~Lot 2~~ |
-| ~~3~~ | ~~Pas de grade ni de matricule~~       | Levé le 18 septembre 2026                   | ~~Lot 2~~ |
-| 4     | Personne n'est prévenu d'une campagne  | Sans email, le taux de réponse s'effondre   | Lot 3     |
-| 5     | Le déploiement tourne en démonstration | Le site public ne montre pas le vrai centre | Lot 4     |
-
-**Les lots 3 et 4 constituent le minimum utilisable restant.** Tout le reste — exports Excel et PDF, installation sur l'écran d'accueil — améliore l'usage sans le conditionner.
-
-Le verrou 5 ne demande plus de développement, mais deux réglages : la variable de mode dans Vercel, suivie d'un redéploiement, et l'adresse publique déclarée dans la configuration d'authentification de Supabase. Sans cette seconde, le lien de confirmation envoyé à un agent invité pointe vers `localhost` et le rattachement ne se déclenche jamais.
-
----
+Le développement des lots 3 et 5 a avancé : la priorité porte désormais sur leur recette en mode connecté, les limites identifiées et la mise en service. L’application d’une migration ne prouve pas à elle seule le bon fonctionnement du parcours utilisateur hébergé.
 
 ## 3. Le plan complet, lot par lot
 
-Les tailles sont indicatives : **S** = quelques heures, **M** = une à deux journées, **L** = plusieurs journées.
+### Lot 0 — Socle ✅ implémenté
 
-### Lot 0 — Socle ✅ terminé
+Versionnement et outillage, authentification, lecture des données, intégration continue et virtualisation de la synthèse. Les migrations `0001_foundation.sql` à `0007_availability_templates.sql` sont appliquées ; le schéma compte 19 tables.
 
-Versionnement et outillage, base de données complète et déployée, authentification, lecture des données, intégration continue, virtualisation de la synthèse.
+### Lot 1 — Écriture des données ✅ implémentée, fiabilisation restante
 
-### Lot 1 — Écriture des données ✅ terminé
+Les commandes métier passent par l’action serveur `submitCommand`. La charge utile est validée par Zod et l’identité provient de la session ; les refus de la base sont traduits en français sans repli silencieux vers le stockage local.
 
-Les huit commandes du domaine passent par une action serveur unique, `submitCommand`, dont la charge utile est parsée par Zod et l'identité lue dans le cookie de session.
+Sont raccordés : saisie et validation, affectation/retrait, besoins, publication, création/clôture des campagnes, horaires, administration, notifications et disponibilités habituelles. La migration `0003_client_writes.sql` a ouvert les opérations de publication et de paramétrage et complété l’audit.
 
-| Commande                   | Effet                                                        | Vérifiée en base     |
-| -------------------------- | ------------------------------------------------------------ | -------------------- |
-| Saisir une disponibilité   | Écrit la journée ; la base invalide la réponse à la campagne | ✅                   |
-| Valider sa réponse         | La base contrôle que le mois est complet                     | ✅                   |
-| Affecter, retirer un agent | Modifie le brouillon du planning                             | ✅                   |
-| Publier un créneau         | Passe par `public.publish_shift()`                           | ✅                   |
-| Définir les besoins        | Effectif et qualifications d'une garde                       | ✅                   |
-| Verrouiller une campagne   | Ferme la saisie                                              | ✅                   |
-| Modifier les horaires      | Applique aux campagnes suivantes                             | ✅                   |
-| Créer une campagne         | Avec son planning, ses créneaux et ses participants          | écrite, non vérifiée |
+**À fiabiliser :** la création d’une campagne écrit la campagne, le planning, les créneaux puis les participants en plusieurs requêtes sans transaction commune. Regrouper cette opération en base et vérifier le comportement en cas d’échec. La sauvegarde et l’application d’un modèle habituel comportent également plusieurs écritures à examiner.
 
-Comprend aussi : traduction en français des refus de la base, rechargement des écrans après écriture, et le journal d'audit tenu par des déclencheurs avec ancienne et nouvelle valeur.
+### Lot 2 — Agents et administration ✅ implémentés, recette d’invitation restante
 
-Une migration `0003_client_writes.sql` a été nécessaire : la publication n'était joignable depuis aucune session cliente, les horaires du centre n'étaient écrivables par personne, et le journal d'audit n'avait aucun rédacteur.
+- Fiche agent : nom, grade, matricule, téléphone et statut actif/inactif ; adresse email liée au compte d’authentification.
+- Invitations, modification des fiches, changement d’équipe et de rôle selon les droits, désactivation/réactivation et attribution de qualifications.
+- Création et modification des équipes ; quatre rôles pris en compte par l’interface et la base.
+- Historique filtrable par sujet, auteur et recherche libre.
 
-Deux réserves. La création d'une campagne écrit en quatre requêtes sans transaction : un échec laisserait une campagne incomplète. Et elle n'a pas été essayée sur le centre de test, puisqu'aucune session cliente ne peut supprimer une campagne.
+La migration `0004_agent_administration.sql` permet ces opérations. Le premier centre et son administrateur nécessitent toujours les scripts de provisionnement ; les agents suivants passent par une invitation enregistrée dans l’application, puis leur inscription et la confirmation de leur adresse.
 
-### Lot 2 — Agents et administration ✅ terminé
+**À vérifier :** accepter une invitation avec un second compte sur Supabase hébergé et contrôler le rattachement, les droits et l’audit. **L’envoi automatique de l’invitation n’est pas implémenté** : l’administrateur transmet l’adresse de l’application. Les emails métier du lot 3 ne remplacent pas cette étape.
 
-- Grade, matricule et téléphone portés par la fiche agent, exigés au §3. Le grade stocké peut rester vide ; c'est l'affichage qui retombe alors sur le rôle, et non le contraire — sans quoi le premier enregistrement inscrirait le libellé de repli en base.
-- Écran d'administration : inviter, modifier une fiche, muter, changer de rôle, désactiver et réactiver, attribuer des qualifications, créer et renommer des équipes.
-- Les quatre rôles du §2 dans l'interface. Un responsable d'équipe ne voit plus les deux écrans d'administration, qui lui auraient répondu par un refus.
-- Historique filtrable par sujet, par auteur et par recherche libre.
+### Lot 3 — Notifications 🟡 implémentées, réception à valider
 
-L'invitation remplace le script SQL **sans aucune clé secrète**. Un administrateur enregistre qui est attendu ; l'agent crée son propre compte avec son propre mot de passe, et un déclencheur le rattache à la confirmation de son adresse — une adresse non confirmée n'occupe jamais de place. L'envoi de l'email reste au lot 3 ; d'ici là, l'administrateur transmet l'adresse de l'application.
+- Centre de notifications avec état lu/non lu.
+- Notifications d’ouverture de campagne, de publication et de rappel aux agents n’ayant pas validé.
+- Envoi via Resend après les commandes concernées ; file portée par `notifications`, avec suivi séparé de l’envoi et de la lecture.
+- Migrations `0005_notifications.sql` et `0006_email_dispatch.sql` appliquées.
 
-La migration `0004_agent_administration.sql` ouvre ce que `0001` et `0002` gardaient fermé, et pose la règle qu'un droit de colonne ne sait pas exprimer : personne ne change son propre rôle, seul un administrateur change un rôle, personne ne se désactive soi-même.
+L’envoi nécessite **les trois variables** `RESEND_API_KEY`, `RESEND_FROM` et `APP_URL`. En leur absence, les notifications restent disponibles dans l’application et les emails restent en attente.
 
-Une réserve : l'acceptation d'une invitation n'a pas encore été observée de bout en bout, faute d'un second compte.
+**À faire :** vérifier l’expéditeur et la réception réelle des trois types de message, puis définir le suivi des échecs et les reprises. Le rappel est déclenché manuellement. Les envois se font par lots de 50 ; aucune tâche autonome ne traite toute la file ou ne programme les relances. Prévenir les doublons lors d’une reprise après un envoi réussi mais un marquage échoué.
 
-### Lot 3 — Notifications ❌ à faire · taille **M**
+### Lot 4 — Mise en service 🟡 configuration et recette à confirmer
 
-- Envoi des emails à l'ouverture d'une campagne, en rappel avant clôture, et à la publication d'un planning.
-- Centre de notifications dans l'application ; la table existe déjà et se remplit à la publication.
-- Choix d'un service d'envoi et configuration du domaine expéditeur.
+- Vérifier les trois variables du mode connecté sur l’hébergeur, puis reconstruire/redéployer après toute modification des variables publiques.
+- Déclarer l’adresse publique dans Supabase Auth et dans `APP_URL` ; confirmer le nom de domaine retenu.
+- Vérifier que la configuration d’hébergement et de base répond au besoin de disponibilité du centre.
+- Définir l’information des agents, la durée de conservation et la procédure d’effacement.
+- Préparer les sauvegardes et vérifier la restauration.
 
-### Lot 4 — Mise en service ❌ à faire · taille **S**
+### Lot 5 — Exports et confort 🟡 implémentés avec compléments restants
 
-- Basculer le déploiement Vercel en mode connecté, et déclarer l’adresse publique dans la configuration d’authentification de Supabase. Nom de domaine propre à choisir.
-- Vérification du plan Supabase : un projet gratuit se met en veille après inactivité, ce qui est incompatible avec un usage réel.
-- Mentions légales, information des agents, durée de conservation des données.
-- Sauvegardes et procédure de restauration vérifiée.
+**Livré :**
 
-### Lot 5 — Exports et confort ❌ à faire · taille **M**
+- CSV de la synthèse filtrée et ICS des gardes personnelles publiées, avec fuseau Europe/Paris.
+- Classeur Excel côté serveur en mode connecté : disponibilités, synthèse, couverture, affectations, qualifications et statistiques. Il porte sur la campagne accessible au compte, sans reprendre les filtres locaux de la synthèse.
+- Impression de la vue par journée et du planning personnel, permettant un enregistrement PDF.
+- Vue quotidienne avec listes nominatives ; indicateurs déficit/limite/couvert et état distinct lorsque les besoins ne sont pas définis.
+- Équité ventilée Jour, Nuit et 24 h ; une garde 24 h représente deux créneaux dans le total.
+- Disponibilités habituelles personnelles par jour de semaine, enregistrées en base et applicables au calendrier. **Migration `0007_availability_templates.sql` appliquée, confirmation du porteur du projet.** L’application d’un modèle ne vaut ni validation ni affectation.
 
-- Exports Excel et PDF du planning et de la synthèse.
-- Historique consultable par période, et export du journal. Le filtrage par sujet et par auteur est fait.
-- Vue par journée avec listes nominatives, heatmap à trois niveaux, tableau d'équité ventilé Jour et Nuit.
-- Disponibilités habituelles réutilisables d'une campagne à l'autre.
+**Reste à faire :**
 
-### Lot 6 — Application installable ❌ à faire · taille **S**
+- Export PDF complet de la synthèse mensuelle : la matrice virtualisée n’imprime que les lignes rendues.
+- Filtre de période et export du journal d’audit.
+- Recette en mode connecté des exports et des modèles habituels : isolation entre agents, persistance, application et invalidation de la réponse.
 
-Installation sur l'écran d'accueil du téléphone, fonctionnement hors ligne en consultation, notifications poussées.
+### Lot 6 — Application installable ❌ à faire
+
+Installation PWA sur l’écran d’accueil du téléphone. La consultation hors ligne reste une extension à cadrer ; les notifications poussées relèvent de la V2.
 
 ### Hors périmètre V1
 
-Échanges de garde entre agents, proposition automatique de planning, règles de repos, connexion par compte d'entreprise, intégrations externes.
-
----
+Notifications poussées, échanges de garde entre agents, proposition automatique de planning, règles de repos, connexion par compte d’entreprise et intégrations externes.
 
 ## 4. Couverture du cahier des charges V1
 
-| Exigence (§)                                   | État | Commentaire                                             |
-| ---------------------------------------------- | ---- | ------------------------------------------------------- |
-| Authentification (§18)                         | ✅   | Email et mot de passe                                   |
-| Rôles et droits (§2)                           | ✅   | Les quatre rôles, en base et dans l’interface           |
-| Fiche agent (§3)                               | ✅   | Grade, matricule et téléphone ; création par invitation |
-| Calendrier cinq états (§4)                     | ✅   | Saisie enregistrée en base                              |
-| Saisie multiple et règles répétitives (§4)     | ✅   | Période, jours de semaine                               |
-| Disponibilités habituelles (§4)                | ❌   | Lot 5                                                   |
-| Campagnes (§5)                                 | ✅   | Création, verrouillage et horaires raccordés            |
-| Tableau de synthèse (§6)                       | ✅   | Colonne figée, tri, filtres, virtualisé                 |
-| Vue par journée nominative (§6)                | ❌   | Totaux présents, listes absentes                        |
-| Besoins et couverture (§7)                     | ✅   | Saisis et contrôlés en base                             |
-| Planning et publication (§8)                   | ✅   | Publication vérifiée et figée en base                   |
-| Tableau d'équité (§8)                          | 🟡   | Total par agent, sans ventilation Jour/Nuit             |
-| Tableau de bord (§9)                           | 🟡   | Complet, sauf heatmap à trois niveaux                   |
-| Notifications (§10)                            | 🟡   | Table prête, envoi absent                               |
-| Exports (§11)                                  | 🟡   | CSV et ICS faits ; Excel et PDF absents                 |
-| Historique et audit (§12)                      | ✅   | Écrit par la base, filtrable par sujet et par auteur    |
-| Modèle de données (§14)                        | ✅   | 18 tables déployées, quatre migrations                  |
-| Sécurité et RGPD (§16)                         | 🟡   | Technique en place ; mentions et conservation à traiter |
-| Responsive et installable (§17)                | 🟡   | Adapté au mobile, non installable                       |
-| Interface à plusieurs centaines d'agents (§21) | ✅   | Mesuré à 300 agents                                     |
+| Exigence (§)                                   | État | Commentaire                                                                 |
+| ---------------------------------------------- | ---- | --------------------------------------------------------------------------- |
+| Authentification (§18)                         | ✅   | Email, mot de passe, inscription et confirmation                            |
+| Rôles et droits (§2)                           | ✅   | Quatre rôles en base et dans l’interface                                    |
+| Fiche agent (§3)                               | ✅   | Fiche complète et invitation ; acceptation hébergée à vérifier              |
+| Calendrier cinq états (§4)                     | ✅   | Saisie persistée, validation explicite et invalidation                      |
+| Saisie multiple et règles répétitives (§4)     | ✅   | Périodes et jours de semaine                                                |
+| Disponibilités habituelles (§4)                | ✅   | Modèles personnels ; migration `0007` appliquée                             |
+| Campagnes (§5)                                 | ✅   | Création, clôture et horaires ; atomicité à améliorer                       |
+| Tableau de synthèse (§6)                       | ✅   | Colonne figée, tri, filtres, virtualisation                                 |
+| Vue par journée nominative (§6)                | ✅   | Listes nominatives et impression                                            |
+| Besoins et couverture (§7)                     | ✅   | Effectifs, qualifications, potentiel et planifié distincts                  |
+| Planning et publication (§8)                   | ✅   | Publication vérifiée et version figée en base                               |
+| Tableau d’équité (§8)                          | ✅   | Ventilation Jour/Nuit/24 h                                                  |
+| Tableau de bord (§9)                           | ✅   | Niveaux déficit/limite/couvert et besoins non définis                       |
+| Notifications (§10)                            | 🟡   | Centre interne et Resend implémentés ; réception à vérifier, rappel manuel  |
+| Exports (§11)                                  | 🟡   | CSV, ICS et Excel ; PDF par impression, matrice mensuelle complète restante |
+| Historique et audit (§12)                      | 🟡   | Journal et filtres livrés ; période et export restants                      |
+| Modèle de données (§14)                        | ✅   | 19 tables, sept migrations appliquées                                       |
+| Sécurité et RGPD (§16)                         | 🟡   | Contrôles techniques présents ; dispositions d’exploitation à compléter     |
+| Responsive et installable (§17)                | 🟡   | Adapté au mobile, PWA restante                                              |
+| Interface à plusieurs centaines d’agents (§21) | 🟡   | Scénario de virtualisation à 300 agents ; charge hébergée à mesurer         |
 
----
+## 5. À décider ou confirmer, hors développement
 
-## 5. À décider, hors développement
+1. **Hébergement.** Mode du site public, domaine, disponibilité attendue et responsabilité d’exploitation.
+2. **Emails.** Resend est intégré ; confirmer l’expéditeur, son domaine et les variables serveur, puis contrôler la réception.
+3. **Entrées et sorties.** Qui invite, qui gère les rôles et comment traiter les départs et demandes d’effacement.
+4. **Conservation des données.** Information des agents, durée de conservation et procédure d’effacement compatible avec l’historique.
+5. **Centre pilote.** Désigner les premiers agents et responsables qui réaliseront la recette.
+6. **Migrations suivantes.** Confirmer le mode de suivi des migrations déjà appliquées avant de passer à un déploiement par la CLI Supabase.
 
-Ces points ne relèvent pas du code, et conditionnent la mise en service.
+## 6. Risques à suivre
 
-1. **Plan Supabase.** Un projet gratuit se met en veille après inactivité. À trancher avant que des agents en dépendent.
-2. **Nom de domaine.** L'application tourne sur Vercel ; reste à décider sous quel nom, et qui en a la charge.
-3. **Service d'envoi d'emails.** Nécessaire au lot 3, avec un domaine expéditeur vérifié. D'ici là, l'administrateur transmet lui-même l'adresse de l'application à l'agent qu'il invite.
-4. **Procédure d'entrée et de sortie.** Le mécanisme existe — invitation, puis inscription par l'agent — mais qui invite, et que fait-on d'un agent qui part : désactivé, ce qui le sort des synthèses et des viviers, ou effacé, ce qui relève du point 5.
-5. **RGPD.** Information des agents, base légale, durée de conservation, procédure d'effacement. Une suppression de compte est aujourd'hui bloquée par les contraintes de la base — c'est volontaire, mais il faut décider de la marche à suivre.
-6. **Périmètre de la première mise en service.** Un centre pilote, ou tous d'emblée.
+| Risque                                              | Portée                                              | Réduction                                                               |
+| --------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------- |
+| Échec pendant la création d’une campagne            | Campagne incomplète                                 | Transaction en base et vérification des échecs                          |
+| Échec pendant la sauvegarde/application d’un modèle | Modèle ou calendrier partiellement modifié          | Fiabiliser les écritures et leur reprise                                |
+| Deux responsables modifient le même planning        | Conflit de modification                             | Vérifier la concurrence et signaler les conflits dans l’interface       |
+| Mode public ou URL Auth mal configurés              | Démonstration affichée ou confirmation inaccessible | Recette depuis l’URL publique avec un second compte                     |
+| Invitation non éprouvée sur le projet hébergé       | Arrivée d’un agent bloquée                          | Vérifier inscription, confirmation, rattachement et droits              |
+| Emails en attente ou renvoyés                       | Agents non prévenus ou messages en double           | Suivi de la file, reprise et prévention des doublons                    |
+| Impression de la matrice virtualisée                | PDF incomplet                                       | Utiliser Excel ou la vue par journée en attendant l’export complet      |
+| Charge et restauration non vérifiées en hébergement | Dégradation ou reprise difficile                    | Essai à plusieurs comptes, mesure de charge et exercice de restauration |
 
----
-
-## 6. Risques
-
-| Risque                                            | Portée                     | Réduction                                                                           |
-| ------------------------------------------------- | -------------------------- | ----------------------------------------------------------------------------------- |
-| Une création de campagne échoue à mi-chemin       | Campagne incomplète        | Quatre requêtes sans transaction ; à déplacer derrière une fonction de base         |
-| Deux responsables modifient le même planning      | Perte de modification      | La révision existe en base ; reste à traiter le conflit dans l'interface            |
-| Aucun agent réel n'a encore utilisé l'application | Fonctionnalités inadaptées | Le parcours complet tient sur un compte ; le faire essayer par deux ou trois agents |
-| Le déploiement public affiche la démonstration    | Confusion                  | Deux réglages, sans développement ; voir le verrou 5 du chemin critique             |
-| L'acceptation d'une invitation n'a jamais tourné  | Arrivées bloquées          | Éprouvée sur un vrai moteur, jamais sur le projet hébergé ; à tester en premier     |
-| Le reste du cahier des charges s'accumule         | Périmètre qui s'étire      | Les lots 5 et 6 sont reportables sans empêcher l'usage                              |
-| Un projet Supabase en veille                      | Indisponibilité            | Point 1 de la section précédente                                                    |
-
----
-
-## 7. Comment vérifier l'état à tout moment
+## 7. Comment vérifier l’état à tout moment
 
 ```sh
-pnpm format:check   # mise en forme
-pnpm lint           # qualité
-pnpm typecheck      # types
-pnpm test           # 63 tests unitaires et de base de données
-pnpm build          # construction
-pnpm test:e2e       # 16 tests de bout en bout
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm test:e2e
 ```
 
-Ces six vérifications s'exécutent automatiquement à chaque modification envoyée sur le dépôt. Leur résultat est visible dans l'onglet Actions de GitHub.
+Ces six contrôles sont exécutés par l’intégration continue ; leurs résultats sont visibles dans l’onglet Actions du dépôt. La suite navigateur habituelle utilise un build en mode démonstration.
 
----
+Les tests de `tests/e2e/connexion.spec.ts` nécessitent un build et un environnement en mode connecté. Ils vérifient les protections et erreurs d’authentification, pas le parcours complet d’un agent invité. Voir le README pour les commandes et prérequis.
 
 ## 8. Prochaine action
 
-Faire aboutir une invitation sur le projet hébergé.
+Effectuer une recette sur l’URL publique avec un administrateur et un second compte agent :
 
-Trois gestes, dans cet ordre : basculer `NEXT_PUBLIC_DISPOSP_MODE` sur `connected` dans Vercel et redéployer ; déclarer l'adresse publique dans **Supabase → Authentication → URL Configuration** ; puis s'inscrire avec l'adresse invitée et confirmer.
-
-C'est le dernier maillon jamais observé en fonctionnement. Il est éprouvé sur un moteur PostgreSQL réel, mais la création d'un compte `auth` demande un vrai parcours d'inscription, que les tests ne peuvent pas jouer. Si l'historique affiche alors « Invitation acceptée » **au nom de l'agent** et non du sien, tout le mécanisme tient.
-
-Ce même geste donne le deuxième compte qui manque depuis le début : la synthèse, la couverture et l'équité ne disent rien d'utile à un contre un, et personne n'a encore essayé la saisie sans avoir écrit l'application.
+1. Confirmer le mode connecté, les URL Supabase Auth et les trois variables Resend.
+2. Enregistrer une invitation, transmettre l’adresse de l’application, créer le compte invité et confirmer son email. Vérifier son centre, son rôle et l’historique.
+3. Enregistrer un modèle de disponibilités habituelles, le retrouver après reconnexion, l’appliquer à une campagne ouverte puis valider explicitement. Vérifier qu’une modification invalide la réponse.
+4. Comparer couverture potentielle et planifiée, affecter puis publier un créneau, et contrôler ce que voit l’agent.
+5. Vérifier les notifications internes et les emails d’ouverture, de rappel et de publication avec des comptes et campagnes adaptés.
+6. Contrôler les exports CSV, Excel, ICS et l’impression, puis consigner les résultats et les éventuels écarts.
