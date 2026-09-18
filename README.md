@@ -41,13 +41,14 @@ Voir `DECISIONS_FONCTIONNELLES.md`. Jour 8 h–20 h, Nuit 20 h–8 h le lendemai
 - `src/lib/domain.ts` : règles métier pures, calculs de couverture et commandes testables.
 - `src/components/provider.tsx` : stockage local de démonstration. **Les rôles du navigateur ne constituent pas un contrôle de sécurité.**
 - `src/lib/exports.ts` : exports CSV et ICS.
-- `src/lib/supabase/` : fabriques de clients pour le futur raccordement, inactives dans la démonstration.
+- `src/lib/supabase/` : fabriques de clients, middleware de session et détection du mode. Inactives en démonstration.
+- `src/lib/session.ts` et `src/lib/session.server.ts` : types partagés d'un côté, lecture de session de l'autre. La séparation est nécessaire — un composant client qui importerait `next/headers` casse la compilation.
 - `supabase/migrations/` : 17 tables couvrant organisations, équipes, profils, droits, campagnes, participants, disponibilités, qualifications, créneaux types, besoins d'effectifs et de qualifications, plannings, affectations, notifications et audit. Isolation RLS, validation, invalidation et publication contrôlées en base.
 - `.github/workflows/ci.yml` : formatage, lint, types, tests unitaires et schéma, build et tests de bout en bout à chaque push et chaque pull request.
 
 ## Raccordement Supabase restant à réaliser
 
-Le projet de développement dédié est désigné : ses coordonnées sont dans `.env`, qui n'est pas versionné. L'interface ne l'appelle pas encore — les clients de `src/lib/supabase/` ne sont importés nulle part, et les valeurs n'apparaissent donc pas dans le paquet livré au navigateur.
+Le projet de développement dédié est désigné : ses coordonnées sont dans `.env`, qui n'est pas versionné. En mode connecté, l'URL et la clé publiable sont incluses dans le paquet livré au navigateur — c'est le fonctionnement prévu de ces deux valeurs, la clé publiable ne donne accès qu'à ce que les policies RLS autorisent. Aucune clé secrète n'est nécessaire côté client.
 
 ### Migrations
 
@@ -56,7 +57,7 @@ Le schéma est découpé en migrations successives, à appliquer dans l'ordre et
 | Fichier                                   | Contenu                                                                                | État                           |
 | ----------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------ |
 | `supabase/migrations/0001_foundation.sql` | Organisations, équipes, profils, droits, campagnes, participants, disponibilités       | Appliquée le 18 septembre 2026 |
-| `supabase/migrations/0002_planning.sql`   | Qualifications, créneaux types, besoins, plannings, affectations, notifications, audit | À appliquer                    |
+| `supabase/migrations/0002_planning.sql`   | Qualifications, créneaux types, besoins, plannings, affectations, notifications, audit | Appliquée le 18 septembre 2026 |
 
 Chaque fichier est une transaction : la moindre erreur annule la migration entière, sans état partiel. Aucun n'est rejouable — ce sont des `create`, pas des `create if not exists`, pour qu'un second passage échoue au lieu d'écraser silencieusement une base déjà en service. `0002` commence par vérifier que `0001` est présente et qu'elle-même ne l'est pas, et s'arrête sur un message explicite plutôt que sur un « relation already exists ».
 
@@ -67,12 +68,38 @@ select string_agg(table_name, ', ' order by table_name)
 from information_schema.tables where table_schema = 'public';
 ```
 
+### Deux modes
+
+L'application fonctionne en **démonstration locale par défaut**. Le mode connecté s'active explicitement, pour que la présence de coordonnées Supabase dans l'environnement ne place jamais la démonstration ni les tests derrière un écran de connexion.
+
+```sh
+NEXT_PUBLIC_DISPOSP_MODE=connected pnpm build
+NEXT_PUBLIC_DISPOSP_MODE=connected pnpm start
+```
+
+|                                    | Démonstration  | Connecté                                                   |
+| ---------------------------------- | -------------- | ---------------------------------------------------------- |
+| Compte requis                      | non            | oui, email et mot de passe                                 |
+| Données affichées                  | `localStorage` | `localStorage` — le raccordement des données reste à faire |
+| Rendu des écrans                   | statique       | dynamique, session lue côté serveur                        |
+| Sélecteur de rôle de démonstration | visible        | masqué, le rôle vient de la base                           |
+
+En mode connecté, un middleware renouvelle la session à chaque requête et renvoie tout visiteur sans session vers `/connexion`. `getUser()` y est utilisé plutôt que `getSession()` : le second se contenterait d'un cookie que le navigateur pourrait forger.
+
+### Premier compte
+
+1. Créer le compte depuis `/connexion` et **confirmer l'adresse** reçue par email.
+2. Adapter les quatre valeurs en tête de `supabase/provisioning/premiere-organisation.sql`, puis exécuter le fichier dans l'éditeur SQL du tableau de bord.
+
+Ce script est nécessaire parce que le schéma interdit volontairement au client de créer organisations, équipes et rôles. Sans lui, un compte connecté n'est rattaché à rien : l'application affiche alors un écran l'expliquant, plutôt que dix écrans vides. Il refuse un compte inexistant, un compte non confirmé, et un second passage.
+
 La prochaine tranche doit :
 
-1. Appliquer `0002_planning.sql`, vérifier les advisors, provisionner la première organisation, ses membres et le catalogue de qualifications.
-2. Lier le projet à la CLI Supabase (`supabase link`) et déclarer les migrations déjà appliquées avec `supabase migration repair --status applied`, pour que les suivantes soient gérées par la CLI plutôt que collées dans l'éditeur SQL.
-3. Ajouter authentification, renouvellement de session, invitations et opérations serveur autorisées ; remplacer le stockage local par les accès à la base.
+1. Remplacer les lectures de `localStorage` par les requêtes à la base, écran par écran.
+2. Porter les huit commandes du domaine en actions serveur, la publication passant par `private.publish_schedule_shift()`.
+3. Ouvrir l'administration des agents, équipes et qualifications aux profils gestionnaire et administrateur.
 4. Brancher l'envoi des emails sur la table `notifications` et exposer le journal d'audit dans l'interface.
+5. Lier le projet à la CLI Supabase (`supabase link`) et déclarer les migrations déjà appliquées avec `supabase migration repair --status applied`, pour que les suivantes soient gérées par la CLI plutôt que collées dans l'éditeur SQL.
 
 Le schéma actuel est testé avec un vrai moteur PostgreSQL embarqué via PGlite et un schéma Auth simulé. Cela ne remplace pas une vérification de l'intégration Supabase hébergée. Les fonctions `security definer` sont limitées à deux lectures de droits et à la publication d'un créneau, situées dans un schéma privé, avec identité issue de `auth.uid()`. Aucune clé secrète de service n'est nécessaire côté navigateur.
 
@@ -96,6 +123,8 @@ pnpm test:e2e
 ```
 
 Ces six vérifications sont celles exécutées par l'intégration continue.
+
+Les tests de `tests/e2e/connexion.spec.ts` pilotent un vrai projet Supabase : ils se sautent d'eux-mêmes hors du mode connecté, et l'intégration continue, qui n'a pas de coordonnées, les ignore. Pour les exécuter, construire et lancer avec `NEXT_PUBLIC_DISPOSP_MODE=connected`.
 
 Dans un environnement Windows où `pnpm exec` ne résout pas les exécutables, utiliser `node node_modules/@playwright/test/cli.js install chromium`, puis `node node_modules/@playwright/test/cli.js test`.
 

@@ -2552,3 +2552,52 @@ label {
     transition: none !important;
   }
 }
+
+/* Connexion et compte non rattaché */
+.demo-tag.connected {
+  color: #0f7256;
+  background: #e7f6f0;
+}
+.demo-tag.connected > span {
+  background: var(--green);
+}
+.sign-in {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  background: var(--background);
+}
+.sign-in-card {
+  width: 100%;
+  max-width: 420px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 32px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 12px 36px rgb(20 43 80 / 7%);
+}
+.sign-in-card h1 {
+  font-size: 22px;
+  letter-spacing: -0.5px;
+  margin: 10px 0 0;
+}
+.sign-in-card > p {
+  margin: 0;
+}
+.sign-in-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 6px;
+}
+.sign-in-card .muted.small {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 0;
+}

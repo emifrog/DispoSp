@@ -1,12 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { credentials } from "./config";
 
-// Reserved for future authenticated server actions. The demo never calls it.
-// Refresh cookies in an action or route handler; never in a cached response.
+// For Server Actions and Route Handlers, the two places allowed to write cookies.
+// Never call it from a cached response.
 export async function createActionClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !key) throw new Error("Le projet Supabase n’est pas encore configuré.");
+  const { url, key } = credentials();
   const cookieStore = await cookies();
   return createServerClient(url, key, {
     cookies: {
@@ -16,6 +15,21 @@ export async function createActionClient() {
       setAll(values) {
         values.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
       },
+    },
+  });
+}
+
+// For Server Components, which may read cookies but never write them. The
+// middleware is what renews the session; writing from here would throw.
+export async function createReadClient() {
+  const { url, key } = credentials();
+  const cookieStore = await cookies();
+  return createServerClient(url, key, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll() {},
     },
   });
 }

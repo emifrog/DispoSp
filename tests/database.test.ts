@@ -332,3 +332,67 @@ describe("Enchaînement des migrations", () => {
     await fresh.close();
   }, 30000);
 });
+
+// The provisioning script is pasted by hand into the Supabase SQL editor, so it
+// gets the same scrutiny as the migrations: run it against a real engine first.
+describe("Provisionnement de la première organisation", () => {
+  const authSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
+  const script = () =>
+    readFileSync(new URL("../supabase/provisioning/premiere-organisation.sql", import.meta.url), "utf8");
+  const forEmail = (email: string) => script().replace("a.remplacer@example.org", email);
+
+  async function ready() {
+    const fresh = new PGlite();
+    await fresh.exec(authSchema);
+    for (const m of ["0001_foundation.sql", "0002_planning.sql"])
+      await fresh.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    return fresh;
+  }
+
+  it("refuse un compte inexistant, puis un compte non confirmé", async () => {
+    const fresh = await ready();
+    await expect(fresh.exec(forEmail("absent@example.org"))).rejects.toThrow();
+    await fresh.exec("rollback");
+    await fresh.query("insert into auth.users(id,email) values (gen_random_uuid(), 'entrant@example.org')");
+    await expect(fresh.exec(forEmail("entrant@example.org"))).rejects.toThrow();
+    await fresh.exec("rollback");
+    expect((await fresh.query("select 1 from public.organizations")).rows).toHaveLength(0);
+    await fresh.close();
+  }, 30000);
+
+  it("rattache un compte confirmé et refuse de s’exécuter deux fois", async () => {
+    const fresh = await ready();
+    await fresh.query(
+      "insert into auth.users(id,email,email_confirmed_at) values (gen_random_uuid(), 'chef@example.org', now())",
+    );
+    await fresh.exec(forEmail("chef@example.org"));
+
+    const membership = await fresh.query<{ role: string; name: string }>(
+      `select m.role, o.name from public.memberships m join public.organizations o on o.id = m.organization_id`,
+    );
+    expect(membership.rows).toEqual([{ role: "ADMIN", name: "CIS Val de Loire" }]);
+    expect((await fresh.query("select 1 from public.qualifications")).rows).toHaveLength(4);
+    expect((await fresh.query("select 1 from public.shift_types")).rows).toHaveLength(2);
+
+    await expect(fresh.exec(forEmail("chef@example.org"))).rejects.toThrow();
+    await fresh.exec("rollback");
+    expect((await fresh.query("select 1 from public.organizations")).rows).toHaveLength(1);
+    await fresh.close();
+  }, 30000);
+
+  it("laisse l’administrateur lire son organisation sous RLS", async () => {
+    const fresh = await ready();
+    const inserted = await fresh.query<{ id: string }>(
+      "insert into auth.users(id,email,email_confirmed_at) values (gen_random_uuid(), 'chef@example.org', now()) returning id",
+    );
+    await fresh.exec(forEmail("chef@example.org"));
+    // The whole point of the provisioning: the account can now see something.
+    await fresh.exec("reset role");
+    await fresh.query("select set_config('request.jwt.claim.sub', $1, false)", [inserted.rows[0].id]);
+    await fresh.exec("set role authenticated");
+    expect((await fresh.query("select name from public.organizations")).rows).toEqual([{ name: "CIS Val de Loire" }]);
+    expect((await fresh.query("select role from public.memberships")).rows).toEqual([{ role: "ADMIN" }]);
+    expect((await fresh.query("select 1 from public.qualifications")).rows).toHaveLength(4);
+    await fresh.close();
+  }, 30000);
+});

@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   UserRound,
   Flame,
+  LogOut,
   Menu,
   X,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import { Brand } from "./brand";
 import { useApp } from "./provider";
 import { Button } from "./ui/button";
 import { monthLabel } from "@/lib/domain";
+import { roleLabels, type AttachedSession } from "@/lib/session";
 const managerNav = [
   { href: "/tableau-de-bord", label: "Tableau de bord", icon: LayoutDashboard },
   { href: "/disponibilites", label: "Disponibilités", icon: CalendarDays },
@@ -34,7 +36,16 @@ const agentNav = [
   { href: "/mon-planning", label: "Mon planning", icon: CalendarCheck2 },
   { href: "/profil", label: "Mon profil", icon: UserRound },
 ];
-export function Shell({ children }: { children: ReactNode }) {
+const initials = (name: string) =>
+  name
+    .split(/[\s.@_-]+/)
+    .filter(Boolean)
+    .map(part => part[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
+export function Shell({ children, session }: { children: ReactNode; session: AttachedSession | null }) {
   const { state, actor, agent, switchRole, campaignId, setCampaignId, ready } = useApp();
   const path = usePathname();
   const [menu, setMenu] = useState(false);
@@ -134,42 +145,65 @@ export function Shell({ children }: { children: ReactNode }) {
             </strong>
           </div>
           <div className="topbar-actions">
-            <span className="demo-tag">
-              <span />
-              Démo locale
-            </span>
-            <label className="role-switch">
-              <span className="sr-only">Espace de démonstration</span>
-              <select
-                aria-label="Espace de démonstration"
-                value={actor.role}
-                onChange={e => switchRole(e.target.value as typeof actor.role)}
-              >
-                <option value="MANAGER">Responsable</option>
-                <option value="AGENT">Agent</option>
-              </select>
-            </label>
+            {session ? (
+              <span className="demo-tag connected">
+                <span />
+                Connecté
+              </span>
+            ) : (
+              <>
+                <span className="demo-tag">
+                  <span />
+                  Démo locale
+                </span>
+                <label className="role-switch">
+                  <span className="sr-only">Espace de démonstration</span>
+                  <select
+                    aria-label="Espace de démonstration"
+                    value={actor.role}
+                    onChange={e => switchRole(e.target.value as typeof actor.role)}
+                  >
+                    <option value="MANAGER">Responsable</option>
+                    <option value="AGENT">Agent</option>
+                  </select>
+                </label>
+              </>
+            )}
             <span className="topbar-divider" />
-            <div className="user-avatar">
-              {agent.name
-                .split(" ")
-                .map(n => n[0])
-                .slice(0, 2)
-                .join("")}
-            </div>
+            <div className="user-avatar">{initials(session ? session.displayName : agent.name)}</div>
             <div className="user-name">
-              <strong>{agent.name}</strong>
-              <small>{actor.role === "MANAGER" ? "Responsable de centre" : agent.grade}</small>
+              <strong>{session ? session.displayName : agent.name}</strong>
+              <small>
+                {session
+                  ? (roleLabels[session.membership.role] ?? session.membership.role)
+                  : actor.role === "MANAGER"
+                    ? "Responsable de centre"
+                    : agent.grade}
+              </small>
             </div>
+            {session && (
+              <form method="post" action="/deconnexion">
+                <button type="submit" className="button button-ghost button-sm" aria-label="Se déconnecter">
+                  <LogOut size={17} />
+                </button>
+              </form>
+            )}
           </div>
         </header>
-        <div className="demo-banner">
-          Espace de démonstration · données fictives sauvegardées dans ce navigateur.
-          <Link href={actor.role === "MANAGER" ? "/mes-disponibilites" : "/profil"}>
-            {actor.role === "MANAGER" ? "Tester ma saisie agent" : "Changer d’agent"}
-            <ArrowUpRight size={14} />
-          </Link>
-        </div>
+        {session ? (
+          <div className="demo-banner">
+            Session ouverte sur {session.membership.organizationName} · les écrans affichent encore les données locales
+            de démonstration, le raccordement des données est l’étape suivante.
+          </div>
+        ) : (
+          <div className="demo-banner">
+            Espace de démonstration · données fictives sauvegardées dans ce navigateur.
+            <Link href={actor.role === "MANAGER" ? "/mes-disponibilites" : "/profil"}>
+              {actor.role === "MANAGER" ? "Tester ma saisie agent" : "Changer d’agent"}
+              <ArrowUpRight size={14} />
+            </Link>
+          </div>
+        )}
         <main id="main" tabIndex={-1}>
           <div className="campaign-context">
             <span>
