@@ -12,6 +12,7 @@ const MIGRATIONS = [
   "0006_email_dispatch.sql",
   "0007_availability_templates.sql",
   "20260918151529_atomic_campaign_creation.sql",
+  "20260918180846_atomic_availability_templates.sql",
 ];
 const baseAuthSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
 const orgA = "10000000-0000-0000-0000-000000000001";
@@ -1416,5 +1417,221 @@ describe("Création atomique d’une campagne", () => {
     await expect(create()).rejects.toThrow("permission denied for function create_campaign");
     await be("");
     await expect(create()).rejects.toThrow("Not allowed to create this campaign");
+  });
+});
+
+// Les deux écritures de la disponibilité habituelle, ramenées chacune à une
+// transaction. C’est ce que le client ne pouvait pas garantir : il effaçait la
+// semaine avant de la réécrire, et appliquait un type de disponibilité à la fois.
+describe("Disponibilité habituelle atomique", () => {
+  const org = "10000000-0000-0000-0000-000000000060";
+  const team = "20000000-0000-0000-0000-000000000060";
+  const agent = "30000000-0000-0000-0000-000000000060";
+  const other = "30000000-0000-0000-0000-000000000061";
+  const october = "40000000-0000-0000-0000-000000000060";
+  const closed = "40000000-0000-0000-0000-000000000061";
+  const mondays = ["2026-10-05", "2026-10-12", "2026-10-19", "2026-10-26"];
+  const saturdays = ["2026-10-03", "2026-10-10", "2026-10-17", "2026-10-24", "2026-10-31"];
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+  const save = async (days: Record<string, string | null>, on = org) =>
+    (
+      await live.query<{ n: number }>("select public.save_availability_template($1, $2::jsonb) as n", [
+        on,
+        JSON.stringify(days),
+      ])
+    ).rows[0].n;
+  const apply = async (campaign = october) =>
+    (await live.query<{ n: number }>("select public.apply_availability_template($1) as n", [campaign])).rows[0].n;
+  const week = async (who = agent) => {
+    await live.exec("reset role");
+    return (
+      await live.query(
+        "select weekday, availability_type from public.availability_templates where user_id=$1 order by weekday",
+        [who],
+      )
+    ).rows;
+  };
+  const days = async (campaign = october) => {
+    await live.exec("reset role");
+    return (
+      await live.query<{ date: string; availability_type: string; comment: string }>(
+        "select date::text as date, availability_type, comment from public.availability_entries where campaign_id=$1 and user_id=$2 order by date",
+        [campaign, agent],
+      )
+    ).rows;
+  };
+
+  beforeAll(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const migration of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${migration}`, import.meta.url), "utf8"));
+    await live.exec(`insert into auth.users(id) values ('${agent}'), ('${other}');
+      insert into public.profiles(user_id,display_name) values ('${agent}','Agent'), ('${other}','Autre');
+      insert into public.organizations(id,name) values ('${org}','Centre modèle');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values ('${org}','${agent}','${team}','AGENT',true), ('${org}','${other}','${team}','AGENT',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at) values
+        ('${october}','${org}','${team}','Octobre','2026-10-01','2026-10-31',now()-interval '1 day',now()+interval '10 days'),
+        ('${closed}','${org}','${team}','Septembre','2026-09-01','2026-09-30',now()-interval '40 days',now()-interval '10 days');
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values
+        ('${org}','${october}','${agent}'), ('${org}','${closed}','${agent}'), ('${org}','${october}','${other}');`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("remplace la semaine entière et traite un jour nul comme « rien d’habituel »", async () => {
+    await be(agent);
+    expect(await save({ 1: "UNAVAILABLE", 2: "DAY", 6: "FULL_24H" })).toEqual(3);
+    expect(await week()).toEqual([
+      { weekday: 1, availability_type: "UNAVAILABLE" },
+      { weekday: 2, availability_type: "DAY" },
+      { weekday: 6, availability_type: "FULL_24H" },
+    ]);
+    await be(agent);
+    expect(await save({ 1: "UNAVAILABLE", 2: null, 6: "FULL_24H", 7: null })).toEqual(2);
+    expect(await week()).toEqual([
+      { weekday: 1, availability_type: "UNAVAILABLE" },
+      { weekday: 6, availability_type: "FULL_24H" },
+    ]);
+  });
+
+  // La régression que cette migration referme : un refus au milieu de l’écriture
+  // laissait l’agent sans disponibilité habituelle, la sienne étant déjà effacée.
+  it("garde la semaine précédente quand une valeur est refusée", async () => {
+    await be(agent);
+    await expect(save({ 1: "DAY", 8: "DAY" })).rejects.toThrow();
+    expect(await week()).toEqual([
+      { weekday: 1, availability_type: "UNAVAILABLE" },
+      { weekday: 6, availability_type: "FULL_24H" },
+    ]);
+    await be(agent);
+    await expect(save({ 1: "DAY", 3: "PEUT-ÊTRE" })).rejects.toThrow();
+    expect(await week()).toEqual([
+      { weekday: 1, availability_type: "UNAVAILABLE" },
+      { weekday: 6, availability_type: "FULL_24H" },
+    ]);
+  });
+
+  it("n’écrit la semaine que pour soi, et pas dans un centre dont on n’est pas membre", async () => {
+    await be(other);
+    expect(await save({ 4: "NIGHT" })).toEqual(1);
+    expect(await week(other)).toEqual([{ weekday: 4, availability_type: "NIGHT" }]);
+    expect(await week()).toHaveLength(2);
+    await be(agent);
+    await expect(save({ 1: "DAY" }, "10000000-0000-0000-0000-0000000000ff")).rejects.toThrow();
+  });
+
+  it("applique le modèle aux seuls jours concernés du mois", async () => {
+    await be(agent);
+    expect(await apply()).toEqual(9);
+    expect(await days()).toEqual(
+      [...mondays, ...saturdays].sort().map(date => ({
+        date,
+        availability_type: mondays.includes(date) ? "UNAVAILABLE" : "FULL_24H",
+        comment: "",
+      })),
+    );
+  });
+
+  it("écrase le jour déjà renseigné, laisse les autres et garde leur commentaire", async () => {
+    await be(agent);
+    await live.query(
+      "update public.availability_entries set availability_type='DAY' where campaign_id=$1 and date='2026-10-05'",
+      [october],
+    );
+    await be(agent);
+    await live.query(
+      "insert into public.availability_entries(campaign_id,user_id,date,availability_type,comment) values ($1,$2,'2026-10-06','NIGHT','de garde')",
+      [october, agent],
+    );
+    await be(agent);
+    expect(await apply()).toEqual(9);
+    const written = await days();
+    expect(written.find(row => row.date === "2026-10-05")).toEqual({
+      date: "2026-10-05",
+      availability_type: "UNAVAILABLE",
+      comment: "",
+    });
+    expect(written.find(row => row.date === "2026-10-06")).toEqual({
+      date: "2026-10-06",
+      availability_type: "NIGHT",
+      comment: "de garde",
+    });
+    expect(written).toHaveLength(10);
+  });
+
+  it("invalide une réponse validée quand le modèle est réappliqué", async () => {
+    await be(agent);
+    await save({ 1: "DAY", 2: "DAY", 3: "DAY", 4: "DAY", 5: "DAY", 6: "FULL_24H", 7: "UNAVAILABLE" });
+    await be(agent);
+    expect(await apply()).toEqual(31);
+    await live.query("update public.campaign_participants set validated_at=now() where campaign_id=$1 and user_id=$2", [
+      october,
+      agent,
+    ]);
+    await live.exec("reset role");
+    expect(
+      (
+        await live.query(
+          "select validated_at is not null as validated from public.campaign_participants where campaign_id=$1 and user_id=$2",
+          [october, agent],
+        )
+      ).rows,
+    ).toEqual([{ validated: true }]);
+    await be(agent);
+    expect(await apply()).toEqual(31);
+    await live.exec("reset role");
+    expect(
+      (
+        await live.query("select validated_at from public.campaign_participants where campaign_id=$1 and user_id=$2", [
+          october,
+          agent,
+        ])
+      ).rows,
+    ).toEqual([{ validated_at: null }]);
+  });
+
+  it("n’écrit aucun jour sur une campagne fermée", async () => {
+    await be(agent);
+    await expect(apply(closed)).rejects.toThrow("Campaign is closed");
+    expect(await days(closed)).toHaveLength(0);
+  });
+
+  it("refuse un modèle vide, une campagne étrangère et un appel sans identité", async () => {
+    await be(other);
+    await live.query("select public.save_availability_template($1, '{}'::jsonb)", [org]);
+    await be(other);
+    await expect(apply()).rejects.toThrow("Availability template is empty");
+    await be(other);
+    await expect(apply(closed)).rejects.toThrow("Not a participant of this campaign");
+    await be("");
+    await expect(apply()).rejects.toThrow("Not allowed to apply a template to this campaign");
+    await be("");
+    await expect(save({ 1: "DAY" })).rejects.toThrow("Not allowed to write this template");
+  });
+
+  it("garde les droits de l’appelant et reste fermée à anon", async () => {
+    await live.exec("reset role");
+    expect(
+      (
+        await live.query(`select proname, prosecdef from pg_proc
+          where oid in ('public.save_availability_template(uuid,jsonb)'::regprocedure,
+                        'public.apply_availability_template(uuid)'::regprocedure)
+          order by proname`)
+      ).rows,
+    ).toEqual([
+      { proname: "apply_availability_template", prosecdef: false },
+      { proname: "save_availability_template", prosecdef: false },
+    ]);
+    await live.exec("set role anon");
+    await expect(apply()).rejects.toThrow("permission denied for function apply_availability_template");
+    await expect(save({ 1: "DAY" })).rejects.toThrow("permission denied for function save_availability_template");
   });
 });

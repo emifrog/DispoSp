@@ -61,3 +61,38 @@ describe("Création de campagne depuis le serveur", () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 });
+
+describe("Disponibilité habituelle depuis le serveur", () => {
+  const agent: AttachedSession = { ...session, userId: "agent", membership: { ...session.membership, role: "AGENT" } };
+
+  it("confie la semaine entière à la base, jours vides compris", async () => {
+    rpc.mockResolvedValue({ error: null });
+    await runCommand(agent, {
+      type: "template",
+      days: { 1: "UNAVAILABLE", 2: null, 6: "FULL_24H" },
+    });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("save_availability_template", {
+      org: "centre",
+      days: { 1: "UNAVAILABLE", 2: null, 6: "FULL_24H" },
+    });
+  });
+
+  // Le mois n’est plus découpé par type de disponibilité : un seul appel, donc
+  // un mois entièrement appliqué ou pas du tout.
+  it("applique le mois en un seul appel", async () => {
+    rpc.mockResolvedValue({ error: null });
+    await runCommand(agent, { type: "applyTemplate", campaignId: "campagne" });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("apply_availability_template", { campaign: "campagne" });
+  });
+
+  it("traduit le refus de la base, sans jamais en montrer le texte", async () => {
+    rpc.mockResolvedValue({ error: { message: "Availability template is empty", code: "P0002" } });
+    await expect(runCommand(agent, { type: "applyTemplate", campaignId: "campagne" })).rejects.toThrow(
+      "Votre disponibilité habituelle est vide : renseignez-la d’abord.",
+    );
+    rpc.mockResolvedValue({ error: { message: "Campaign is closed", code: "P0001" } });
+    await expect(runCommand(agent, { type: "applyTemplate", campaignId: "campagne" })).rejects.toThrow(
+      "La campagne est fermée : la saisie n’est plus possible.",
+    );
+  });
+});

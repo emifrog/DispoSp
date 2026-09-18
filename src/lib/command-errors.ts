@@ -11,6 +11,13 @@ const byMessage: [RegExp, (match: RegExpMatchArray) => string][] = [
   [/^Campaign name is too short/, () => "Le nom de la campagne doit contenir au moins trois caractères."],
   [/^Campaign month must start on the first day/, () => "Choisissez un mois valide pour la campagne."],
   [/^Campaign closing date must be in the future/, () => "La date de clôture de la campagne doit être à venir."],
+  [
+    /^Not allowed to write this template/,
+    () => "Vous ne pouvez enregistrer que votre propre disponibilité habituelle.",
+  ],
+  [/^Not allowed to apply a template to this campaign/, () => "Cette campagne ne vous est pas accessible."],
+  [/^Not a participant of this campaign/, () => "Vous ne participez pas à cette campagne."],
+  [/^Availability template is empty/, () => "Votre disponibilité habituelle est vide : renseignez-la d’abord."],
   [/^Campaign is closed/, () => "La campagne est fermée : la saisie n’est plus possible."],
   [/^Date outside campaign/, () => "Cette date ne fait pas partie de la campagne."],
   [/^Availability identity is immutable/, () => "Une disponibilité ne peut changer ni de date ni d’agent."],

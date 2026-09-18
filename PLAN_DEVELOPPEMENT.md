@@ -1,6 +1,6 @@
 # Plan de développement — DISPO SP
 
-État au 18 septembre 2026, mis à jour après confirmation de l’application de `20260918151529_atomic_campaign_creation.sql`. Les huit migrations (`0001` à `0007`, puis la migration de création atomique des campagnes) sont appliquées sur le projet de développement. Les statuts ci-dessous distinguent les fonctionnalités implémentées des vérifications restant à effectuer sur le site hébergé.
+État au 18 septembre 2026. Les neuf migrations (`0001` à `0007`, puis la création atomique des campagnes et les écritures atomiques de la disponibilité habituelle) sont appliquées sur le projet de développement. Les statuts ci-dessous distinguent les fonctionnalités implémentées des vérifications restant à effectuer sur le site hébergé.
 
 Ce document complète le cahier des charges V1.0 du 17 septembre 2026 et `DECISIONS_FONCTIONNELLES.md`, qui restent la référence fonctionnelle. La configuration et les commandes sont détaillées dans le [README](README.md).
 
@@ -21,7 +21,7 @@ Le dernier état documenté du déploiement Vercel était une démonstration. So
 | Authentification            | ✅ implémentée           | Inscription, confirmation d’adresse, connexion, session et déconnexion                                   |
 | Lecture et écriture         | ✅ implémentées          | Données et commandes métier raccordées à Supabase                                                        |
 | Administration              | ✅ implémentée           | Fiches agents, invitations, équipes, quatre rôles et qualifications                                      |
-| Disponibilités habituelles  | ✅ implémentées          | Modèle personnel par jour de semaine ; migration `0007` appliquée                                        |
+| Disponibilités habituelles  | ✅ implémentées          | Modèle personnel par jour de semaine ; enregistrement et application atomiques                           |
 | Synthèse et couverture      | ✅ implémentées          | Matrice virtualisée, vue nominative par journée, niveaux de couverture et distinction potentiel/planifié |
 | Planning et équité          | ✅ implémentés           | Brouillon, publication contrôlée, répartition Jour/Nuit/24 h                                             |
 | Historique et audit         | 🟡 à compléter           | Journal et filtres sujet/auteur/recherche livrés ; période et export restants                            |
@@ -53,7 +53,7 @@ Les six contrôles de l’intégration continue sont le formatage, le lint, les 
 | 2        | Tester l’invitation avec un second compte                             | Compte confirmé, rattaché au bon centre avec le bon rôle                      |
 | 3        | Configurer Resend et vérifier la réception                            | Emails d’ouverture, de rappel et de publication reçus avec des liens corrects |
 | 4        | Faire une recette métier avec plusieurs agents                        | Modèles habituels, validation, couverture, publication et exports cohérents   |
-| 5        | Déployer la création atomique et fiabiliser les modèles               | Pas de campagne ou de modèle partiellement enregistré après un échec          |
+| 5        | Déployer la version utilisant les écritures atomiques                 | Pas de campagne ni de modèle partiellement enregistré après un échec          |
 | 6        | Préparer l’exploitation                                               | Sauvegarde restaurable, suivi des erreurs et règles de conservation définis   |
 
 Le développement des lots 3 et 5 a avancé : la priorité porte désormais sur leur recette en mode connecté, les limites identifiées et la mise en service. L’application d’une migration ne prouve pas à elle seule le bon fonctionnement du parcours utilisateur hébergé.
@@ -64,7 +64,7 @@ Le développement des lots 3 et 5 a avancé : la priorité porte désormais sur 
 
 Versionnement et outillage, authentification, lecture des données, intégration continue et virtualisation de la synthèse. Les migrations `0001_foundation.sql` à `0007_availability_templates.sql`, puis `20260918151529_atomic_campaign_creation.sql`, sont appliquées ; le schéma compte 19 tables.
 
-### Lot 1 — Écriture des données ✅ implémentée, fiabilisation restante
+### Lot 1 — Écriture des données ✅ implémentée, déploiement à confirmer
 
 Les commandes métier passent par l’action serveur `submitCommand`. La charge utile est validée par Zod et l’identité provient de la session ; les refus de la base sont traduits en français sans repli silencieux vers le stockage local.
 
@@ -74,7 +74,9 @@ Sont raccordés : saisie et validation, affectation/retrait, besoins, publicatio
 
 **Migration appliquée :** `20260918151529_atomic_campaign_creation.sql`, confirmation du porteur du projet. **À confirmer ensuite :** déploiement de la version de l’application utilisant cette fonction, puis vérification de la création d’une campagne sur le centre de test.
 
-**À fiabiliser ensuite :** la sauvegarde et l’application d’un modèle habituel comportent encore plusieurs écritures.
+`public.save_availability_template()` et `public.apply_availability_template()` font de même pour la disponibilité habituelle. La première remplace la semaine sous une seule instruction : un refus rend à l’agent la semaine qu’il avait, au lieu de la lui laisser vide, ce que l’effacement suivi d’une réécriture ne garantissait pas. La seconde écrit le mois d’un bloc, calendrier compris, là où le client appliquait un type de disponibilité à la fois et pouvait s’arrêter en chemin. Les déclencheurs gardent leurs règles : fenêtre ouverte, date dans la campagne, invalidation de la réponse.
+
+**Migration appliquée :** `20260918180846_atomic_availability_templates.sql`, confirmation du porteur du projet. **À confirmer ensuite :** déploiement de la version qui appelle ces deux fonctions, puis enregistrement et application d’un modèle sur le centre de test.
 
 ### Lot 2 — Agents et administration ✅ implémentés, recette d’invitation restante
 
@@ -115,7 +117,7 @@ L’envoi nécessite **les trois variables** `RESEND_API_KEY`, `RESEND_FROM` et 
 - Impression de la vue par journée et du planning personnel, permettant un enregistrement PDF.
 - Vue quotidienne avec listes nominatives ; indicateurs déficit/limite/couvert et état distinct lorsque les besoins ne sont pas définis.
 - Équité ventilée Jour, Nuit et 24 h ; une garde 24 h représente deux créneaux dans le total.
-- Disponibilités habituelles personnelles par jour de semaine, enregistrées en base et applicables au calendrier. **Migration `0007_availability_templates.sql` appliquée, confirmation du porteur du projet.** L’application d’un modèle ne vaut ni validation ni affectation.
+- Disponibilités habituelles personnelles par jour de semaine, enregistrées en base et applicables au calendrier. **Migrations `0007_availability_templates.sql` et `20260918180846_atomic_availability_templates.sql` appliquées, confirmation du porteur du projet.** L’application d’un modèle ne vaut ni validation ni affectation.
 
 **Reste à faire :**
 
@@ -140,7 +142,7 @@ Notifications poussées, échanges de garde entre agents, proposition automatiqu
 | Fiche agent (§3)                               | ✅   | Fiche complète et invitation ; acceptation hébergée à vérifier              |
 | Calendrier cinq états (§4)                     | ✅   | Saisie persistée, validation explicite et invalidation                      |
 | Saisie multiple et règles répétitives (§4)     | ✅   | Périodes et jours de semaine                                                |
-| Disponibilités habituelles (§4)                | ✅   | Modèles personnels ; migration `0007` appliquée                             |
+| Disponibilités habituelles (§4)                | ✅   | Modèles personnels ; enregistrement et application atomiques                |
 | Campagnes (§5)                                 | ✅   | Création atomique et migration livrées ; déploiement et recette à confirmer |
 | Tableau de synthèse (§6)                       | ✅   | Colonne figée, tri, filtres, virtualisation                                 |
 | Vue par journée nominative (§6)                | ✅   | Listes nominatives et impression                                            |
@@ -195,7 +197,7 @@ Les tests de `tests/e2e/connexion.spec.ts` nécessitent un build et un environne
 
 ## 8. Prochaine action
 
-La migration de création atomique étant appliquée, déployer la version de l’application qui appelle `public.create_campaign()`, si ce n’est pas déjà fait. Vérifier la création d’une campagne : un planning complet, deux créneaux par date et les seuls membres actifs de l’équipe comme participants.
+Les migrations étant appliquées, déployer la version de l’application qui appelle `public.create_campaign()` et les deux fonctions de disponibilité habituelle, si ce n’est pas déjà fait. Vérifier la création d’une campagne : un planning complet, deux créneaux par date et les seuls membres actifs de l’équipe comme participants.
 
 Effectuer une recette sur l’URL publique avec un administrateur et un second compte agent :
 

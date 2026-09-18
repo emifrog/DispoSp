@@ -1,7 +1,7 @@
 import "server-only";
 import { frenchMessage, type DatabaseFailure } from "./command-errors";
 import { dispatch } from "./mailer.server";
-import { templateEntries, type Availability, type Command, type Shift } from "./domain";
+import type { Command, Shift } from "./domain";
 import type { AttachedSession } from "./session";
 import { createActionClient } from "./supabase/server";
 
@@ -49,7 +49,7 @@ export async function runCommand(session: AttachedSession, command: Command): Pr
     case "template":
       return writeTemplate(client, session, command);
     case "applyTemplate":
-      return applyTemplate(client, session, command);
+      return applyTemplate(client, command);
   }
 }
 
@@ -57,59 +57,24 @@ export async function runCommand(session: AttachedSession, command: Command): Pr
 // Disponibilité habituelle (§4)
 // ---------------------------------------------------------------------------
 
+// La semaine entière est remplacée : l’écran envoie toujours les sept jours, et
+// un jour absent veut dire « rien d’habituel », pas « inchangé ». L’effacement et
+// la réécriture tiennent dans une transaction : un refus rend à l’agent la semaine
+// qu’il avait, au lieu de la lui laisser vide.
 async function writeTemplate(client: Client, session: AttachedSession, command: Of<"template">) {
-  const organizationId = session.membership.organizationId;
-  // La semaine entière est remplacée : l’écran envoie toujours les sept jours,
-  // et un jour absent veut dire « rien d’habituel », pas « inchangé ».
-  const { error: clearFailure } = await client
-    .from("availability_templates")
-    .delete()
-    .eq("organization_id", organizationId)
-    .eq("user_id", session.userId);
-  if (clearFailure) fail(clearFailure);
-  const rows = Object.entries(command.days)
-    .filter(([, value]) => value)
-    .map(([weekday, value]) => ({
-      organization_id: organizationId,
-      user_id: session.userId,
-      weekday: Number(weekday),
-      availability_type: value,
-    }));
-  if (!rows.length) return;
-  const { error } = await client.from("availability_templates").insert(rows);
+  const { error } = await client.rpc("save_availability_template", {
+    org: session.membership.organizationId,
+    days: command.days,
+  });
   if (error) fail(error);
 }
 
-async function applyTemplate(client: Client, session: AttachedSession, command: Of<"applyTemplate">) {
-  const { data: campaign, error: campaignFailure } = await client
-    .from("availability_campaigns")
-    .select("starts_on")
-    .eq("id", command.campaignId)
-    .maybeSingle();
-  if (campaignFailure) fail(campaignFailure);
-  if (!campaign) throw new Error("Campagne introuvable.");
-
-  const { data: rows, error: templateFailure } = await client
-    .from("availability_templates")
-    .select("weekday, availability_type")
-    .eq("user_id", session.userId);
-  if (templateFailure) fail(templateFailure);
-  const template = Object.fromEntries(
-    (rows ?? []).map(row => [String(row.weekday), row.availability_type as Availability]),
-  );
-  const entries = templateEntries(template, (campaign.starts_on as string).slice(0, 7));
-  if (!entries.length) throw new Error("Votre disponibilité habituelle est vide : renseignez-la d’abord.");
-
-  // Un type à la fois : la commande de saisie écrit déjà une valeur sur plusieurs
-  // dates, et c’est elle qui porte les règles — fenêtre ouverte, invalidation.
-  for (const type of new Set(entries.map(entry => entry.type)))
-    await writeAvailability(client, session.userId, {
-      type: "availability",
-      campaignId: command.campaignId,
-      dates: entries.filter(entry => entry.type === type).map(entry => entry.date),
-      value: type,
-      comment: "",
-    });
+// Appliquer, c’est écrire de vraies disponibilités. La base tient le calendrier —
+// elle seule sait quel jour de la campagne tombe un lundi — et écrit le mois d’un
+// bloc, avec ses règles habituelles : fenêtre ouverte et invalidation de la réponse.
+async function applyTemplate(client: Client, command: Of<"applyTemplate">) {
+  const { error } = await client.rpc("apply_availability_template", { campaign: command.campaignId });
+  if (error) fail(error);
 }
 
 // Nobody runs a clock, so a reminder is an act a manager takes. The database
