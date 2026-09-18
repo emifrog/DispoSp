@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Europe/Paris is the reference timezone of the application; pinning it here
+# keeps CI runs comparable with developer machines.
+env:
+  TZ: Europe/Paris
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.3.4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Formatage
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Types
+        run: pnpm typecheck
+
+      - name: Tests unitaires et schéma PostgreSQL
+        run: pnpm test
+
+      - name: Build de production
+        run: pnpm build
+
+      # The Playwright config starts `next start` against the build above.
+      - name: Navigateur de test
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Tests de bout en bout
+        run: pnpm test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
