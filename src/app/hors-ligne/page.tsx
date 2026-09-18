@@ -6,7 +6,7 @@ export default function Offline() {
     <main className="empty-state">
       <h1>Pas de connexion.</h1>
       <p>
-        DISPO SP a besoin du réseau : les disponibilités, les affectations et les plannings sont lus en direct, jamais
+        DispoSP a besoin du réseau : les disponibilités, les affectations et les plannings sont lus en direct, jamais
         depuis une copie qui pourrait dater.
       </p>
       <p>Rétablissez la connexion, puis réessayez.</p>

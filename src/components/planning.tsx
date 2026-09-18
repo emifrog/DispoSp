@@ -109,9 +109,8 @@ export function Planning() {
   return (
     <>
       <PageTitle
-        eyebrow="PLANIFICATION"
         title="Construire le planning"
-        description="Les bonnes compétences, au bon moment. Affectez les agents disponibles."
+        description="Affectation des agents disponibles, créneau par créneau, puis publication."
         action={
           <span className={`pill ${published ? "pill-green" : "pill-gray"}`}>
             {published
@@ -282,7 +281,7 @@ export function Planning() {
                 <span>
                   {result.covered
                     ? "Ce créneau peut être publié."
-                    : `${Math.max(0, need.total - assigned.length)} agent(s) et ${result.qualifications.filter(q => q.actual < q.need).length} qualification(s) à compléter.`}
+                    : `${Math.max(0, need.total - assigned.length)} ${plural(Math.max(0, need.total - assigned.length), "agent")} et ${result.qualifications.filter(q => q.actual < q.need).length} ${plural(result.qualifications.filter(q => q.actual < q.need).length, "qualification")} à compléter.`}
                 </span>
               </div>
             </>
@@ -303,7 +302,8 @@ export function Planning() {
           )}
           {result.invalid.length > 0 && (
             <p className="text-red small">
-              {result.invalid.length} affectation(s) ne correspondent plus à une disponibilité validée.
+              {result.invalid.length} {plural(result.invalid.length, "affectation")}{" "}
+              {plural(result.invalid.length, "ne correspond", "ne correspondent")} plus à une disponibilité validée.
             </p>
           )}
           <p className="small muted">
@@ -318,7 +318,7 @@ export function Planning() {
       </div>
       <Panel
         title="Répartition des gardes"
-        subtitle="Charge dans le brouillon du mois, pour guider vos choix."
+        subtitle="Charge par agent dans le brouillon du mois."
         action={
           <span className="muted small">24 h = les deux créneaux d’une même date · le total compte les créneaux</span>
         }

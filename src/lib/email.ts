@@ -15,14 +15,14 @@ export function message(notice: Pending, appUrl: string): Message {
   const kind = notificationLabels[notice.kind] ?? notice.kind;
   const body = notice.body?.trim() ?? "";
   const call = notice.kind === "SCHEDULE_PUBLISHED" ? "Consulter mon planning" : "Renseigner mes disponibilités";
-  const text = [body, "", `${call} : ${link}`, "", "DISPO SP"].filter(line => line !== undefined).join("\n");
+  const text = [body, "", `${call} : ${link}`, "", "DispoSP"].filter(line => line !== undefined).join("\n");
   const html = [
     `<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:15px;line-height:1.55;color:#1d2a3a">`,
     `<p style="margin:0 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#7186a2">${escape(kind)}</p>`,
     `<h1 style="margin:0 0 14px;font-size:18px;font-weight:600">${escape(notice.subject)}</h1>`,
     body ? `<p style="margin:0 0 18px">${escape(body)}</p>` : "",
     `<p style="margin:0 0 22px"><a href="${escape(link)}" style="color:#1668dc">${escape(call)}</a></p>`,
-    `<p style="margin:0;font-size:12px;color:#7186a2">DISPO SP — vous recevez ce message parce que vous êtes inscrit dans un centre.</p>`,
+    `<p style="margin:0;font-size:12px;color:#7186a2">DispoSP — vous recevez ce message parce que vous êtes inscrit dans un centre.</p>`,
     `</div>`,
   ]
     .filter(Boolean)

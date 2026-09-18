@@ -63,7 +63,7 @@ export function InstallApp() {
   }, []);
   if (installed)
     return (
-      <Panel title="Application installée" subtitle="DISPO SP s’ouvre depuis votre écran d’accueil.">
+      <Panel title="Application installée" subtitle="DispoSP s’ouvre depuis votre écran d’accueil.">
         <div className="install-app">
           <Check size={20} />
           <p>
@@ -95,7 +95,7 @@ export function InstallApp() {
       <div className="install-app muted small">
         <Share size={16} />
         <p>
-          Sur iPhone et iPad : ouvrez DISPO SP dans Safari, touchez le bouton Partager, puis «&nbsp;Sur l’écran
+          Sur iPhone et iPad : ouvrez DispoSP dans Safari, touchez le bouton Partager, puis «&nbsp;Sur l’écran
           d’accueil&nbsp;».
         </p>
       </div>

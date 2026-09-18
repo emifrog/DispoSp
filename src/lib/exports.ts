@@ -63,7 +63,7 @@ export function personalCalendar(state: AppState, campaign: Campaign, userId: st
       .toISOString()
       .replace(/[-:]/g, "")
       .replace(/\.\d{3}Z$/, "Z");
-  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//DISPO SP//Planning//FR", "CALSCALE:GREGORIAN"];
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//DispoSP//Planning//FR", "CALSCALE:GREGORIAN"];
   for (const day of monthDays(campaign.month))
     for (const shift of ["DAY", "NIGHT"] as const) {
       const key = shiftKey(campaign.id, day, shift);
@@ -78,7 +78,7 @@ export function personalCalendar(state: AppState, campaign: Campaign, userId: st
         `DTSTAMP:${published.publishedAt.replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`,
         `DTSTART:${utc(day, shift === "DAY" ? campaign.dayStart : campaign.nightStart)}`,
         `DTEND:${utc(shift === "DAY" ? day : tomorrow.toISOString().slice(0, 10), shift === "DAY" ? campaign.nightStart : campaign.dayStart)}`,
-        `SUMMARY:Garde ${shift === "DAY" ? "de jour" : "de nuit"} - DISPO SP`,
+        `SUMMARY:Garde ${shift === "DAY" ? "de jour" : "de nuit"} - DispoSP`,
         "END:VEVENT",
       );
     }

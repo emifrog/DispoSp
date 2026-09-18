@@ -11,7 +11,6 @@ export function Notifications() {
   return (
     <>
       <PageTitle
-        eyebrow="ESPACE AGENT"
         title="Notifications"
         description="Ouverture d’une campagne, rappel avant clôture, publication d’un planning."
         action={
@@ -24,7 +23,7 @@ export function Notifications() {
         }
       />
       <Panel
-        title="Vos messages"
+        title="Messages reçus"
         subtitle={
           unread.length
             ? `${unread.length} ${plural(unread.length, "message")} non ${plural(unread.length, "lu")}`

@@ -1,4 +1,4 @@
-# DISPO SP — Décisions fonctionnelles complémentaires
+# DispoSP — Décisions fonctionnelles complémentaires
 
 Date : 18 septembre 2026
 

@@ -17,7 +17,7 @@ import { Button } from "./ui/button";
 import { availabilityCsv, download } from "@/lib/exports";
 import { type Agent, dateLabel, entryKey, isValidated, localDate, monthDays, monthLabel, plural } from "@/lib/domain";
 // Matches the row height in globals.css; the virtualizer only needs an estimate.
-const ROW_HEIGHT = 52;
+const ROW_HEIGHT = 45;
 export function AvailabilityTable() {
   const { state, campaignId, campaign, connected } = useApp();
   const [search, setSearch] = useState("");
@@ -130,9 +130,8 @@ export function AvailabilityTable() {
   return (
     <>
       <PageTitle
-        eyebrow="SYNTHÈSE D’ÉQUIPE"
-        title="Toutes les disponibilités"
-        description={`${monthLabel(campaign.month)} · Une vision partagée pour préparer chaque garde.`}
+        title="Disponibilités du centre"
+        description={`${monthLabel(campaign.month)} · saisies et validations de l’ensemble des agents.`}
         action={
           <div className="heading-buttons">
             {/* Excel passe par une route serveur : le classeur est construit là-bas,
@@ -204,7 +203,9 @@ export function AvailabilityTable() {
             Par journée
           </button>
         </div>
-        <span className="muted small">{data.length} agent(s)</span>
+        <span className="muted small">
+          {data.length} {plural(data.length, "agent")}
+        </span>
       </div>
       {view === "day" && <DayView agents={data} days={days} campaignId={campaignId} />}
       {view === "matrix" && printing && (

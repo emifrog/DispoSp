@@ -4,7 +4,7 @@ test.beforeEach(async ({ page }) => {
 });
 test("parcours agent : saisie rapide, validation explicite, sauvegarde et modification", async ({ page }) => {
   await page.goto("/tableau-de-bord");
-  await expect(page.getByRole("heading", { name: "Une équipe prête, ensemble." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tableau de bord", exact: true })).toBeVisible();
   await page.getByLabel("Espace de démonstration").selectOption("AGENT");
   await expect(page.getByRole("button", { name: "Valider mes disponibilités" })).toBeDisabled();
   await page.getByRole("button", { name: "Saisie rapide", exact: true }).click();
@@ -79,7 +79,7 @@ test("tableau de bord, navigation et affichage sans débordement", async ({ page
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.goto("/tableau-de-bord");
-  await expect(page.getByRole("heading", { name: "Une équipe prête, ensemble." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tableau de bord", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Couverture planifiée", exact: true }).click();
   await expect(page.getByText("Affectations du brouillon · effectifs et qualifications")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -124,9 +124,9 @@ test("une sauvegarde locale inutilisable ne fait pas planter l’application", a
   // Each screen must render for real. Asserting on <main> alone would pass on the
   // error boundary, which also renders a <main>.
   const screens = [
-    ["/tableau-de-bord", "Une équipe prête, ensemble."],
+    ["/tableau-de-bord", "Tableau de bord"],
     ["/planning", "Construire le planning"],
-    ["/disponibilites", "Toutes les disponibilités"],
+    ["/disponibilites", "Disponibilités du centre"],
     ["/mes-disponibilites", "Mes disponibilités"],
     ["/mon-planning", "Mon planning"],
   ];
@@ -145,7 +145,7 @@ test("une sauvegarde locale illisible repart des données d’exemple", async ({
   await page.clock.setFixedTime(new Date("2026-09-18T10:00:00Z"));
   await page.addInitScript(() => localStorage.setItem("disposp-demo-v1", "{ceci n’est pas du JSON"));
   await page.goto("/tableau-de-bord");
-  await expect(page.getByRole("heading", { name: "Une équipe prête, ensemble." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tableau de bord", exact: true })).toBeVisible();
   await expect(page.getByText("La sauvegarde locale n’a pas pu être lue.")).toBeVisible();
   expect(errors).toEqual([]);
 });
@@ -195,7 +195,7 @@ test("la synthèse ne rend qu’une fraction des lignes à grand effectif", asyn
     );
   });
   await page.goto("/disponibilites");
-  await expect(page.getByText("300 agent(s)")).toBeVisible();
+  await expect(page.getByText("300 agents")).toBeVisible();
   // Far fewer rows in the DOM than agents: without virtualisation this would be
   // 300 rows of 33 cells. The bound is loose on purpose, only the order matters.
   const rendered = await page.locator("tbody tr:not(.virtual-spacer)").count();

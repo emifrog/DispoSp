@@ -9,12 +9,12 @@ test.describe("Application installable", () => {
     expect(response.status()).toBe(200);
     const manifest = await response.json();
     expect(manifest).toMatchObject({
-      short_name: "DISPO SP",
+      short_name: "DispoSP",
       lang: "fr",
       display: "standalone",
       start_url: "/",
       scope: "/",
-      theme_color: "#142b50",
+      theme_color: "#092b4e",
       // La matrice mensuelle se lit en paysage : verrouiller l'orientation la
       // rendrait illisible sur un téléphone.
       orientation: "any",

@@ -12,18 +12,18 @@ const roboto = Roboto({
   fallback: ["Segoe UI", "Arial", "Helvetica", "sans-serif"],
 });
 export const metadata: Metadata = {
-  title: "DISPO SP — Disponibilités & planning",
+  title: "DispoSP — Disponibilités & planning",
   description: "La disponibilité de chacun, la force du collectif. Planification des équipes de sapeurs-pompiers.",
   robots: { index: false, follow: false },
-  applicationName: "DISPO SP",
+  applicationName: "DispoSP",
   // iOS ignore le manifeste pour l'écran d'accueil : il lui faut son icône et
   // son propre drapeau de plein écran.
-  appleWebApp: { capable: true, title: "DISPO SP", statusBarStyle: "black-translucent" },
+  appleWebApp: { capable: true, title: "DispoSP", statusBarStyle: "black-translucent" },
   icons: { apple: "/apple-touch-icon.png" },
 };
 export const viewport: Viewport = {
   // La teinte de la barre d'état, une fois l'application installée.
-  themeColor: "#142b50",
+  themeColor: "#092b4e",
   // viewport-fit pour que le fond passe sous l'encoche plutôt que de s'arrêter
   // sur une bande blanche.
   viewportFit: "cover",

@@ -7,7 +7,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
     <html lang="fr">
       <body style={{ fontFamily: "system-ui, sans-serif", margin: 0, padding: "3rem 1.5rem", color: "#0f172a" }}>
         <main style={{ maxWidth: "34rem", margin: "0 auto" }}>
-          <h1 style={{ fontSize: "1.4rem" }}>DISPO SP n’a pas pu démarrer.</h1>
+          <h1 style={{ fontSize: "1.4rem" }}>DispoSP n’a pas pu démarrer.</h1>
           <p>Rechargez la page. Si l’erreur revient, signalez-la avec le message ci-dessous.</p>
           <p style={{ color: "#64748b", fontSize: "0.9rem" }}>{error.message}</p>
           <button

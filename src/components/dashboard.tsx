@@ -50,9 +50,8 @@ export function Dashboard() {
   return (
     <>
       <PageTitle
-        eyebrow="VUE D’ENSEMBLE"
-        title="Une équipe prête, ensemble."
-        description={`Pilotez les disponibilités et la couverture ${ofMonth(campaign.month)}.`}
+        title="Tableau de bord"
+        description={`Réponses et couverture ${ofMonth(campaign.month)}, jour et nuit.`}
         action={
           <Button asChild>
             <Link href="/planning">
@@ -184,7 +183,7 @@ export function Dashboard() {
         </div>
       </div>
       <Panel
-        title="La couverture, jour après jour"
+        title="Couverture par créneau"
         subtitle={`${monthLabel(campaign.month)} · ${mode === "potential" ? "Potentielle — réponses validées" : "Planifiée — brouillon"}`}
         action={
           <div className="coverage-legend">
@@ -266,7 +265,7 @@ export function Dashboard() {
       </Panel>
       <div className="dashboard-bottom">
         <Panel
-          title="La mobilisation de votre équipe"
+          title="État des réponses"
           subtitle="Seules les réponses explicitement validées sont comptabilisées."
           action={
             <span className="pill pill-blue">
@@ -329,7 +328,7 @@ export function Dashboard() {
             ))}
           </div>
         </Panel>
-        <Panel title="Votre prochaine étape" subtitle="De la disponibilité au planning publié.">
+        <Panel title="Étapes suivantes" subtitle="Du recueil des disponibilités au planning publié.">
           <div className="next-step">
             <span className="step-number">01</span>
             <div>

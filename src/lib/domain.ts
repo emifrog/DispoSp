@@ -468,7 +468,7 @@ export function execute(state: AppState, actor: Actor, command: Command, now = n
     }
     delete next.responses[responseKey(campaign.id, actor.id)];
     action = "Disponibilités modifiées";
-    detail = `${command.dates.length} jour(s) · ${command.value ? labels[command.value].label : "Non renseigné"} · réponse à valider`;
+    detail = `${command.dates.length} ${plural(command.dates.length, "jour")} · ${command.value ? labels[command.value].label : "Non renseigné"} · réponse à valider`;
   } else if (command.type === "validate" && campaign) {
     if (!isOpen(campaign, today)) throw new Error("La campagne est fermée à la validation.");
     if (filledDays(next, campaign, actor.id) !== monthDays(campaign.month).length)

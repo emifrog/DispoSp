@@ -65,7 +65,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
       {menu && <button className="sidebar-backdrop" aria-label="Fermer le menu" onClick={() => setMenu(false)} />}
       <aside className={`sidebar ${menu ? "is-open" : ""}`}>
         <div className="sidebar-brand">
-          <Brand />
+          <Brand tone="light" />
           <button className="mobile-only icon-button" aria-label="Fermer le menu" onClick={() => setMenu(false)}>
             <X />
           </button>
@@ -120,17 +120,8 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
           </>
         )}
         <div className="sidebar-bottom">
-          <div className="team-note">
-            <ShieldCheck size={23} />
-            <strong>Chaque présence compte.</strong>
-            <p>
-              Une équipe disponible,
-              <br />
-              un territoire protégé.
-            </p>
-          </div>
           <span className="version">
-            DISPO SP <span>Première version · 0.1</span>
+            DispoSP <span>Première version · 0.1</span>
           </span>
         </div>
       </aside>
@@ -147,7 +138,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
                 ...agentNav,
                 { href: "/historique", label: "Historique" },
                 { href: "/parametres", label: "Paramètres" },
-              ].find(n => n.href === path)?.label ?? "DISPO SP"}
+              ].find(n => n.href === path)?.label ?? "DispoSP"}
             </strong>
           </div>
           <div className="topbar-actions">
@@ -254,7 +245,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
           )}
         </main>
         <footer className="page-footer">
-          <span>DISPO SP · Plus loin, ensemble.</span>
+          <span>DispoSP · Plus loin, ensemble.</span>
           <span>Horaires en heure de Paris</span>
         </footer>
       </div>

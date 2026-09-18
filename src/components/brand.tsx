@@ -1,16 +1,19 @@
-import { Flame } from "lucide-react";
-export function Brand() {
+import Image from "next/image";
+
+// Le mot-symbole existe en deux versions parce qu'une image ne se recolore pas :
+// bleu nuit sur les fonds clairs, blanc sur la barre latérale. Les proportions
+// sont celles du fichier fourni, 936 × 214.
+const RATIO = 214 / 936;
+
+export function Brand({ tone = "navy", width = 176 }: { tone?: "navy" | "light"; width?: number }) {
   return (
-    <div className="brand">
-      <div className="brand-mark">
-        <Flame size={31} strokeWidth={2.3} />
-      </div>
-      <div>
-        <span className="brand-name">
-          DISPO<span>SP</span>
-        </span>
-        <span className="brand-subtitle">PRÉSENTS, ENSEMBLE.</span>
-      </div>
-    </div>
+    <Image
+      className="brand"
+      src={tone === "light" ? "/logo-disposp-blanc.png" : "/logo-disposp.png"}
+      alt="DispoSP — disponibilités, planification, cohésion"
+      width={width}
+      height={Math.round(width * RATIO)}
+      priority
+    />
   );
 }

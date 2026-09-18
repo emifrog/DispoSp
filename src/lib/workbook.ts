@@ -39,7 +39,7 @@ function sheet(book: ExcelJS.Workbook, name: string, columns: Partial<ExcelJS.Co
  */
 export function buildWorkbook(state: AppState, campaign: Campaign): ExcelJS.Workbook {
   const book = new ExcelJS.Workbook();
-  book.creator = "DISPO SP";
+  book.creator = "DispoSP";
   book.created = new Date();
   const days = monthDays(campaign.month);
   const agents = [...state.agents].sort((a, b) => a.name.localeCompare(b.name, "fr"));

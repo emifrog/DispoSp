@@ -6,7 +6,7 @@
 }
 :root {
   --blue: #1763ef;
-  --navy: #142b50;
+  --navy: #092b4e;
   --text: #182e4c;
   --muted: #718097;
   --border: #e6ebf3;
@@ -118,7 +118,7 @@ label {
   top: 0;
   bottom: 0;
   width: 242px;
-  background: #102746;
+  background: #092b4e;
   color: #bdcbe0;
   padding: 32px 18px 20px;
   display: flex;
@@ -127,35 +127,12 @@ label {
   border-right: 1px solid #203654;
 }
 .brand {
-  display: flex;
-  gap: 9px;
-  align-items: center;
+  display: block;
+  height: auto;
+  max-width: 100%;
 }
 .sidebar-brand {
   padding: 0 14px 29px;
-}
-.brand-mark {
-  color: #ff545c;
-  display: flex;
-}
-.brand-name {
-  font-size: 26px;
-  font-weight: 850;
-  font-style: italic;
-  letter-spacing: -1px;
-  color: white;
-  line-height: 1;
-}
-.brand-name span {
-  color: #ff545c;
-  margin-left: 4px;
-}
-.brand-subtitle {
-  display: block;
-  font-size: 8px;
-  letter-spacing: 1.8px;
-  color: #9aabc4;
-  margin-top: 5px;
 }
 .workspace {
   display: flex;
@@ -228,31 +205,10 @@ label {
   margin-top: auto;
   padding-top: 40px;
 }
-.team-note {
-  padding: 19px 14px 24px;
-  border: 1px solid #304665;
-  border-radius: 10px;
-  background: linear-gradient(120deg, #213b5b, #183151);
-}
-.team-note svg {
-  color: #95b7e4;
-  margin-bottom: 11px;
-}
-.team-note strong {
-  display: block;
-  font-size: 12px;
-  color: #e4edfb;
-}
-.team-note p {
-  font-size: 11px;
-  color: #96aac5;
-  margin-top: 6px;
-  line-height: 1.8;
-}
 .version {
   display: flex;
   justify-content: space-between;
-  padding: 23px 4px 0;
+  padding: 0 4px;
   font-size: 9px;
   letter-spacing: 0.5px;
   color: #8b9fb9;
@@ -403,26 +359,18 @@ label {
   align-items: center;
   justify-content: space-between;
   gap: 22px;
-  margin-bottom: 26px;
-}
-.eyebrow {
-  display: block;
-  letter-spacing: 1.6px;
-  font-size: 9px;
-  font-weight: 700;
-  color: #7d8da3;
-  margin-bottom: 6px;
+  margin-bottom: 20px;
 }
 .page-heading h1 {
-  font-size: clamp(25px, 2.2vw, 34px);
-  letter-spacing: -1.1px;
-  font-weight: 720;
-  line-height: 1.25;
+  font-size: clamp(20px, 1.6vw, 26px);
+  letter-spacing: -0.4px;
+  font-weight: 650;
+  line-height: 1.3;
 }
 .page-heading p {
-  color: var(--muted);
-  font-size: 12px;
-  margin-top: 8px;
+  color: #64758c;
+  font-size: 12.5px;
+  margin-top: 6px;
 }
 .heading-action {
   flex-shrink: 0;
@@ -616,9 +564,8 @@ label {
 .stat-card {
   background: white;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 19px 19px 16px;
-  box-shadow: 0 3px 7px #29497003;
 }
 .stat-label {
   display: flex;
@@ -721,10 +668,9 @@ label {
 .panel {
   background: white;
   border: 1px solid var(--border);
-  border-radius: 11px;
-  margin-bottom: 22px;
+  border-radius: 8px;
+  margin-bottom: 18px;
   overflow: hidden;
-  box-shadow: 0 4px 12px #213b5b02;
 }
 .panel-heading {
   display: flex;
@@ -1866,7 +1812,7 @@ label {
 .availability-table td {
   text-align: center;
   border-bottom: 1px solid #edf1f7;
-  padding: 10px 4px;
+  padding: 7px 4px;
   min-width: 35px;
 }
 .availability-table thead th {
@@ -1885,8 +1831,13 @@ label {
   background: white;
   min-width: 193px;
   text-align: left;
-  padding: 12px 15px;
+  padding: 7px 15px;
   border-right: 1px solid #e6ecf5;
+}
+.availability-table .avatar {
+  width: 27px;
+  height: 27px;
+  font-size: 9px;
 }
 .availability-table thead th:first-child {
   background: #f9fbfe;
@@ -1919,8 +1870,8 @@ label {
   font-size: 9px;
   color: #95a4b9;
 }
-.availability-table td:nth-child(2),
-.availability-table th:nth-child(2) {
+.availability-table thead th:nth-child(2),
+.availability-table tbody td:nth-child(2) {
   min-width: 85px;
   padding: 10px;
 }
@@ -2583,9 +2534,6 @@ fieldset.field legend {
   }
   .heading-action .button {
     font-size: 12px;
-  }
-  .eyebrow {
-    font-size: 8px;
   }
   .campaign-ribbon {
     padding: 14px;

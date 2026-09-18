@@ -1,4 +1,4 @@
-# DISPO SP
+# DispoSP
 
 Application de disponibilités et de planification des sapeurs-pompiers, utilisable en démonstration locale ou en mode connecté à Supabase. Voir [le plan de développement](PLAN_DEVELOPPEMENT.md) pour l’avancement et les étapes restantes.
 
@@ -39,6 +39,7 @@ Voir `DECISIONS_FONCTIONNELLES.md`. Jour 8 h–20 h, Nuit 20 h–8 h le lendemai
 
 - Next.js App Router, React et TypeScript strict.
 - Tailwind CSS, composants Button/Dialog sur les primitives shadcn/Radix, icônes Lucide.
+- Registre visuel sobre : le titre d'un écran le nomme et sa ligne de contexte donne un fait — période, effectif, échéance — plutôt qu'une formule. Pas d'étiquette de rubrique, pas d'ombre décorative, un seul rayon d'angle pour les surfaces et les champs, et la couleur réservée au statut.
 - Roboto, chargée par `next/font` : la police est téléchargée à la construction et servie depuis l'application, donc aucune requête vers un tiers au chargement d'une page et aucune adresse IP d'agent transmise à Google. Une police de secours aux mêmes métriques évite le saut de texte.
 - TanStack Table pour la synthèse, virtualisée par TanStack Virtual : à 300 agents, environ 25 lignes sont rendues au lieu de 300, et les totaux du pied de tableau portent toujours sur l'ensemble des agents filtrés.
 - React Hook Form et Zod pour les campagnes et la validation du stockage.
@@ -87,6 +88,14 @@ from information_schema.tables where table_schema = 'public';
 Le classeur Excel du §11 est construit par une route serveur, `/api/export`, et non par une action : la réponse est un fichier, et ce choix garde ExcelJS hors de tous les paquets livrés au navigateur — vérifié, la bibliothèque n'apparaît dans aucun morceau client. Six feuilles : disponibilités, synthèse, couverture, affectations, qualifications, statistiques. Le classeur porte sur la campagne sélectionnée et les données accessibles au compte sous RLS. Il ne reprend pas les filtres locaux de la synthèse : l’export CSV, lui, porte sur la vue filtrée.
 
 Le PDF passe par l'impression du navigateur, avec une feuille de style dédiée qui retire la navigation et empêche les coupures au milieu d'une ligne. La matrice mensuelle est virtualisée pour rester utilisable à l'écran, ce qui la rendait inimprimable : **le temps de l'impression, la virtualisation est désactivée** et toutes les lignes sont rendues. `beforeprint` déclenche un rendu synchrone — le navigateur photographie la page dès qu'il reprend la main — et l'écouteur couvre aussi bien le bouton « Imprimer le mois » que le Ctrl+P du navigateur. La page passe alors en A4 paysage, l'en-tête des jours se répète en haut de chaque feuille et les colonnes épinglées redeviennent normales. Trois cents agents font une vingtaine de pages.
+
+### Marque
+
+Le mot-symbole est fourni en deux versions dans `public/` : `logo-disposp.png` (bleu nuit, fonds clairs) et `logo-disposp-blanc.png` (barre latérale). Deux fichiers plutôt qu'un seul recoloré en CSS, parce qu'un filtre sur une image en couleurs donne un gris, pas un blanc. Le composant `Brand` choisit selon le fond et fixe les proportions d'après le fichier, 936 × 214.
+
+Le bleu nuit de la marque est `#092b4e` et son rouge `#de1525`. Le premier est devenu celui de l'interface — barre latérale, variable `--navy`, teinte de la barre d'état — pour que le logo ne se détache pas de son propre fond.
+
+Les icônes d'application reprennent les lettres « SP » découpées dans le mot-symbole lui-même : rien n'est redessiné, l'icône partage donc exactement la graisse et le dessin de la marque. **Elles sont provisoires** : le pack livré contenait un symbole dont l'export vectoriel a échoué — icônes, favicons et déclinaisons monochromes sont vides ou réduits à des fragments d'un pixel. Dès que le symbole sera réexporté, les icônes se refont à partir de lui.
 
 ### Application installable
 

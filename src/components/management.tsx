@@ -64,9 +64,8 @@ export function Campaigns() {
   return (
     <>
       <PageTitle
-        eyebrow="ORGANISATION"
         title="Campagnes de disponibilités"
-        description="Ouvrez la collecte, suivez les réponses et préparez le prochain mois."
+        description="Ouverture de la collecte, suivi des réponses, clôture."
         action={
           <Button onClick={() => setOpen(true)}>
             <Plus size={17} />
@@ -193,12 +192,12 @@ export function Agents() {
   const administering = connected && canAdminister;
   const matches = (a: Agent) =>
     `${a.name} ${a.team} ${a.grade} ${a.matricule}`.toLowerCase().includes(search.toLowerCase());
+  const teams = [...new Set(state.agents.map(a => a.team))];
   return (
     <>
       <PageTitle
-        eyebrow="VOTRE COLLECTIF"
         title="Agents & équipes"
-        description={`${state.agents.length} ${plural(state.agents.length, "agent")} ${plural(state.agents.length, "réuni")} au sein du ${state.organization.name}.`}
+        description={`${state.agents.length} ${plural(state.agents.length, "agent")} · ${teams.length} ${plural(teams.length, "équipe")} · ${state.organization.name}`}
         action={
           administering ? (
             <Button onClick={() => setInviting(true)}>
@@ -568,11 +567,7 @@ function TeamDialog({ initial, onClose }: { initial: { id?: string; name: string
 function AdministrationOnly({ title }: { title: string }) {
   return (
     <>
-      <PageTitle
-        eyebrow="ACCÈS RÉSERVÉ"
-        title={title}
-        description="Cet écran est réservé à l’administration du centre."
-      />
+      <PageTitle title={title} description="Cet écran est réservé à l’administration du centre." />
       <div className="info-card horizontal">
         <ShieldCheck size={24} />
         <p>
@@ -615,9 +610,8 @@ export function Audit() {
   return (
     <>
       <PageTitle
-        eyebrow="TRAÇABILITÉ"
         title="Historique des actions"
-        description={`Retrouvez les saisies, validations et publications ${connected ? "de votre centre" : "de cette démonstration"}.`}
+        description={`Saisies, validations et publications ${connected ? "du centre" : "de cette démonstration"}, les plus récentes d’abord.`}
         action={
           <Button
             variant="secondary"
@@ -743,11 +737,7 @@ export function Settings() {
   if (connected && !canAdminister) return <AdministrationOnly title="Paramètres du centre" />;
   return (
     <>
-      <PageTitle
-        eyebrow="ADMINISTRATION"
-        title="Paramètres du centre"
-        description="Un cadre commun pour vos prochaines campagnes."
-      />
+      <PageTitle title="Paramètres du centre" description="Horaires par défaut appliqués aux nouvelles campagnes." />
       <div className="settings-width">
         <Panel title="Horaires par défaut" subtitle="Ils sont appliqués uniquement aux nouvelles campagnes.">
           <form
@@ -808,9 +798,8 @@ export function PersonalPlanning() {
   return (
     <>
       <PageTitle
-        eyebrow="ESPACE AGENT"
         title="Mon planning"
-        description={`${monthLabel(campaign.month)} · Vos gardes publiées par le responsable.`}
+        description={`${monthLabel(campaign.month)} · vos gardes telles qu’elles ont été publiées.`}
         action={
           <Button
             variant="secondary"
@@ -870,11 +859,7 @@ export function Profile() {
   const { state, actor, agent, selectAgent, connected } = useApp();
   return (
     <>
-      <PageTitle
-        eyebrow="ESPACE AGENT"
-        title="Mon profil"
-        description="Vos informations d’équipe et vos qualifications."
-      />
+      <PageTitle title="Mon profil" description="Fiche, rattachement et qualifications." />
       <div className="settings-width">
         <Panel title={agent.name} subtitle={`${gradeLabel(agent)} · ${agent.team}`}>
           <div className="profile-details">

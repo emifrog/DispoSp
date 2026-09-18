@@ -76,9 +76,8 @@ export function Availability() {
   return (
     <>
       <PageTitle
-        eyebrow="ESPACE AGENT"
         title="Mes disponibilités"
-        description="Quelques gestes pour préparer le mois. Chaque présence compte."
+        description={`${monthLabel(campaign.month)} · saisie puis validation explicite de votre réponse.`}
         action={
           <Button
             disabled={!open}
@@ -165,7 +164,9 @@ export function Availability() {
           <Legend />
           {multiple && (
             <div className="selection-bar">
-              <span>{selected.length} jour(s) sélectionné(s)</span>
+              <span>
+                {selected.length} {plural(selected.length, "jour")} {plural(selected.length, "sélectionné")}
+              </span>
               <Button
                 size="sm"
                 disabled={!selected.length}
@@ -180,7 +181,7 @@ export function Availability() {
           )}
         </Panel>
         <div className="availability-side">
-          <Panel title="Prêt à transmettre ?" subtitle="La saisie ne vaut pas validation.">
+          <Panel title="Validation de la réponse" subtitle="La saisie ne vaut pas validation.">
             <div className="completion-number">
               {Math.round((filled / days.length) * 100)}
               <span>%</span>
@@ -332,7 +333,9 @@ export function Availability() {
                 </button>
               ))}
             </div>
-            <p className="muted">{chosen.length} jour(s) concerné(s)</p>
+            <p className="muted">
+              {chosen.length} {plural(chosen.length, "jour")} {plural(chosen.length, "concerné")}
+            </p>
           </>
         )}
         <div className="availability-choices">
@@ -364,7 +367,8 @@ export function Availability() {
         {overwritten > 0 && (
           <div className="warning small">
             <CircleAlert size={18} />
-            {overwritten} jour(s) déjà renseigné(s) seront remplacés.
+            {overwritten} {plural(overwritten, "jour")} déjà {plural(overwritten, "renseigné")}{" "}
+            {plural(overwritten, "sera", "seront")} remplacé{overwritten > 1 ? "s" : ""}.
           </div>
         )}
         <Button className="full-width" disabled={!chosen.length} onClick={save}>

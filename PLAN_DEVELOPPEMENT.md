@@ -1,4 +1,4 @@
-# Plan de développement — DISPO SP
+# Plan de développement — DispoSP
 
 État au 18 septembre 2026. Les neuf migrations (`0001` à `0007`, puis la création atomique des campagnes et les écritures atomiques de la disponibilité habituelle) sont appliquées sur le projet de développement. Les statuts ci-dessous distinguent les fonctionnalités implémentées des vérifications restant à effectuer sur le site hébergé.
 
