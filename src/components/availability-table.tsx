@@ -1,5 +1,6 @@
 "use client";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   flexRender,
@@ -103,10 +104,29 @@ export function AvailabilityTable() {
     overscan: 10,
   });
   const virtualRows = virtualizer.getVirtualItems();
-  const padding = {
-    top: virtualRows.length ? virtualRows[0].start : 0,
-    bottom: virtualRows.length ? virtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end : 0,
-  };
+  // Imprimer une matrice virtualisée ne sortait que les lignes à l'écran. Le
+  // temps de l'impression, toutes les lignes sont rendues : flushSync parce que
+  // le navigateur photographie la page dès que « beforeprint » lui rend la main,
+  // et l'écouteur parce que Ctrl+P ne passe pas par notre bouton.
+  const [printing, setPrinting] = useState(false);
+  useEffect(() => {
+    const open = () => flushSync(() => setPrinting(true));
+    const close = () => setPrinting(false);
+    window.addEventListener("beforeprint", open);
+    window.addEventListener("afterprint", close);
+    return () => {
+      window.removeEventListener("beforeprint", open);
+      window.removeEventListener("afterprint", close);
+    };
+  }, []);
+  const printedRows = printing ? rows.map((_, index) => index) : virtualRows.map(item => item.index);
+  const padding =
+    printing || !virtualRows.length
+      ? { top: 0, bottom: 0 }
+      : {
+          top: virtualRows[0].start,
+          bottom: virtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end,
+        };
   return (
     <>
       <PageTitle
@@ -138,6 +158,12 @@ export function AvailabilityTable() {
               <Download size={17} />
               Exporter la vue CSV
             </Button>
+            {view === "matrix" && (
+              <Button variant="secondary" onClick={() => window.print()}>
+                <Printer size={17} />
+                Imprimer le mois
+              </Button>
+            )}
           </div>
         }
       />
@@ -181,8 +207,11 @@ export function AvailabilityTable() {
         <span className="muted small">{data.length} agent(s)</span>
       </div>
       {view === "day" && <DayView agents={data} days={days} campaignId={campaignId} />}
+      {view === "matrix" && printing && (
+        <style dangerouslySetInnerHTML={{ __html: "@page { size: A4 landscape; margin: 8mm }" }} />
+      )}
       {view === "matrix" && (
-        <section className="panel table-panel">
+        <section className={`panel table-panel${printing ? " printing" : ""}`}>
           <div
             ref={scrollRef}
             className="table-scroll"
@@ -213,8 +242,8 @@ export function AvailabilityTable() {
                 {padding.top > 0 && (
                   <tr aria-hidden="true" className="virtual-spacer" style={{ height: padding.top }} />
                 )}
-                {virtualRows.map(virtualRow => {
-                  const row = rows[virtualRow.index];
+                {printedRows.map(index => {
+                  const row = rows[index];
                   return (
                     <tr key={row.id}>
                       {row.getVisibleCells().map(cell => (

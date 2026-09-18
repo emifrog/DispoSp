@@ -19,7 +19,7 @@ import {
   templateEntries,
   workload,
 } from "../src/lib/domain";
-import { personalCalendar, availabilityCsv } from "../src/lib/exports";
+import { auditCsv, personalCalendar, availabilityCsv } from "../src/lib/exports";
 
 const now = new Date("2026-09-18T10:00:00Z");
 const campaignId = "campaign-2026-10";
@@ -205,6 +205,28 @@ describe("Exports", () => {
     expect(ics.match(/BEGIN:VEVENT/g)).toHaveLength(1);
     expect(ics).toContain("SEQUENCE:2");
     expect(personalCalendar(state, state.campaigns[0], "marie")).not.toContain("BEGIN:VEVENT");
+  });
+  it("exporte le journal avec la date séparée de l’heure et le sujet en clair", () => {
+    const state = execute(
+      createDemoState(now),
+      actor,
+      { type: "availability", campaignId, dates: ["2026-10-01"], value: "DAY", comment: "" },
+      now,
+    );
+    const lines = auditCsv(state.audit).split("\r\n");
+    expect(lines[0]).toBe('\uFEFF"Date";"Heure";"Auteur";"Action";"Détail";"Sujet"');
+    // L'entrée la plus récente d'abord, comme à l'écran, et son sujet lisible
+    // plutôt que le nom de la table dont elle vient.
+    expect(lines[1]).toContain('"2026-09-18";"12:00";"Julien Bernard"');
+    expect(lines[1]).toContain('"Disponibilités"');
+    expect(lines[lines.length - 1]).toContain('"Campagnes"');
+  });
+  it("neutralise une formule glissée dans le journal comme dans la matrice", () => {
+    const state = createDemoState(now);
+    state.audit[0].detail = '=HYPERLINK("bad")';
+    const csv = auditCsv(state.audit);
+    expect(csv).toContain('"\'=HYPERLINK(""bad"")"');
+    expect(csv.startsWith("\uFEFF")).toBe(true);
   });
   it("neutralise les formules et conserve les caractères français du CSV", () => {
     const state = createDemoState(now);

@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @theme {
-  --font-sans: "Segoe UI", Arial, Helvetica, sans-serif;
+  /* next/font sert Roboto depuis l'application et lui adjoint une police de
+     secours aux mêmes métriques : le texte ne saute pas au chargement. */
+  --font-sans: var(--font-roboto), sans-serif;
 }
 :root {
   --blue: #1763ef;
@@ -17,7 +19,7 @@
 }
 body {
   margin: 0;
-  font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
   color: var(--text);
   background: var(--background);
   font-size: 14px;
@@ -1789,9 +1791,39 @@ label {
 }
 .table-filters {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: center;
   margin-bottom: 20px;
+}
+/* Deux bornes et de quoi les effacer : une période à moitié posée filtre déjà,
+   et il faut pouvoir revenir au journal entier sans recharger l'écran. */
+.period-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.period-filter label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.period-filter span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.period-filter input {
+  font-size: 11px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--text);
+  font-family: inherit;
+}
+.period-filter input:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
 }
 .table-filters .search-field {
   flex: 1;
@@ -2959,6 +2991,52 @@ fieldset.field legend {
   .equity-table-scroll {
     overflow: visible !important;
     max-height: none !important;
+  }
+  /* Une matrice mensuelle tient sur plusieurs pages : l'en-tête doit revenir en
+     haut de chacune, sans quoi la seconde page est une grille de carrés muets. */
+  .availability-table thead {
+    display: table-header-group;
+  }
+  .availability-table tfoot {
+    display: table-footer-group;
+  }
+  .availability-table tr {
+    break-inside: avoid;
+  }
+  /* Le collant sert au défilement, qui n'existe plus sur papier : laissé en
+     place, il fait flotter la colonne des agents par-dessus les jours. */
+  .availability-table thead th,
+  .availability-table th:first-child,
+  .availability-table td:first-child {
+    position: static;
+  }
+  .availability-table {
+    font-size: 8px;
+  }
+  .availability-table th,
+  .availability-table td {
+    padding: 3px 1px;
+    min-width: 0;
+  }
+  .availability-table th:first-child,
+  .availability-table td:first-child {
+    min-width: 0;
+    padding: 3px 6px;
+  }
+  .availability-table td:nth-child(2),
+  .availability-table th:nth-child(2) {
+    min-width: 0;
+    padding: 3px;
+  }
+  .table-agent small,
+  .availability-table th > button svg {
+    display: none;
+  }
+  .table-agent strong {
+    font-size: 8px;
+  }
+  .table-panel .avatar {
+    display: none;
   }
   a[href]::after {
     content: "";

@@ -24,9 +24,9 @@ Le dernier état documenté du déploiement Vercel était une démonstration. So
 | Disponibilités habituelles  | ✅ implémentées          | Modèle personnel par jour de semaine ; enregistrement et application atomiques                           |
 | Synthèse et couverture      | ✅ implémentées          | Matrice virtualisée, vue nominative par journée, niveaux de couverture et distinction potentiel/planifié |
 | Planning et équité          | ✅ implémentés           | Brouillon, publication contrôlée, répartition Jour/Nuit/24 h                                             |
-| Historique et audit         | 🟡 à compléter           | Journal et filtres sujet/auteur/recherche livrés ; période et export restants                            |
+| Historique et audit         | ✅ implémentés           | Journal, filtres sujet/auteur/période/recherche et export du journal                                     |
 | Notifications               | 🟡 recette à compléter   | Centre interne, lecture, rappels manuels et envoi Resend implémentés ; réception à vérifier              |
-| Exports                     | 🟡 à compléter           | CSV, ICS, Excel et impression PDF ; PDF mensuel complet de la matrice restant                            |
+| Exports                     | ✅ implémentés           | CSV, ICS, Excel, journal d’audit et impression PDF, matrice mensuelle comprise                           |
 | Application installable     | ❌ à faire               | Interface adaptée au mobile, installation PWA absente                                                    |
 | Hébergement et exploitation | 🟡 à confirmer           | Configuration connectée, emails, sauvegardes et recette à plusieurs comptes                              |
 
@@ -114,15 +114,14 @@ L’envoi nécessite **les trois variables** `RESEND_API_KEY`, `RESEND_FROM` et 
 
 - CSV de la synthèse filtrée et ICS des gardes personnelles publiées, avec fuseau Europe/Paris.
 - Classeur Excel côté serveur en mode connecté : disponibilités, synthèse, couverture, affectations, qualifications et statistiques. Il porte sur la campagne accessible au compte, sans reprendre les filtres locaux de la synthèse.
-- Impression de la vue par journée et du planning personnel, permettant un enregistrement PDF.
+- Impression de la matrice mensuelle, de la vue par journée et du planning personnel, permettant un enregistrement PDF. La virtualisation est suspendue le temps de l’impression, en paysage et avec l’en-tête répété à chaque page.
+- Historique filtrable par sujet, auteur, période et recherche, et exportable en CSV. L’écran signale lorsqu’une période demandée précède les deux cents actions chargées.
 - Vue quotidienne avec listes nominatives ; indicateurs déficit/limite/couvert et état distinct lorsque les besoins ne sont pas définis.
 - Équité ventilée Jour, Nuit et 24 h ; une garde 24 h représente deux créneaux dans le total.
 - Disponibilités habituelles personnelles par jour de semaine, enregistrées en base et applicables au calendrier. **Migrations `0007_availability_templates.sql` et `20260918180846_atomic_availability_templates.sql` appliquées, confirmation du porteur du projet.** L’application d’un modèle ne vaut ni validation ni affectation.
 
 **Reste à faire :**
 
-- Export PDF complet de la synthèse mensuelle : la matrice virtualisée n’imprime que les lignes rendues.
-- Filtre de période et export du journal d’audit.
 - Recette en mode connecté des exports et des modèles habituels : isolation entre agents, persistance, application et invalidation de la réponse.
 
 ### Lot 6 — Application installable ❌ à faire
@@ -151,8 +150,8 @@ Notifications poussées, échanges de garde entre agents, proposition automatiqu
 | Tableau d’équité (§8)                          | ✅   | Ventilation Jour/Nuit/24 h                                                  |
 | Tableau de bord (§9)                           | ✅   | Niveaux déficit/limite/couvert et besoins non définis                       |
 | Notifications (§10)                            | 🟡   | Centre interne et Resend implémentés ; réception à vérifier, rappel manuel  |
-| Exports (§11)                                  | 🟡   | CSV, ICS et Excel ; PDF par impression, matrice mensuelle complète restante |
-| Historique et audit (§12)                      | 🟡   | Journal et filtres livrés ; période et export restants                      |
+| Exports (§11)                                  | ✅   | CSV, ICS, Excel et journal ; PDF par impression, matrice comprise           |
+| Historique et audit (§12)                      | ✅   | Journal, filtres sujet/auteur/période/recherche et export CSV               |
 | Modèle de données (§14)                        | ✅   | 19 tables, huit migrations appliquées                                       |
 | Sécurité et RGPD (§16)                         | 🟡   | Contrôles techniques présents ; dispositions d’exploitation à compléter     |
 | Responsive et installable (§17)                | 🟡   | Adapté au mobile, PWA restante                                              |
@@ -172,12 +171,10 @@ Notifications poussées, échanges de garde entre agents, proposition automatiqu
 | Risque                                              | Portée                                              | Réduction                                                                  |
 | --------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------- |
 | Échec pendant la création d’une campagne            | Campagne incomplète                                 | Transaction testée, migration appliquée ; déployer et vérifier le parcours |
-| Échec pendant la sauvegarde/application d’un modèle | Modèle ou calendrier partiellement modifié          | Fiabiliser les écritures et leur reprise                                   |
 | Deux responsables modifient le même planning        | Conflit de modification                             | Vérifier la concurrence et signaler les conflits dans l’interface          |
 | Mode public ou URL Auth mal configurés              | Démonstration affichée ou confirmation inaccessible | Recette depuis l’URL publique avec un second compte                        |
 | Invitation non éprouvée sur le projet hébergé       | Arrivée d’un agent bloquée                          | Vérifier inscription, confirmation, rattachement et droits                 |
 | Emails en attente ou renvoyés                       | Agents non prévenus ou messages en double           | Suivi de la file, reprise et prévention des doublons                       |
-| Impression de la matrice virtualisée                | PDF incomplet                                       | Utiliser Excel ou la vue par journée en attendant l’export complet         |
 | Charge et restauration non vérifiées en hébergement | Dégradation ou reprise difficile                    | Essai à plusieurs comptes, mesure de charge et exercice de restauration    |
 
 ## 7. Comment vérifier l’état à tout moment

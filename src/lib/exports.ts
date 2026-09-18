@@ -1,8 +1,20 @@
 import { fromZonedTime } from "date-fns-tz";
-import { type AppState, type Campaign, entryKey, monthDays, shiftKey, labels } from "./domain";
+import {
+  type AppState,
+  type Campaign,
+  auditFamilies,
+  entryKey,
+  labels,
+  localDate,
+  monthDays,
+  shiftKey,
+} from "./domain";
+
+// Une cellule qui commence par = ou + est une formule pour un tableur, d'où
+// qu'elle vienne — un commentaire d'agent comme une ligne de journal.
+const escape = (s: string) => `"${(/^[=+@\-\t\r]/.test(s) ? "'" : "") + s.replaceAll('"', '""')}"`;
 
 export function availabilityCsv(state: AppState, campaign: Campaign) {
-  const escape = (s: string) => `"${(/^[=+@\-\t\r]/.test(s) ? "'" : "") + s.replaceAll('"', '""')}"`;
   const days = monthDays(campaign.month);
   return (
     "\uFEFF" +
@@ -16,6 +28,30 @@ export function availabilityCsv(state: AppState, campaign: Campaign) {
           return v ? labels[v.type].label : "Non renseigné";
         }),
       ]),
+    ]
+      .map(row => row.map(escape).join(";"))
+      .join("\r\n")
+  );
+}
+// Un journal se relit hors de l'application : commission, contrôle, archive. Les
+// colonnes sont celles de l'écran, dans l'ordre où il les montre, et la date est
+// séparée de l'heure pour que le tri d'un tableur reste chronologique.
+export function auditCsv(events: AppState["audit"]) {
+  return (
+    "\uFEFF" +
+    [
+      ["Date", "Heure", "Auteur", "Action", "Détail", "Sujet"],
+      ...events.map(event => {
+        const at = new Date(event.at);
+        return [
+          localDate(at),
+          at.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+          event.actor,
+          event.action,
+          event.detail,
+          auditFamilies.find(family => (family.entities as readonly string[]).includes(event.entity))?.label ?? "",
+        ];
+      }),
     ]
       .map(row => row.map(escape).join(";"))
       .join("\r\n")

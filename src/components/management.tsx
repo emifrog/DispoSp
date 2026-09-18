@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   UnlockKeyhole,
   UserPlus,
+  X,
 } from "lucide-react";
 import { useApp } from "./provider";
 import { Avatar, PageTitle, Panel } from "./common";
@@ -43,7 +44,7 @@ import {
   type AppState,
   type MemberRole,
 } from "@/lib/domain";
-import { download, personalCalendar } from "@/lib/exports";
+import { auditCsv, download, personalCalendar } from "@/lib/exports";
 import { roleLabels } from "@/lib/session";
 
 export function Campaigns() {
@@ -587,23 +588,45 @@ export function Audit() {
   const [family, setFamily] = useState("");
   const [author, setAuthor] = useState("");
   const [search, setSearch] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   if (connected && !canAdminister) return <AdministrationOnly title="Historique des actions" />;
   const authors = [...new Set(state.audit.map(e => e.actor))].sort((a, b) => a.localeCompare(b, "fr"));
   const entities = auditFamilies.find(f => f.key === family)?.entities as readonly string[] | undefined;
+  // La période se lit sur la date affichée, pas sur l'instant UTC : une action de
+  // 23 h 30 appartient à la journée que le lecteur voit à l'écran.
+  const dayOf = (event: AppState["audit"][number]) => localDate(new Date(event.at));
   // The trail is kept line by line on purpose; reading it back by the handful is
   // what this screen is for. A month filled by one agent is thirty-one lines.
   const shown = state.audit.filter(
     event =>
       (!entities || entities.includes(event.entity)) &&
       (!author || event.actor === author) &&
+      (!from || dayOf(event) >= from) &&
+      (!to || dayOf(event) <= to) &&
       `${event.action} ${event.detail}`.toLocaleLowerCase("fr").includes(search.toLocaleLowerCase("fr")),
   );
+  // Le journal chargé s'arrête aux deux cents dernières actions. Demander une
+  // période plus ancienne ne renvoie rien, et ce silence se lirait comme « il ne
+  // s'est rien passé » : l'écran dit donc jusqu'où il voit.
+  const oldest = state.audit.length ? dayOf(state.audit[state.audit.length - 1]) : "";
+  const beyondLoaded = Boolean(from && oldest && from < oldest && state.audit.length >= 200);
   return (
     <>
       <PageTitle
         eyebrow="TRAÇABILITÉ"
         title="Historique des actions"
         description={`Retrouvez les saisies, validations et publications ${connected ? "de votre centre" : "de cette démonstration"}.`}
+        action={
+          <Button
+            variant="secondary"
+            disabled={!shown.length}
+            onClick={() => download(auditCsv(shown), `historique-${localDate()}.csv`, "text/csv;charset=utf-8")}
+          >
+            <Download size={17} />
+            Exporter le journal
+          </Button>
+        }
       />
       <div className="table-filters">
         <label className="search-field">
@@ -629,10 +652,55 @@ export function Audit() {
             <option key={name}>{name}</option>
           ))}
         </select>
+        <div className="period-filter">
+          <label>
+            <span>Du</span>
+            <input
+              type="date"
+              aria-label="Début de la période"
+              max={to || undefined}
+              value={from}
+              onChange={e => setFrom(e.target.value)}
+            />
+          </label>
+          <label>
+            <span>au</span>
+            <input
+              type="date"
+              aria-label="Fin de la période"
+              min={from || undefined}
+              value={to}
+              onChange={e => setTo(e.target.value)}
+            />
+          </label>
+          {(from || to) && (
+            <Button
+              size="icon"
+              variant="secondary"
+              aria-label="Effacer la période"
+              onClick={() => {
+                setFrom("");
+                setTo("");
+              }}
+            >
+              <X size={15} />
+            </Button>
+          )}
+        </div>
         <span className="muted small">
           {shown.length} {plural(shown.length, "action")} sur {state.audit.length}
         </span>
       </div>
+      {beyondLoaded && (
+        <div className="info-card horizontal">
+          <CalendarDays size={22} />
+          <p>
+            Le journal chargé remonte au {dateLabel(oldest, { day: "numeric", month: "long", year: "numeric" })}. Les
+            actions antérieures existent en base, mais ne sont pas affichées ici : cet écran montre les deux cents
+            dernières.
+          </p>
+        </div>
+      )}
       <Panel
         title="Dernières modifications"
         subtitle={
@@ -659,6 +727,9 @@ export function Audit() {
             </li>
           ))}
         </ol>
+        <div className="panel-footnote">
+          L’export reprend la vue filtrée, telle qu’elle est affichée, et non l’intégralité du journal.
+        </div>
       </Panel>
     </>
   );

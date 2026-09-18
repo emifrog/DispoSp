@@ -28,7 +28,7 @@ L'application démarre avec une **démonstration locale clairement identifiée**
 - Campagnes : création, sélection, verrouillage ; paramètres horaires appliqués aux nouvelles campagnes.
 - Administration des agents, fiches avec grade/matricule/téléphone, équipes, quatre rôles, qualifications, invitations et désactivation/réactivation.
 - Historique filtrable par sujet, auteur et recherche ; centre de notifications avec suivi de lecture et envoi des emails via Resend lorsqu’il est configuré.
-- Exports CSV, ICS et Excel ; impression des vues par journée et du planning personnel pour enregistrer un PDF.
+- Exports CSV, ICS et Excel ; impression complète de la matrice mensuelle, de la vue par journée et du planning personnel pour enregistrer un PDF.
 - Interface adaptée aux ordinateurs et téléphones ; dialogues accessibles au clavier. Le mode démonstration conserve son sélecteur de profil et ses données locales.
 
 ## Règles retenues
@@ -39,6 +39,7 @@ Voir `DECISIONS_FONCTIONNELLES.md`. Jour 8 h–20 h, Nuit 20 h–8 h le lendemai
 
 - Next.js App Router, React et TypeScript strict.
 - Tailwind CSS, composants Button/Dialog sur les primitives shadcn/Radix, icônes Lucide.
+- Roboto, chargée par `next/font` : la police est téléchargée à la construction et servie depuis l'application, donc aucune requête vers un tiers au chargement d'une page et aucune adresse IP d'agent transmise à Google. Une police de secours aux mêmes métriques évite le saut de texte.
 - TanStack Table pour la synthèse, virtualisée par TanStack Virtual : à 300 agents, environ 25 lignes sont rendues au lieu de 300, et les totaux du pied de tableau portent toujours sur l'ensemble des agents filtrés.
 - React Hook Form et Zod pour les campagnes et la validation du stockage.
 - `src/lib/domain.ts` : règles métier pures, calculs de couverture et commandes testables.
@@ -84,7 +85,7 @@ from information_schema.tables where table_schema = 'public';
 
 Le classeur Excel du §11 est construit par une route serveur, `/api/export`, et non par une action : la réponse est un fichier, et ce choix garde ExcelJS hors de tous les paquets livrés au navigateur — vérifié, la bibliothèque n'apparaît dans aucun morceau client. Six feuilles : disponibilités, synthèse, couverture, affectations, qualifications, statistiques. Le classeur porte sur la campagne sélectionnée et les données accessibles au compte sous RLS. Il ne reprend pas les filtres locaux de la synthèse : l’export CSV, lui, porte sur la vue filtrée.
 
-Le PDF passe par l'impression du navigateur, avec une feuille de style dédiée qui retire la navigation et empêche les coupures au milieu d'une ligne. Une limite à connaître : **la matrice des disponibilités est virtualisée**, donc seules les lignes rendues sortiraient à l'impression. C'est pour elle qu'existe l'export Excel. La vue par journée et le planning personnel, eux, s'impriment entiers.
+Le PDF passe par l'impression du navigateur, avec une feuille de style dédiée qui retire la navigation et empêche les coupures au milieu d'une ligne. La matrice mensuelle est virtualisée pour rester utilisable à l'écran, ce qui la rendait inimprimable : **le temps de l'impression, la virtualisation est désactivée** et toutes les lignes sont rendues. `beforeprint` déclenche un rendu synchrone — le navigateur photographie la page dès qu'il reprend la main — et l'écouteur couvre aussi bien le bouton « Imprimer le mois » que le Ctrl+P du navigateur. La page passe alors en A4 paysage, l'en-tête des jours se répète en haut de chaque feuille et les colonnes épinglées redeviennent normales. Trois cents agents font une vingtaine de pages.
 
 ### Notifications et envoi des emails
 
@@ -185,8 +186,6 @@ Les neuf migrations (`0001` à `0007`, puis les deux migrations horodatées) son
 
 - Confirmer la configuration du site hébergé et effectuer une recette avec plusieurs comptes : invitation, confirmation d’adresse, disponibilités habituelles, validation, publication et réception des emails.
 - Déployer la version qui appelle `public.create_campaign()`, `public.save_availability_template()` et `public.apply_availability_template()`, puis vérifier ces parcours en mode connecté : les migrations sont appliquées, le comportement hébergé reste à observer.
-- Compléter l’historique par un filtre de période et un export du journal.
-- Compléter l’export PDF de la synthèse mensuelle : l’impression de la matrice virtualisée ne restitue pas toutes les lignes.
 - Ajouter l’installation PWA ; les notifications poussées relèvent de la V2.
 - Finaliser la mise en service : configuration de l’expéditeur, suivi des échecs d’envoi, sauvegardes/restauration et règles de conservation des données.
 

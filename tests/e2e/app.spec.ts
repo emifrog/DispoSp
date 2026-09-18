@@ -203,4 +203,29 @@ test("la synthèse ne rend qu’une fraction des lignes à grand effectif", asyn
   expect(rendered).toBeLessThan(60);
   // Totals still cover every filtered agent, not just the rendered ones.
   await expect(page.locator("tfoot tr").nth(2).locator("td").first()).toHaveText("300");
+  // À l'impression, la virtualisation s'efface : ce que le PDF contient est le
+  // mois entier, pas la fenêtre de défilement.
+  await page.evaluate(() => window.dispatchEvent(new Event("beforeprint")));
+  await expect(page.locator("tbody tr:not(.virtual-spacer)")).toHaveCount(300);
+  await expect(page.locator(".table-panel.printing")).toBeAttached();
+  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+  expect(await page.locator("tbody tr:not(.virtual-spacer)").count()).toBeLessThan(60);
+});
+
+test("l’historique se filtre par période et s’exporte", async ({ page }) => {
+  await page.goto("/historique");
+  await expect(page.getByText("1 action sur 1")).toBeVisible();
+  await page.getByLabel("Début de la période").fill("2026-09-02");
+  await expect(page.getByText("0 action sur 1")).toBeVisible();
+  await expect(page.getByText("Aucune action ne correspond à ces filtres.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Exporter le journal" })).toBeDisabled();
+  await page.getByLabel("Début de la période").fill("2026-09-01");
+  await page.getByLabel("Fin de la période").fill("2026-09-01");
+  await expect(page.getByText("1 action sur 1")).toBeVisible();
+  const exported = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Exporter le journal" }).click();
+  expect((await exported).suggestedFilename()).toBe("historique-2026-09-18.csv");
+  await page.getByRole("button", { name: "Effacer la période" }).click();
+  await expect(page.getByLabel("Début de la période")).toHaveValue("");
+  await expect(page.getByLabel("Fin de la période")).toHaveValue("");
 });
