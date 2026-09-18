@@ -1,2 +1,4 @@
 import { Campaigns } from "@/components/management";
-export default function Page() { return <Campaigns />; }
+export default function Page() {
+  return <Campaigns />;
+}

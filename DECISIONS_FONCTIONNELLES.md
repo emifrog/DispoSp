@@ -33,10 +33,10 @@ Restent à définir : possibilité de valider une réponse incomplète et effet 
 
 Les deux mesures sont distinctes et doivent être nommées explicitement dans le tableau de bord, les synthèses et les exports qui les présentent.
 
-| Mesure | Données comparées aux besoins | Signification |
-| --- | --- | --- |
-| Couverture potentielle | Disponibilités déclarées éligibles | Effectif pouvant être mobilisé. |
-| Couverture planifiée | Affectations retenues dans le planning considéré | Effectif effectivement affecté. |
+| Mesure                 | Données comparées aux besoins                    | Signification                   |
+| ---------------------- | ------------------------------------------------ | ------------------------------- |
+| Couverture potentielle | Disponibilités déclarées éligibles               | Effectif pouvant être mobilisé. |
+| Couverture planifiée   | Affectations retenues dans le planning considéré | Effectif effectivement affecté. |
 
 Exemple : pour un besoin de huit agents, huit agents disponibles et six affectés donnent une couverture potentielle de 8/8 et une couverture planifiée de 6/8, avec deux affectations manquantes.
 
@@ -61,11 +61,11 @@ Règles retenues :
 
 Exemple pour le 15 octobre 2026 :
 
-| Déclaration | Début | Fin | Besoins potentiellement couverts |
-| --- | --- | --- | --- |
-| Jour du 15 octobre | 15 octobre à 08:00 | 15 octobre à 20:00 | Jour du 15 octobre |
-| Nuit du 15 octobre | 15 octobre à 20:00 | 16 octobre à 08:00 | Nuit du 15 octobre |
-| 24 h du 15 octobre | 15 octobre à 08:00 | 16 octobre à 08:00 | Jour et Nuit du 15 octobre |
+| Déclaration        | Début              | Fin                | Besoins potentiellement couverts |
+| ------------------ | ------------------ | ------------------ | -------------------------------- |
+| Jour du 15 octobre | 15 octobre à 08:00 | 15 octobre à 20:00 | Jour du 15 octobre               |
+| Nuit du 15 octobre | 15 octobre à 20:00 | 16 octobre à 08:00 | Nuit du 15 octobre               |
+| 24 h du 15 octobre | 15 octobre à 08:00 | 16 octobre à 08:00 | Jour et Nuit du 15 octobre       |
 
 Ces règles servent de référence à la première version.
 

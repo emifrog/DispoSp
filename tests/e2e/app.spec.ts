@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
-test.beforeEach(async ({ page }) => { await page.clock.setFixedTime(new Date("2026-09-18T10:00:00Z")); });
+test.beforeEach(async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-09-18T10:00:00Z"));
+});
 test("parcours agent : saisie rapide, validation explicite, sauvegarde et modification", async ({ page }) => {
   await page.goto("/tableau-de-bord");
   await expect(page.getByRole("heading", { name: "Une équipe prête, ensemble." })).toBeVisible();
@@ -34,7 +36,10 @@ test("le responsable publie un créneau couvert, visible pour l’agent", async 
   await page.goto("/profil");
   await page.getByLabel("Agent de démonstration").selectOption(assignedId);
   // Use in-app navigation so the selected demo identity is retained.
-  await page.getByRole("navigation", { name: isMobile ? "Navigation mobile" : "Navigation principale", exact: true }).getByRole("link", { name: "Mon planning", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: isMobile ? "Navigation mobile" : "Navigation principale", exact: true })
+    .getByRole("link", { name: "Mon planning", exact: true })
+    .click();
   await expect(page.getByRole("heading", { name: "Garde de jour" })).toBeVisible();
   const downloaded = page.waitForEvent("download");
   await page.getByRole("button", { name: "Exporter mon calendrier" }).click();
@@ -71,7 +76,8 @@ test("synthèse filtrable, export et blocage de publication déficitaire", async
   await page.screenshot({ path: `test-results/planning-${test.info().project.name}.png`, fullPage: true });
 });
 test("tableau de bord, navigation et affichage sans débordement", async ({ page }) => {
-  const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
   await page.goto("/tableau-de-bord");
   await expect(page.getByRole("heading", { name: "Une équipe prête, ensemble." })).toBeVisible();
   await page.getByRole("button", { name: "Couverture planifiée", exact: true }).click();

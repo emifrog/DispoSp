@@ -1,2 +1,4 @@
 import { PersonalPlanning } from "@/components/management";
-export default function Page() { return <PersonalPlanning />; }
+export default function Page() {
+  return <PersonalPlanning />;
+}

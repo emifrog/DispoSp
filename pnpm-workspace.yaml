@@ -1,0 +1,3 @@
+# Native resolver used by the ESLint import rules; it needs its install script.
+allowBuilds:
+  unrs-resolver: true

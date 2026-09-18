@@ -10,8 +10,12 @@ export async function createActionClient() {
   const cookieStore = await cookies();
   return createServerClient(url, key, {
     cookies: {
-      getAll() { return cookieStore.getAll(); },
-      setAll(values) { values.forEach(({ name, value, options }) => cookieStore.set(name, value, options)); },
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll(values) {
+        values.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
+      },
     },
   });
 }

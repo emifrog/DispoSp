@@ -1,0 +1,11 @@
+node_modules/
+.pnpm-store/
+.next/
+.local/
+test-results/
+playwright-report/
+supabase/.temp/
+maquettes/
+pnpm-lock.yaml
+*.tsbuildinfo
+next-env.d.ts
