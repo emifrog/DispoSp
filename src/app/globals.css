@@ -1671,8 +1671,16 @@ label {
   margin-left: auto;
 }
 .table-scroll {
-  overflow-x: auto;
+  overflow: auto;
   max-width: 100%;
+  /* Bounds the virtualised body. Short lists stay shorter than this and look
+     exactly as before; long ones scroll inside the panel. */
+  max-height: min(70vh, 720px);
+}
+.virtual-spacer td,
+.virtual-spacer th {
+  padding: 0;
+  border: 0;
 }
 .availability-table {
   width: 100%;
@@ -1691,6 +1699,9 @@ label {
   font-weight: 500;
   background: #f9fbfe;
   color: #7d91af;
+  position: sticky;
+  top: 0;
+  z-index: 3;
 }
 .availability-table th:first-child,
 .availability-table td:first-child {
@@ -1705,6 +1716,8 @@ label {
 }
 .availability-table thead th:first-child {
   background: #f9fbfe;
+  /* Pinned on both axes, so it must sit above the row and column headers. */
+  z-index: 4;
 }
 .availability-table th > button {
   display: flex;

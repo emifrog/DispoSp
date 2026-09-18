@@ -149,3 +149,58 @@ test("une sauvegarde locale illisible repart des données d’exemple", async ({
   await expect(page.getByText("La sauvegarde locale n’a pas pu être lue.")).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test("la synthèse ne rend qu’une fraction des lignes à grand effectif", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-09-18T10:00:00Z"));
+  await page.addInitScript(() => {
+    const days = Array.from({ length: 31 }, (_, i) => `2026-10-${String(i + 1).padStart(2, "0")}`);
+    const agents = Array.from({ length: 300 }, (_, i) => ({
+      id: `a${i}`,
+      name: `Agent ${String(i).padStart(3, "0")}`,
+      team: i % 2 ? "Équipe Alpha" : "Équipe Bravo",
+      grade: "Sapeur",
+      qualifications: ["SAP"],
+    }));
+    const entries: Record<string, { type: string; comment: string }> = {};
+    const responses: Record<string, string> = {};
+    for (const a of agents) {
+      for (const d of days) entries[`campaign-2026-10/${a.id}/${d}`] = { type: "FULL_24H", comment: "" };
+      responses[`campaign-2026-10/${a.id}`] = "2026-09-17T09:30:00Z";
+    }
+    localStorage.setItem(
+      "disposp-demo-v1",
+      JSON.stringify({
+        version: 1,
+        organization: { name: "Grand centre", dayStart: 8, nightStart: 20 },
+        agents,
+        campaigns: [
+          {
+            id: "campaign-2026-10",
+            name: "Octobre",
+            month: "2026-10",
+            opensOn: "2026-09-01",
+            closesOn: "2026-09-30",
+            closed: false,
+            dayStart: 8,
+            nightStart: 20,
+          },
+        ],
+        entries,
+        responses,
+        requirements: {},
+        assignments: {},
+        publications: {},
+        audit: [],
+      }),
+    );
+  });
+  await page.goto("/disponibilites");
+  await expect(page.getByText("300 agent(s)")).toBeVisible();
+  // Far fewer rows in the DOM than agents: without virtualisation this would be
+  // 300 rows of 33 cells. The bound is loose on purpose, only the order matters.
+  const rendered = await page.locator("tbody tr:not(.virtual-spacer)").count();
+  expect(rendered).toBeGreaterThan(0);
+  expect(rendered).toBeLessThan(60);
+  // Totals still cover every filtered agent, not just the rendered ones.
+  await expect(page.locator("tfoot tr").nth(2).locator("td").first()).toHaveText("300");
+});

@@ -1,5 +1,6 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   flexRender,
   getCoreRowModel,
@@ -14,6 +15,8 @@ import { Avatar, Legend, PageTitle, StatusBadge } from "./common";
 import { Button } from "./ui/button";
 import { availabilityCsv, download } from "@/lib/exports";
 import { type Agent, dateLabel, entryKey, isValidated, monthDays, monthLabel } from "@/lib/domain";
+// Matches the row height in globals.css; the virtualizer only needs an estimate.
+const ROW_HEIGHT = 52;
 export function AvailabilityTable() {
   const { state, campaignId, campaign } = useApp();
   const [search, setSearch] = useState("");
@@ -86,6 +89,22 @@ export function AvailabilityTable() {
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
   });
+  // A centre with several hundred agents would otherwise paint agents × 33 cells
+  // at once. Only the visible rows are rendered; two spacer rows hold the
+  // scroll height. The footer totals still cover every filtered agent.
+  const rows = table.getRowModel().rows;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 10,
+  });
+  const virtualRows = virtualizer.getVirtualItems();
+  const padding = {
+    top: virtualRows.length ? virtualRows[0].start : 0,
+    bottom: virtualRows.length ? virtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end : 0,
+  };
   return (
     <>
       <PageTitle
@@ -133,10 +152,11 @@ export function AvailabilityTable() {
       </div>
       <section className="panel table-panel">
         <div
+          ref={scrollRef}
           className="table-scroll"
           tabIndex={0}
           role="region"
-          aria-label="Tableau des disponibilités, défilement horizontal"
+          aria-label="Tableau des disponibilités, défilement horizontal et vertical"
         >
           <table className="availability-table">
             <thead>
@@ -158,13 +178,20 @@ export function AvailabilityTable() {
               ))}
             </thead>
             <tbody>
-              {table.getRowModel().rows.map(row => (
-                <tr key={row.id}>
-                  {row.getVisibleCells().map(cell => (
-                    <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
-                  ))}
-                </tr>
-              ))}
+              {padding.top > 0 && <tr aria-hidden="true" className="virtual-spacer" style={{ height: padding.top }} />}
+              {virtualRows.map(virtualRow => {
+                const row = rows[virtualRow.index];
+                return (
+                  <tr key={row.id}>
+                    {row.getVisibleCells().map(cell => (
+                      <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
+                    ))}
+                  </tr>
+                );
+              })}
+              {padding.bottom > 0 && (
+                <tr aria-hidden="true" className="virtual-spacer" style={{ height: padding.bottom }} />
+              )}
             </tbody>
             <tfoot>
               {(["DAY", "NIGHT", "FULL_24H", "UNAVAILABLE", "UNKNOWN"] as const).map(type => (
