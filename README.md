@@ -54,10 +54,11 @@ Le projet de développement dédié est désigné : ses coordonnées sont dans `
 
 Le schéma est découpé en migrations successives, à appliquer dans l'ordre et une seule fois chacune :
 
-| Fichier                                   | Contenu                                                                                | État                           |
-| ----------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------ |
-| `supabase/migrations/0001_foundation.sql` | Organisations, équipes, profils, droits, campagnes, participants, disponibilités       | Appliquée le 18 septembre 2026 |
-| `supabase/migrations/0002_planning.sql`   | Qualifications, créneaux types, besoins, plannings, affectations, notifications, audit | Appliquée le 18 septembre 2026 |
+| Fichier                                      | Contenu                                                                                                  | État                           |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `supabase/migrations/0001_foundation.sql`    | Organisations, équipes, profils, droits, campagnes, participants, disponibilités                         | Appliquée le 18 septembre 2026 |
+| `supabase/migrations/0002_planning.sql`      | Qualifications, créneaux types, besoins, plannings, affectations, notifications, audit                   | Appliquée le 18 septembre 2026 |
+| `supabase/migrations/0003_client_writes.sql` | Publication joignable depuis le client, horaires du centre, catalogue de qualifications, journal d'audit | **À appliquer**                |
 
 Chaque fichier est une transaction : la moindre erreur annule la migration entière, sans état partiel. Aucun n'est rejouable — ce sont des `create`, pas des `create if not exists`, pour qu'un second passage échoue au lieu d'écraser silencieusement une base déjà en service. `0002` commence par vérifier que `0001` est présente et qu'elle-même ne l'est pas, et s'arrête sur un message explicite plutôt que sur un « relation already exists ».
 
@@ -77,17 +78,19 @@ NEXT_PUBLIC_DISPOSP_MODE=connected pnpm build
 NEXT_PUBLIC_DISPOSP_MODE=connected pnpm start
 ```
 
-|                                    | Démonstration  | Connecté                                          |
-| ---------------------------------- | -------------- | ------------------------------------------------- |
-| Compte requis                      | non            | oui, email et mot de passe                        |
-| Données affichées                  | `localStorage` | lues en base, sous RLS                            |
-| Saisie                             | enregistrée    | **lecture seule**, l'enregistrement reste à faire |
-| Rendu des écrans                   | statique       | dynamique, session lue côté serveur               |
-| Sélecteur de rôle de démonstration | visible        | masqué, le rôle vient de la base                  |
+|                                    | Démonstration  | Connecté                            |
+| ---------------------------------- | -------------- | ----------------------------------- |
+| Compte requis                      | non            | oui, email et mot de passe          |
+| Données affichées                  | `localStorage` | lues en base, sous RLS              |
+| Saisie                             | enregistrée    | enregistrée en base, sous RLS       |
+| Rendu des écrans                   | statique       | dynamique, session lue côté serveur |
+| Sélecteur de rôle de démonstration | visible        | masqué, le rôle vient de la base    |
 
 En mode connecté, `src/lib/data.server.ts` construit depuis la base exactement la forme que les écrans consomment déjà : aucun écran n'a eu à changer. Le mapping vit à part dans `src/lib/data-mapping.ts`, pur et testé seul, parce que c'est là que se logent les erreurs — fuseau de la fenêtre de réponse, séparation brouillon/publication, révisions périmées, lignes hors de portée RLS.
 
-Une écriture tentée en mode connecté est refusée avec un message. Elle n'est jamais renvoyée en silence vers `localStorage`, ce qui donnerait l'illusion d'un enregistrement.
+Les huit commandes du domaine passent par une action serveur unique, `submitCommand`. C'est un point d'entrée public : sa charge utile est parsée par Zod et l'identité vient du cookie de session, jamais de ce que le navigateur annonce. Un refus de la base est traduit en français par `src/lib/command-errors.ts` ; un message inconnu n'est jamais affiché tel quel, puisqu'il décrirait le schéma. Aucune écriture refusée n'est renvoyée en silence vers `localStorage`, ce qui donnerait l'illusion d'un enregistrement.
+
+Une exception connue : la création d'une campagne écrit la campagne, son planning, ses créneaux puis ses participants en quatre requêtes, faute de transaction côté client. L'ordre est choisi pour qu'un échec laisse une campagne visiblement incomplète plutôt qu'un planning manquant. La déplacer derrière une fonction de base de données reste à faire.
 
 En mode connecté, un middleware renouvelle la session à chaque requête et renvoie tout visiteur sans session vers `/connexion`. `getUser()` y est utilisé plutôt que `getSession()` : le second se contenterait d'un cookie que le navigateur pourrait forger.
 
@@ -103,11 +106,10 @@ Ce script est nécessaire parce que le schéma interdit volontairement au client
 
 La prochaine tranche doit :
 
-1. Porter les huit commandes du domaine en actions serveur, la publication passant par `private.publish_schedule_shift()`.
-2. Ajouter au schéma le grade, le matricule et le téléphone d'un agent, exigés au §3 du cahier des charges et absents aujourd'hui : l'annuaire affiche le rôle faute de grade.
-3. Ouvrir l'administration des agents, équipes et qualifications aux profils gestionnaire et administrateur.
-4. Brancher l'envoi des emails sur la table `notifications` et exposer le journal d'audit dans l'interface.
-5. Lier le projet à la CLI Supabase (`supabase link`) et déclarer les migrations déjà appliquées avec `supabase migration repair --status applied`, pour que les suivantes soient gérées par la CLI plutôt que collées dans l'éditeur SQL.
+1. Ajouter au schéma le grade, le matricule et le téléphone d'un agent, exigés au §3 du cahier des charges et absents aujourd'hui : l'annuaire affiche le rôle faute de grade.
+2. Ouvrir l'administration des agents, équipes et qualifications aux profils gestionnaire et administrateur — le catalogue se remplit aujourd'hui tout seul, au fil des besoins définis, faute d'écran.
+3. Brancher l'envoi des emails sur la table `notifications`, et filtrer le journal d'audit dans l'interface : il est désormais tenu ligne à ligne, et l'écran Historique affiche les deux cents dernières sans distinction.
+4. Lier le projet à la CLI Supabase (`supabase link`) et déclarer les migrations déjà appliquées avec `supabase migration repair --status applied`, pour que les suivantes soient gérées par la CLI plutôt que collées dans l'éditeur SQL.
 
 Le schéma actuel est testé avec un vrai moteur PostgreSQL embarqué via PGlite et un schéma Auth simulé. Cela ne remplace pas une vérification de l'intégration Supabase hébergée. Les fonctions `security definer` sont limitées à deux lectures de droits et à la publication d'un créneau, situées dans un schéma privé, avec identité issue de `auth.uid()`. Aucune clé secrète de service n'est nécessaire côté navigateur.
 

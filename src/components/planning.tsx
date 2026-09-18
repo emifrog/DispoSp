@@ -326,7 +326,7 @@ export function Planning() {
                 <span>{a.name}</span>
                 <strong>
                   {count}
-                  <small> créneaux</small>
+                  <small> {plural(count, "créneau", "créneaux")}</small>
                 </strong>
               </div>
             );
@@ -364,8 +364,8 @@ export function Planning() {
         ))}
         <Button
           className="full-width"
-          onClick={() => {
-            if (run({ type: "requirement", campaignId, date, shift, total, qualifications })) setNeedsOpen(false);
+          onClick={async () => {
+            if (await run({ type: "requirement", campaignId, date, shift, total, qualifications })) setNeedsOpen(false);
           }}
         >
           Enregistrer les besoins
@@ -389,8 +389,8 @@ export function Planning() {
         </div>
         <Button
           className="full-width"
-          onClick={() => {
-            if (run({ type: "publish", campaignId, date, shift })) setPublishOpen(false);
+          onClick={async () => {
+            if (await run({ type: "publish", campaignId, date, shift })) setPublishOpen(false);
           }}
         >
           <Send size={17} />

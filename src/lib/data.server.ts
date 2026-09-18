@@ -45,7 +45,7 @@ export async function loadState(session: AttachedSession): Promise<AppState> {
     supabase.from("schedule_assignments").select("schedule_shift_id, user_id, revision, status"),
     supabase
       .from("audit_logs")
-      .select("id, occurred_at, action, entity, actor_id, new_value")
+      .select("id, occurred_at, action, entity, actor_id, old_value, new_value")
       .eq("organization_id", organizationId)
       .order("occurred_at", { ascending: false })
       .limit(200),

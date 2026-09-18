@@ -170,22 +170,63 @@ export function coverage(
   };
 }
 
-export type Command =
-  | { type: "availability"; campaignId: string; dates: string[]; value: Availability | null; comment: string }
-  | { type: "validate"; campaignId: string }
-  | { type: "assign"; campaignId: string; date: string; shift: Shift; userId: string; remove?: boolean }
-  | { type: "publish"; campaignId: string; date: string; shift: Shift }
-  | {
-      type: "requirement";
-      campaignId: string;
-      date: string;
-      shift: Shift;
-      total: number;
-      qualifications: Record<string, number>;
-    }
-  | { type: "campaign"; name: string; month: string; closesOn: string }
-  | { type: "close"; campaignId: string; closed: boolean }
-  | { type: "settings"; dayStart: number; nightStart: number };
+const shiftSchema = z.enum(["DAY", "NIGHT"]);
+const id = z.string().min(1).max(64);
+// A server action is a public endpoint: its payload is parsed, never trusted.
+// The Command type is inferred from here so the two can never drift apart.
+export const commandSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("availability"),
+    campaignId: id,
+    dates: z.array(isoDate).min(1).max(31),
+    value: availabilitySchema.nullable(),
+    comment: z.string().max(500),
+  }),
+  z.object({ type: z.literal("validate"), campaignId: id }),
+  z.object({
+    type: z.literal("assign"),
+    campaignId: id,
+    date: isoDate,
+    shift: shiftSchema,
+    userId: id,
+    remove: z.boolean().optional(),
+  }),
+  z.object({ type: z.literal("publish"), campaignId: id, date: isoDate, shift: shiftSchema }),
+  z.object({
+    type: z.literal("requirement"),
+    campaignId: id,
+    date: isoDate,
+    shift: shiftSchema,
+    total: z.number().int().min(1).max(100),
+    qualifications: z.record(z.string().max(60), z.number().int().min(0).max(100)),
+  }),
+  z.object({
+    type: z.literal("campaign"),
+    name: z.string().trim().min(3),
+    month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+    closesOn: isoDate,
+  }),
+  z.object({ type: z.literal("close"), campaignId: id, closed: z.boolean() }),
+  z.object({
+    type: z.literal("settings"),
+    dayStart: z.number().int().min(0).max(23),
+    nightStart: z.number().int().min(0).max(23),
+  }),
+]);
+export type Command = z.infer<typeof commandSchema>;
+// What the toast says once the database has accepted the write. The demonstration
+// takes its wording from the audit entry execute() builds; connected mode has no
+// such entry to read back, so the label lives here for both to stay in step.
+export const commandLabels: Record<Command["type"], string> = {
+  availability: "Disponibilités modifiées",
+  validate: "Réponse validée",
+  assign: "Brouillon du planning modifié",
+  publish: "Créneau publié",
+  requirement: "Besoins modifiés",
+  campaign: "Campagne ouverte",
+  close: "Verrouillage de la campagne modifié",
+  settings: "Horaires par défaut modifiés",
+};
 
 // Pure business layer shared by the demonstration and the future server commands.
 // Browser roles are only simulation controls, never an authorization boundary.

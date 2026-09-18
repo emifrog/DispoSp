@@ -134,8 +134,8 @@ export function Campaigns() {
         description="Les agents pourront renseigner leurs disponibilités jusqu’à la date de clôture."
       >
         <form
-          onSubmit={form.handleSubmit(data => {
-            if (run({ type: "campaign", ...data })) {
+          onSubmit={form.handleSubmit(async data => {
+            if (await run({ type: "campaign", ...data })) {
               setOpen(false);
               form.reset();
             }

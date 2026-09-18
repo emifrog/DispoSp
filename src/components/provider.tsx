@@ -1,6 +1,7 @@
 "use client";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { submitCommand } from "@/app/actions";
 import { execute, stateSchema, type Agent, type AppState, type Campaign, type Command, type Actor } from "@/lib/domain";
 import { createDemoState } from "@/lib/seed";
 import { ACTOR_KEY, STATE_KEY } from "@/lib/storage";
@@ -16,7 +17,8 @@ type Context = {
   setCampaignId: (id: string) => void;
   switchRole: (role: Actor["role"]) => void;
   selectAgent: (id: string) => void;
-  run: (command: Command) => boolean;
+  /** Resolves once the write is settled: connected mode waits for the database. */
+  run: (command: Command) => Promise<boolean>;
   notice: (text: string) => void;
   ready: boolean;
   /** True when the screens read the database. Demonstration-only controls and
@@ -35,7 +37,11 @@ export function AppProvider({
   initialActor?: Actor;
 }) {
   const connected = Boolean(initialState);
-  const [state, setState] = useState<AppState>(() => initialState ?? createDemoState());
+  // Connected mode renders the server's copy directly. Holding it in useState
+  // would freeze it at mount: the initialiser never runs again, so everything
+  // router.refresh() brings back after a write would be silently ignored.
+  const [localState, setLocalState] = useState<AppState>(() => initialState ?? createDemoState());
+  const state = initialState ?? localState;
   const [actor, setActor] = useState<Actor>(initialActor ?? { id: "julien", role: "MANAGER" });
   const [campaignId, setCampaignId] = useState(() => state.campaigns[0]?.id ?? "");
   const [ready, setReady] = useState(connected);
@@ -54,7 +60,7 @@ export function AppProvider({
         // A state without agents or campaigns passes the schema but has no screen
         // to show; keep the seeded demonstration rather than render an empty shell.
         if (result.success && result.data.campaigns.length && result.data.agents.length) {
-          setState(result.data);
+          setLocalState(result.data);
           // A saved state predates today's demonstration window, so its campaigns
           // are not the ones just seeded: point at one it actually contains.
           setCampaignId(id => (result.data.campaigns.some(c => c.id === id) ? id : result.data.campaigns[0].id));
@@ -80,18 +86,26 @@ export function AppProvider({
     const timer = setTimeout(() => setMessage(""), 6500);
     return () => clearTimeout(timer);
   }, [message]);
-  function run(command: Command) {
-    // Connected mode reads from the database but does not write to it yet.
-    // Falling back to localStorage here would silently drop the change.
+  async function run(command: Command): Promise<boolean> {
+    // Connected mode writes to the database. Falling back to localStorage on a
+    // refusal would silently drop the change and fake a success.
     if (connected) {
-      setMessage("Mode connecté : la saisie sera enregistrée en base à la prochaine étape.");
-      return false;
+      const result = await submitCommand(command);
+      if (!result.ok) {
+        setMessage(result.message);
+        return false;
+      }
+      // The screens are built by the server render: re-read the database rather
+      // than patch a local copy of what we believe was just written.
+      router.refresh();
+      setMessage(result.label + ".");
+      return true;
     }
     try {
       const next = execute(state, actor, command);
       // Save first: do not announce success if storage is blocked or full.
       localStorage.setItem(STATE_KEY, JSON.stringify(next));
-      setState(next);
+      setLocalState(next);
       setMessage(next.audit[0].action + ".");
       return true;
     } catch (error) {

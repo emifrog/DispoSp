@@ -1,5 +1,16 @@
 import { formatInTimeZone } from "date-fns-tz";
-import { availabilitySchema, entryKey, responseKey, shiftKey, type AppState, type Shift } from "./domain";
+import {
+  availabilitySchema,
+  dateLabel,
+  entryKey,
+  labels,
+  plural,
+  responseKey,
+  shiftKey,
+  type AppState,
+  type Availability,
+  type Shift,
+} from "./domain";
 import { roleLabels } from "./session";
 
 const PARIS = "Europe/Paris";
@@ -51,9 +62,80 @@ export type Raw = {
     action: string;
     entity: string;
     actor_id: string | null;
+    old_value: unknown;
     new_value: unknown;
   }[];
 };
+
+// The trail is written by database triggers, in a deliberately stable English
+// vocabulary: those codes are a contract with the migration's own tests. The
+// French belongs here, beside the rest of the mapping, and not in the migration
+// where wording would become something nobody dares change.
+const auditLabels: Record<string, string> = {
+  "availability_entry/SET": "Disponibilité renseignée",
+  "availability_entry/CLEAR": "Disponibilité effacée",
+  "campaign_participant/VALIDATE": "Réponse validée",
+  "availability_campaign/CREATE": "Campagne ouverte",
+  "availability_campaign/LOCK": "Campagne verrouillée",
+  "availability_campaign/UNLOCK": "Campagne déverrouillée",
+  "staffing_requirement/SET": "Besoins définis",
+  "staffing_requirement/CLEAR": "Besoins supprimés",
+  "schedule_assignment/ASSIGN": "Agent affecté au brouillon",
+  "schedule_assignment/UNASSIGN": "Affectation retirée du brouillon",
+  "schedule_shift/PUBLISH": "Créneau publié",
+  "organization/HOURS": "Horaires par défaut modifiés",
+  "qualification/CREATE": "Qualification créée",
+  "qualification/RENAME": "Qualification renommée",
+  "qualification/DELETE": "Qualification supprimée",
+};
+
+type Values = Record<string, unknown> | null;
+const values = (raw: unknown): Values =>
+  raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
+const text = (from: Values, key: string) => (typeof from?.[key] === "string" ? (from[key] as string) : "");
+const num = (from: Values, key: string) => (typeof from?.[key] === "number" ? (from[key] as number) : null);
+
+// Old and new value are both recorded; a line only shows the difference when
+// there is one to show, rather than repeating the row twice.
+function auditDetail(entity: string, before: Values, after: Values, nameById: Map<string, string>): string {
+  const subject = after ?? before;
+  const who = (id: string) => nameById.get(id) ?? "un agent";
+  const slot = (code: string) => (code === "NIGHT" ? "Nuit" : "Jour");
+  const day = (from: Values) => (text(from, "date") ? dateLabel(text(from, "date")) : "");
+  switch (entity) {
+    case "availability_entry": {
+      if (!after) return `${day(subject)} · non renseigné`;
+      const type = text(after, "availability_type") as Availability;
+      return `${day(after)} · ${labels[type]?.label ?? type}`;
+    }
+    case "campaign_participant":
+    case "schedule_assignment":
+      return who(text(subject, "user_id"));
+    case "availability_campaign":
+      return text(subject, "name");
+    case "staffing_requirement": {
+      const line = `${day(subject)} · ${slot(text(subject, "shift_code"))}`;
+      const to = num(after, "headcount");
+      if (to === null) return `${line} · besoins retirés`;
+      const from = num(before, "headcount");
+      return from !== null && from !== to
+        ? `${line} · ${from} → ${to} ${plural(to, "agent")}`
+        : `${line} · ${to} ${plural(to, "agent")}`;
+    }
+    case "schedule_shift": {
+      const headcount = num(after, "headcount") ?? 0;
+      return `version ${num(after, "revision") ?? "?"} · ${headcount} ${plural(headcount, "agent")}`;
+    }
+    case "organization": {
+      const range = (from: Values) => `${num(from, "day_start")} h – ${num(from, "night_start")} h`;
+      return before ? `${range(before)} → ${range(after)}` : range(after);
+    }
+    case "qualification":
+      return text(subject, "name");
+    default:
+      return "";
+  }
+}
 
 // Pure on purpose: this is where the mapping bugs would live, and it can be
 // tested against rows shaped like the real ones without a database round trip.
@@ -150,13 +232,17 @@ export function buildState(raw: Raw, fallbackOrganizationName: string): AppState
     }
   }
 
-  state.audit = raw.audit.map(row => ({
-    id: String(row.id),
-    at: row.occurred_at,
-    actor: (row.actor_id && nameById.get(row.actor_id)) || "—",
-    action: row.action,
-    detail: `${row.entity} · ${JSON.stringify(row.new_value ?? {})}`,
-  }));
+  state.audit = raw.audit.map(row => {
+    const before = values(row.old_value);
+    const after = values(row.new_value);
+    return {
+      id: String(row.id),
+      at: row.occurred_at,
+      actor: (row.actor_id && nameById.get(row.actor_id)) || "—",
+      action: auditLabels[`${row.entity}/${row.action}`] ?? `${row.entity} · ${row.action}`,
+      detail: auditDetail(row.entity, before, after, nameById) || row.entity,
+    };
+  });
 
   return state;
 }

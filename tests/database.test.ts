@@ -2,6 +2,9 @@ import { PGlite } from "@electric-sql/pglite";
 import { readFileSync } from "node:fs";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 const db = new PGlite();
+// Applied in order everywhere below, exactly as against the real project.
+const MIGRATIONS = ["0001_foundation.sql", "0002_planning.sql", "0003_client_writes.sql"];
+const baseAuthSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
 const orgA = "10000000-0000-0000-0000-000000000001";
 const orgB = "10000000-0000-0000-0000-000000000002";
 const teamA = "20000000-0000-0000-0000-000000000001";
@@ -22,7 +25,7 @@ beforeAll(async () => {
   );
   // Applied in order, exactly as they are against the real project: the tests
   // therefore check the migration sequence, not a single hand-kept schema file.
-  for (const migration of ["0001_foundation.sql", "0002_planning.sql"])
+  for (const migration of MIGRATIONS)
     await db.exec(readFileSync(new URL(`../supabase/migrations/${migration}`, import.meta.url), "utf8"));
   await db.exec(`insert into auth.users values ('${agentA}'), ('${agentB}'), ('${managerA}');
     insert into public.profiles values ('${agentA}', 'Agent A'), ('${agentB}', 'Agent B'), ('${managerA}', 'Responsable A');
@@ -356,7 +359,7 @@ describe("Provisionnement de la première organisation", () => {
   async function ready() {
     const fresh = new PGlite();
     await fresh.exec(authSchema);
-    for (const m of ["0001_foundation.sql", "0002_planning.sql"])
+    for (const m of MIGRATIONS)
       await fresh.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
     return fresh;
   }
@@ -416,7 +419,7 @@ describe("Ouverture de la première campagne", () => {
   async function provisioned() {
     const fresh = new PGlite();
     await fresh.exec(authSchema);
-    for (const m of ["0001_foundation.sql", "0002_planning.sql"])
+    for (const m of MIGRATIONS)
       await fresh.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
     await fresh.query(
       "insert into auth.users(id,email,email_confirmed_at) values (gen_random_uuid(), 'chef@example.org', now())",
@@ -497,6 +500,170 @@ describe("Ouverture de la première campagne", () => {
       "select validated_at from public.campaign_participants",
     );
     expect(validated.rows[0].validated_at).not.toBeNull();
+    await fresh.close();
+  }, 30000);
+});
+
+// 0003 opens exactly four doors that 0001/0002 kept shut. Each one is checked
+// against a real engine, because a policy that silently filters rows instead of
+// refusing them is indistinguishable from a working write until it is too late.
+describe("Écritures ouvertes par 0003", () => {
+  const org = "10000000-0000-0000-0000-000000000009";
+  const team = "20000000-0000-0000-0000-000000000009";
+  const admin = "30000000-0000-0000-0000-000000000009";
+  const chief = "30000000-0000-0000-0000-000000000010";
+  const campaign = "40000000-0000-0000-0000-000000000009";
+  const schedule = "50000000-0000-0000-0000-000000000009";
+  const shift = "60000000-0000-0000-0000-000000000009";
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+
+  beforeAll(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const m of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    await live.exec(`insert into auth.users values ('${admin}'), ('${chief}');
+      insert into public.profiles values ('${admin}','Administrateur'), ('${chief}','Chef');
+      insert into public.organizations(id,name) values ('${org}','Centre 0003');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Delta');
+      insert into public.memberships values ('${org}','${admin}','${team}','ADMIN',true), ('${org}','${chief}','${team}','AGENT',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        values ('${campaign}','${org}','${team}','Novembre','2026-11-01','2026-11-01',now()-interval '1 day',now()+interval '1 day');
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values ('${org}','${campaign}','${chief}');
+      insert into public.schedules(id,organization_id,campaign_id,team_id) values ('${schedule}','${org}','${campaign}','${team}');
+      insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code) values ('${shift}','${org}','${schedule}','2026-11-01','DAY');`);
+    // The agent declares and validates: the real sequence, and the audit source.
+    await be(chief);
+    await live.query(
+      "insert into public.availability_entries(campaign_id,user_id,date,availability_type) values ($1,$2,'2026-11-01','FULL_24H')",
+      [campaign, chief],
+    );
+    await live.query("update public.campaign_participants set validated_at=now() where campaign_id=$1 and user_id=$2", [
+      campaign,
+      chief,
+    ]);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("n’ouvre les horaires qu’à l’administration, et jamais le nom du centre", async () => {
+    await be(chief);
+    await live.query("update public.organizations set day_start = 7 where id = $1", [org]);
+    // An RLS refusal on UPDATE filters rows instead of raising: read the value back.
+    expect((await live.query("select day_start from public.organizations where id=$1", [org])).rows).toEqual([
+      { day_start: 8 },
+    ]);
+    await be(admin);
+    await live.query("update public.organizations set day_start = 7, night_start = 19 where id = $1", [org]);
+    expect(
+      (await live.query("select day_start, night_start from public.organizations where id=$1", [org])).rows,
+    ).toEqual([{ day_start: 7, night_start: 19 }]);
+    // A column grant, not a policy: this one really raises.
+    await expect(live.query("update public.organizations set name='Renommé' where id=$1", [org])).rejects.toThrow();
+  });
+
+  it("n’ouvre le catalogue de qualifications qu’à l’administration", async () => {
+    await be(chief);
+    await expect(
+      live.query("insert into public.qualifications(organization_id,name) values ($1,'SAP')", [org]),
+    ).rejects.toThrow();
+    await be(admin);
+    await live.query("insert into public.qualifications(organization_id,name) values ($1,'SAP')", [org]);
+    expect((await live.query("select name from public.qualifications where organization_id=$1", [org])).rows).toEqual([
+      { name: "SAP" },
+    ]);
+  });
+
+  it("expose la publication sans exposer le schéma privé", async () => {
+    await be(admin);
+    await live.query(
+      "insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,assigned_by) values ($1,$2,$3,$4)",
+      [org, shift, chief, admin],
+    );
+    // Reaching the wrapper is not enough: it must really run the definer function.
+    await expect(live.query("select public.publish_shift($1)", [shift])).rejects.toThrow(
+      "Define the staffing requirement",
+    );
+    await live.query(
+      "insert into public.staffing_requirements(organization_id,campaign_id,date,shift_code,headcount) values ($1,$2,'2026-11-01','DAY',1)",
+      [org, campaign],
+    );
+    expect((await live.query<{ publish_shift: number }>("select public.publish_shift($1)", [shift])).rows).toEqual([
+      { publish_shift: 1 },
+    ]);
+  });
+
+  it("journalise l’ancienne et la nouvelle valeur, sans laisser écrire le journal", async () => {
+    await be(chief);
+    await live.query(
+      "update public.availability_entries set availability_type='NIGHT' where campaign_id=$1 and user_id=$2",
+      [campaign, chief],
+    );
+    await be(admin);
+    type Line = {
+      action: string;
+      old_value: { availability_type: string } | null;
+      new_value: { availability_type: string } | null;
+    };
+    const { rows } = await live.query<Line>(
+      "select action, old_value, new_value from public.audit_logs where entity='availability_entry' order by occurred_at, id",
+    );
+    expect(rows.map(r => r.action)).toEqual(["SET", "SET"]);
+    expect(rows[0].old_value).toBeNull();
+    expect(rows[0].new_value?.availability_type).toBe("FULL_24H");
+    expect(rows[1].old_value?.availability_type).toBe("FULL_24H");
+    expect(rows[1].new_value?.availability_type).toBe("NIGHT");
+    // Validation, hours, catalogue, draft and publication each leave their trace.
+    const actions = await live.query<{ entity: string; action: string }>(
+      "select distinct entity, action from public.audit_logs where entity <> 'availability_entry'",
+    );
+    expect(actions.rows).toEqual(
+      expect.arrayContaining([
+        { entity: "campaign_participant", action: "VALIDATE" },
+        { entity: "organization", action: "HOURS" },
+        { entity: "qualification", action: "CREATE" },
+        { entity: "schedule_assignment", action: "ASSIGN" },
+        { entity: "schedule_shift", action: "PUBLISH" },
+        { entity: "staffing_requirement", action: "SET" },
+      ]),
+    );
+    // The trail is written by the engine; no session may forge a line.
+    await expect(
+      live.query("insert into public.audit_logs(organization_id,entity,entity_id,action) values ($1,'x','y','z')", [
+        org,
+      ]),
+    ).rejects.toThrow();
+  });
+});
+
+describe("Enchaînement des migrations — 0003", () => {
+  const read = (name: string) => readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), "utf8");
+
+  it("refuse 0003 sur une base qui n’a jamais reçu 0002", async () => {
+    const fresh = new PGlite();
+    await fresh.exec(baseAuthSchema);
+    await fresh.exec(read("0001_foundation.sql"));
+    await expect(fresh.exec(read("0003_client_writes.sql"))).rejects.toThrow("Apply 0002_planning.sql first");
+    await fresh.close();
+  }, 30000);
+
+  it("refuse 0003 une seconde fois, sans rien laisser derrière", async () => {
+    const fresh = new PGlite();
+    await fresh.exec(baseAuthSchema);
+    for (const m of MIGRATIONS) await fresh.exec(read(m));
+    await expect(fresh.exec(read("0003_client_writes.sql"))).rejects.toThrow();
+    await fresh.exec("rollback");
+    // One wrapper, one audit function: the refused replay added nothing.
+    const { rows } = await fresh.query<{ count: number }>(
+      "select count(*)::int as count from pg_proc where proname in ('publish_shift','record_audit','can_administer')",
+    );
+    expect(rows[0].count).toBe(3);
     await fresh.close();
   }, 30000);
 });

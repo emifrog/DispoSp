@@ -40,8 +40,10 @@ export function Availability() {
     : selected.filter(d => days.includes(d));
   const overwritten = chosen.filter(d => state.entries[entryKey(campaignId, actor.id, d)]).length;
   const icons = { DAY: Sun, NIGHT: Moon, FULL_24H: Clock3, UNAVAILABLE: X };
-  function save() {
-    if (run({ type: "availability", campaignId, dates: chosen, value, comment })) {
+  // Awaited on purpose: the dialog stays open when the database refuses, so the
+  // refusal is read next to the entry that caused it.
+  async function save() {
+    if (await run({ type: "availability", campaignId, dates: chosen, value, comment })) {
       setEditing(false);
       setQuick(false);
       setSelected([]);

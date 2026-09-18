@@ -86,7 +86,8 @@ function raw(overrides: Partial<Raw> = {}): Raw {
         action: "PUBLISH",
         entity: "schedule_shift",
         actor_id: "u1",
-        new_value: { revision: 2 },
+        old_value: { revision: 1 },
+        new_value: { revision: 2, headcount: 3 },
       },
       {
         id: 8,
@@ -94,6 +95,7 @@ function raw(overrides: Partial<Raw> = {}): Raw {
         action: "PUBLISH",
         entity: "schedule_shift",
         actor_id: "inconnu",
+        old_value: null,
         new_value: null,
       },
     ],
@@ -169,6 +171,59 @@ describe("Construction de l’état depuis la base", () => {
     const state = buildState(raw(), "Secours");
     expect(state.audit[0].actor).toBe("Chef Un");
     expect(state.audit[1].actor).toBe("—");
+  });
+
+  it("traduit le journal sans jamais afficher de JSON ni de code anglais", () => {
+    const state = buildState(
+      raw({
+        audit: [
+          {
+            id: 1,
+            occurred_at: "2026-09-20T08:00:00Z",
+            action: "PUBLISH",
+            entity: "schedule_shift",
+            actor_id: "u1",
+            old_value: { revision: 0 },
+            new_value: { revision: 1, headcount: 1 },
+          },
+          {
+            id: 2,
+            occurred_at: "2026-09-20T09:00:00Z",
+            action: "SET",
+            entity: "staffing_requirement",
+            actor_id: "u1",
+            old_value: { date: "2026-10-01", shift_code: "NIGHT", headcount: 6 },
+            new_value: { date: "2026-10-01", shift_code: "NIGHT", headcount: 1 },
+          },
+          {
+            id: 3,
+            occurred_at: "2026-09-20T10:00:00Z",
+            action: "SET",
+            entity: "availability_entry",
+            actor_id: "u1",
+            old_value: null,
+            new_value: { date: "2026-10-01", availability_type: "FULL_24H" },
+          },
+          {
+            id: 4,
+            occurred_at: "2026-09-20T11:00:00Z",
+            action: "HOURS",
+            entity: "organization",
+            actor_id: "u1",
+            old_value: { day_start: 8, night_start: 20 },
+            new_value: { day_start: 7, night_start: 19 },
+          },
+        ],
+      }),
+      "Secours",
+    );
+    expect(state.audit.map(e => `${e.action} — ${e.detail}`)).toEqual([
+      "Créneau publié — version 1 · 1 agent",
+      "Besoins définis — 1 octobre · Nuit · 6 → 1 agent",
+      "Disponibilité renseignée — 1 octobre · 24 h",
+      "Horaires par défaut modifiés — 8 h – 20 h → 7 h – 19 h",
+    ]);
+    for (const event of state.audit) expect(`${event.action}${event.detail}`).not.toMatch(/[{}"]|_[a-z]/);
   });
 
   it("retombe sur le nom de la session si l’organisation n’est pas lisible", () => {
