@@ -1,7 +1,18 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowRight, CalendarCheck2, Check, ChevronRight, CircleAlert, Clock3, Moon, Sun, Users } from "lucide-react";
+import {
+  ArrowRight,
+  CalendarCheck2,
+  Check,
+  ChevronRight,
+  CircleAlert,
+  Clock3,
+  Moon,
+  Send,
+  Sun,
+  Users,
+} from "lucide-react";
 import { useApp } from "./provider";
 import { PageTitle, Panel, Avatar } from "./common";
 import { Button } from "./ui/button";
@@ -18,7 +29,7 @@ import {
   type Shift,
 } from "@/lib/domain";
 export function Dashboard() {
-  const { state, campaignId, campaign } = useApp();
+  const { state, campaignId, campaign, run, connected } = useApp();
   const [mode, setMode] = useState<"potential" | "planned">("potential");
   const days = monthDays(campaign.month);
   const respondents = state.agents.filter(a => isValidated(state, campaignId, a.id));
@@ -285,6 +296,14 @@ export function Dashboard() {
                 Consulter la synthèse
                 <ArrowRight size={15} />
               </Link>
+              {/* Nobody runs a clock, so the reminder is an act. The database
+                  picks the targets and refuses to pile two on the same person. */}
+              {connected && pending.length > 0 && (
+                <Button variant="secondary" onClick={() => run({ type: "remind", campaignId })}>
+                  <Send size={15} />
+                  Relancer {pending.length} {plural(pending.length, "agent")}
+                </Button>
+              )}
             </div>
           </div>
           <div className="pending-list">

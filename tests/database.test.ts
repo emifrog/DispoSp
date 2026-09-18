@@ -8,6 +8,8 @@ const MIGRATIONS = [
   "0002_planning.sql",
   "0003_client_writes.sql",
   "0004_agent_administration.sql",
+  "0005_notifications.sql",
+  "0006_email_dispatch.sql",
 ];
 const baseAuthSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
 const orgA = "10000000-0000-0000-0000-000000000001";
@@ -878,4 +880,210 @@ describe("Enchaînement des migrations — 0004", () => {
     expect(rows[0].count).toBe(3);
     await fresh.close();
   }, 30000);
+});
+
+// Being invited to a campaign is what « opening one » means for an agent, so the
+// notification rides on the same insert. Written by the engine: a session may
+// mark its own as read and nothing else.
+describe("Notifications ouvertes par 0005", () => {
+  const org = "10000000-0000-0000-0000-000000000030";
+  const team = "20000000-0000-0000-0000-000000000030";
+  const manager = "30000000-0000-0000-0000-000000000030";
+  const agent = "30000000-0000-0000-0000-000000000031";
+  const other = "30000000-0000-0000-0000-000000000032";
+  const campaign = "40000000-0000-0000-0000-000000000030";
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+
+  beforeAll(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const m of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    await live.exec(`insert into auth.users(id) values ('${manager}'), ('${agent}'), ('${other}');
+      insert into public.profiles(user_id,display_name) values ('${manager}','Responsable'), ('${agent}','Agent'), ('${other}','Autre');
+      insert into public.organizations(id,name) values ('${org}','Centre 0005');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Foxtrot');
+      insert into public.memberships values
+        ('${org}','${manager}','${team}','RESPONSABLE',true),
+        ('${org}','${agent}','${team}','AGENT',true),
+        ('${org}','${other}','${team}','AGENT',true);`);
+    await be(manager);
+    await live.query(
+      `insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+       values ($1,$2,$3,'Disponibilités de novembre 2026','2026-11-01','2026-11-30',now()-interval '1 day', timestamptz '2026-10-25 21:59:59+00')`,
+      [campaign, org, team],
+    );
+    await live.query(
+      "insert into public.campaign_participants(organization_id,campaign_id,user_id) values ($1,$2,$3)",
+      [org, campaign, agent],
+    );
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("prévient l’agent invité, avec la date de clôture en heure du centre", async () => {
+    await be(agent);
+    const { rows } = await live.query<{ kind: string; subject: string; body: string; read_at: unknown }>(
+      "select kind, subject, body, read_at from public.notifications",
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("CAMPAIGN_OPENED");
+    expect(rows[0].subject).toBe("Campagne ouverte : Disponibilités de novembre 2026");
+    // 25/10 21:59:59 UTC, c’est encore le 25 à Paris — et non le 26.
+    expect(rows[0].body).toContain("25/10/2026");
+    expect(rows[0].read_at).toBeNull();
+  });
+
+  it("ne montre à personne les notifications d’un autre", async () => {
+    await be(other);
+    expect((await live.query("select id from public.notifications")).rows).toHaveLength(0);
+  });
+
+  it("laisse marquer les siennes comme lues, sans pouvoir en écrire une", async () => {
+    await be(agent);
+    await live.query("update public.notifications set read_at = now()");
+    expect(
+      (await live.query<{ read_at: unknown }>("select read_at from public.notifications")).rows[0].read_at,
+    ).not.toBeNull();
+    await expect(
+      live.query(
+        "insert into public.notifications(organization_id,user_id,kind,subject) values ($1,$2,'CAMPAIGN_OPENED','Forgée')",
+        [org, agent],
+      ),
+    ).rejects.toThrow();
+    // Le sujet et le destinataire restent hors de portée : seul read_at est ouvert.
+    await expect(live.query("update public.notifications set subject = 'Détournée'")).rejects.toThrow();
+  });
+});
+
+// Sending is a separate act from being notified: the queue is readable only by
+// someone who manages the centre, and only through a function narrow enough to
+// return nothing to anyone else.
+describe("File d’envoi ouverte par 0006", () => {
+  const org = "10000000-0000-0000-0000-000000000040";
+  const team = "20000000-0000-0000-0000-000000000040";
+  const manager = "30000000-0000-0000-0000-000000000040";
+  const agent = "30000000-0000-0000-0000-000000000041";
+  const campaign = "40000000-0000-0000-0000-000000000040";
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+
+  beforeAll(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const m of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    await live.exec(`insert into auth.users(id,email) values ('${manager}','chef@example.org'), ('${agent}','agent@example.org');
+      insert into public.profiles(user_id,display_name) values ('${manager}','Responsable'), ('${agent}','Agent');
+      insert into public.organizations(id,name) values ('${org}','Centre 0006');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Golf');
+      insert into public.memberships values
+        ('${org}','${manager}','${team}','RESPONSABLE',true),
+        ('${org}','${agent}','${team}','AGENT',true);`);
+    await be(manager);
+    await live.query(
+      `insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+       values ($1,$2,$3,'Disponibilités de novembre 2026','2026-11-01','2026-11-01',now()-interval '1 day',now()+interval '10 days')`,
+      [campaign, org, team],
+    );
+    await live.query(
+      "insert into public.campaign_participants(organization_id,campaign_id,user_id) values ($1,$2,$3)",
+      [org, campaign, agent],
+    );
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("recopie l’adresse depuis le schéma d’authentification, et la suit", async () => {
+    await be(manager);
+    expect((await live.query("select email from public.profiles where user_id=$1", [agent])).rows).toEqual([
+      { email: "agent@example.org" },
+    ]);
+    // L’autorité reste à auth.users : un changement là-bas redescend ici.
+    await live.exec("reset role");
+    await live.query("update auth.users set email='nouvelle@example.org' where id=$1", [agent]);
+    await be(manager);
+    expect((await live.query("select email from public.profiles where user_id=$1", [agent])).rows).toEqual([
+      { email: "nouvelle@example.org" },
+    ]);
+  });
+
+  it("ne livre la file qu’à qui encadre le centre", async () => {
+    await be(agent);
+    expect((await live.query("select * from public.pending_notifications($1)", [org])).rows).toHaveLength(0);
+    await be(manager);
+    const { rows } = await live.query<{ email: string; kind: string; subject: string }>(
+      "select email, kind, subject from public.pending_notifications($1)",
+      [org],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ email: "nouvelle@example.org", kind: "CAMPAIGN_OPENED" });
+  });
+
+  it("marque comme envoyé, une seule fois, et seulement pour son centre", async () => {
+    await be(manager);
+    const ids = (await live.query<{ id: string }>("select id from public.pending_notifications($1)", [org])).rows.map(
+      r => r.id,
+    );
+    expect(
+      (await live.query<{ mark_notifications_sent: number }>("select public.mark_notifications_sent($1)", [ids]))
+        .rows[0].mark_notifications_sent,
+    ).toBe(1);
+    // Rejouer n’envoie rien de plus : la file est vide.
+    expect(
+      (await live.query<{ mark_notifications_sent: number }>("select public.mark_notifications_sent($1)", [ids]))
+        .rows[0].mark_notifications_sent,
+    ).toBe(0);
+    expect((await live.query("select * from public.pending_notifications($1)", [org])).rows).toHaveLength(0);
+    // Un agent ne peut pas étouffer un envoi qui ne le concerne pas.
+    await live.exec("reset role");
+    await live.query("update public.notifications set sent_at = null");
+    await be(agent);
+    expect(
+      (await live.query<{ mark_notifications_sent: number }>("select public.mark_notifications_sent($1)", [ids]))
+        .rows[0].mark_notifications_sent,
+    ).toBe(0);
+  });
+
+  it("ne relance que ceux qui n’ont pas validé, et pas deux fois", async () => {
+    await be(manager);
+    expect(
+      (await live.query<{ remind_campaign: number }>("select public.remind_campaign($1)", [campaign])).rows[0]
+        .remind_campaign,
+    ).toBe(1);
+    // Le rappel en attente vaut pour toute la période : le répéter n’ajoute rien.
+    expect(
+      (await live.query<{ remind_campaign: number }>("select public.remind_campaign($1)", [campaign])).rows[0]
+        .remind_campaign,
+    ).toBe(0);
+    // Une réponse validée sort l’agent de la liste des relances.
+    await live.exec("reset role");
+    await live.query("delete from public.notifications where kind='CAMPAIGN_REMINDER'");
+    await live.query(
+      "insert into public.availability_entries(campaign_id,user_id,date,availability_type) values ($1,$2,'2026-11-01','DAY')",
+      [campaign, agent],
+    );
+    await live.query("update public.campaign_participants set validated_at=now() where campaign_id=$1", [campaign]);
+    await be(manager);
+    expect(
+      (await live.query<{ remind_campaign: number }>("select public.remind_campaign($1)", [campaign])).rows[0]
+        .remind_campaign,
+    ).toBe(0);
+  });
+
+  it("refuse la relance d’une campagne que l’on n’encadre pas", async () => {
+    await be(agent);
+    await expect(live.query("select public.remind_campaign($1)", [campaign])).rejects.toThrow("Not allowed to remind");
+  });
 });

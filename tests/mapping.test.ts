@@ -34,6 +34,16 @@ function raw(overrides: Partial<Raw> = {}): Raw {
         created_at: "2026-09-20T08:00:00Z",
       },
     ],
+    notifications: [
+      {
+        id: "n1",
+        kind: "CAMPAIGN_OPENED",
+        subject: "Campagne ouverte : Disponibilités d’octobre 2026",
+        body: null,
+        created_at: "2026-09-01T08:00:00Z",
+        read_at: null,
+      },
+    ],
     memberQualifications: [
       { user_id: "u1", qualifications: { name: "Chef" } },
       { user_id: "u1", qualifications: { name: "SAP" } },

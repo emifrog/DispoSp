@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Bell,
   LayoutDashboard,
   CalendarDays,
   CalendarCheck2,
@@ -34,6 +35,7 @@ const managerNav = [
 const agentNav = [
   { href: "/mes-disponibilites", label: "Disponibilités", icon: CalendarDays },
   { href: "/mon-planning", label: "Mon planning", icon: CalendarCheck2 },
+  { href: "/notifications", label: "Notifications", icon: Bell },
   { href: "/profil", label: "Mon profil", icon: UserRound },
 ];
 const initials = (name: string) =>
@@ -54,6 +56,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
   // §2 has four roles. A responsable manages their team but administers nothing,
   // so the two administration entries would only lead to screens refusing them.
   const space = memberRole ? roleLabels[memberRole].toUpperCase() : actor.role === "MANAGER" ? "RESPONSABLE" : "AGENT";
+  const unread = state.notifications.filter(n => !n.readAt).length;
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main">
@@ -148,6 +151,16 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
             </strong>
           </div>
           <div className="topbar-actions">
+            {/* Everyone receives notices: a manager is an agent too, and it is
+                their own publications that reach them. */}
+            <Link
+              className={`bell ${path === "/notifications" ? "active" : ""}`}
+              href="/notifications"
+              aria-label={unread ? `Notifications, ${unread} non ${unread > 1 ? "lues" : "lue"}` : "Notifications"}
+            >
+              <Bell size={19} />
+              {unread > 0 && <span className="bell-badge">{unread > 9 ? "9+" : unread}</span>}
+            </Link>
             {session ? (
               <span className="demo-tag connected">
                 <span />
@@ -195,8 +208,8 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
         </header>
         {session ? (
           <div className="demo-banner">
-            {session.membership.organizationName} · {session.membership.teamName} — données lues en base,
-            <strong> lecture seule</strong> : l’enregistrement des saisies arrive à l’étape suivante.
+            {session.membership.organizationName} · {session.membership.teamName} — vos saisies sont enregistrées en
+            base, sous les droits de votre rôle.
           </div>
         ) : (
           <div className="demo-banner">

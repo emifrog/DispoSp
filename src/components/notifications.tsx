@@ -1,0 +1,68 @@
+"use client";
+import { Bell, BellRing, Check, Inbox } from "lucide-react";
+import { useApp } from "./provider";
+import { PageTitle, Panel } from "./common";
+import { Button } from "./ui/button";
+import { notificationLabels, plural } from "@/lib/domain";
+
+export function Notifications() {
+  const { state, run } = useApp();
+  const unread = state.notifications.filter(n => !n.readAt);
+  return (
+    <>
+      <PageTitle
+        eyebrow="ESPACE AGENT"
+        title="Notifications"
+        description="Ouverture d’une campagne, rappel avant clôture, publication d’un planning."
+        action={
+          unread.length ? (
+            <Button variant="secondary" onClick={() => run({ type: "readNotifications", ids: unread.map(n => n.id) })}>
+              <Check size={16} />
+              Tout marquer comme lu
+            </Button>
+          ) : undefined
+        }
+      />
+      <Panel
+        title="Vos messages"
+        subtitle={
+          unread.length
+            ? `${unread.length} ${plural(unread.length, "message")} non ${plural(unread.length, "lu")}`
+            : "Tout est lu."
+        }
+      >
+        {!state.notifications.length ? (
+          <div className="empty-small notice-empty">
+            <Inbox />
+            <p>Aucune notification pour le moment. Elles arriveront à l’ouverture d’une campagne.</p>
+          </div>
+        ) : (
+          <ol className="notice-list">
+            {state.notifications.map(notice => (
+              <li key={notice.id} className={notice.readAt ? "" : "unread"}>
+                <span className="notice-icon">{notice.readAt ? <Bell size={18} /> : <BellRing size={18} />}</span>
+                <div>
+                  <h3>{notice.subject}</h3>
+                  {notice.body && <p>{notice.body}</p>}
+                  <small>
+                    {notificationLabels[notice.kind] ?? notice.kind} ·{" "}
+                    {new Date(notice.createdAt).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })}
+                  </small>
+                </div>
+                {!notice.readAt && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => run({ type: "readNotifications", ids: [notice.id] })}
+                  >
+                    Marquer comme lu
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ol>
+        )}
+      </Panel>
+    </>
+  );
+}

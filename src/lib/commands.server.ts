@@ -1,6 +1,7 @@
 import "server-only";
 import { fromZonedTime } from "date-fns-tz";
 import { frenchMessage, type DatabaseFailure } from "./command-errors";
+import { dispatch } from "./mailer.server";
 import { lastDayOfMonth, monthDays, type Command, type Shift } from "./domain";
 import type { AttachedSession } from "./session";
 import { createActionClient } from "./supabase/server";
@@ -27,7 +28,7 @@ export async function runCommand(session: AttachedSession, command: Command): Pr
     case "assign":
       return writeAssignment(client, session, command);
     case "publish":
-      return publishShift(client, command);
+      return publishShift(client, session.membership.organizationId, command);
     case "requirement":
       return writeRequirement(client, session, command);
     case "campaign":
@@ -44,7 +45,31 @@ export async function runCommand(session: AttachedSession, command: Command): Pr
       return revokeInvitation(client, command);
     case "team":
       return writeTeam(client, session, command);
+    case "readNotifications":
+      return markNotificationsRead(client, command);
+    case "remind":
+      return remindCampaign(client, session, command);
   }
+}
+
+// Nobody runs a clock, so a reminder is an act a manager takes. The database
+// picks the targets — those who have not validated — and refuses a second
+// pending reminder for the same campaign.
+async function remindCampaign(client: Client, session: AttachedSession, command: Of<"remind">) {
+  const { error } = await client.rpc("remind_campaign", { campaign: command.campaignId });
+  if (error) fail(error);
+  await dispatch(client, session.membership.organizationId);
+}
+
+// The only column a session may write on its own notices. Marking one already
+// read again is not an error: the screen may send a batch that overlaps.
+async function markNotificationsRead(client: Client, command: Of<"readNotifications">) {
+  const { error } = await client
+    .from("notifications")
+    .update({ read_at: new Date().toISOString() })
+    .in("id", command.ids)
+    .is("read_at", null);
+  if (error) fail(error);
 }
 
 // ---------------------------------------------------------------------------
@@ -160,12 +185,13 @@ async function writeAssignment(client: Client, session: AttachedSession, command
   if (error) fail(error);
 }
 
-async function publishShift(client: Client, command: Of<"publish">) {
+async function publishShift(client: Client, organizationId: string, command: Of<"publish">) {
   const shiftId = await shiftIdFor(client, command.campaignId, command.date, command.shift);
   // public.publish_shift() is the only door to the private definer function,
   // which re-checks headcount, qualifications and eligibility in one transaction.
   const { error } = await client.rpc("publish_shift", { shift: shiftId });
   if (error) fail(error);
+  await dispatch(client, organizationId);
 }
 
 async function writeRequirement(client: Client, session: AttachedSession, command: Of<"requirement">) {
@@ -322,6 +348,9 @@ async function openCampaign(client: Client, session: AttachedSession, command: O
     })),
   );
   if (participantFailure) fail(participantFailure);
+  // Les participants viennent d être inscrits : le déclencheur de 0005 a écrit
+  // une notification pour chacun, et elles partent maintenant.
+  await dispatch(client, organizationId);
 }
 
 async function lockCampaign(client: Client, command: Of<"close">) {

@@ -41,6 +41,14 @@ export type Raw = {
     created_at: string;
   }[];
   memberQualifications: { user_id: string; qualifications: { name: string } | null }[];
+  notifications: {
+    id: string;
+    kind: string;
+    subject: string;
+    body: string | null;
+    created_at: string;
+    read_at: string | null;
+  }[];
   campaigns: {
     id: string;
     name: string;
@@ -230,6 +238,15 @@ export function buildState(raw: Raw, fallbackOrganizationName: string): AppState
     agents,
     inactiveAgents,
     teams: raw.teams.map(t => ({ id: t.id, name: t.name })),
+    // Celles de la personne connectée seulement : la policy filtre, pas nous.
+    notifications: raw.notifications.map(row => ({
+      id: row.id,
+      kind: row.kind,
+      subject: row.subject,
+      body: row.body ?? "",
+      createdAt: row.created_at,
+      readAt: row.read_at,
+    })),
     qualificationCatalogue: raw.qualificationCatalogue.map(q => q.name).sort((a, b) => a.localeCompare(b, "fr")),
     // Empty for anyone but an administrator: the policy filters, we do not.
     invitations: raw.invitations.map(row => ({

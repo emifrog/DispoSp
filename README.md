@@ -54,11 +54,14 @@ Le projet de développement dédié est désigné : ses coordonnées sont dans `
 
 Le schéma est découpé en migrations successives, à appliquer dans l'ordre et une seule fois chacune :
 
-| Fichier                                      | Contenu                                                                                                  | État                           |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `supabase/migrations/0001_foundation.sql`    | Organisations, équipes, profils, droits, campagnes, participants, disponibilités                         | Appliquée le 18 septembre 2026 |
-| `supabase/migrations/0002_planning.sql`      | Qualifications, créneaux types, besoins, plannings, affectations, notifications, audit                   | Appliquée le 18 septembre 2026 |
-| `supabase/migrations/0003_client_writes.sql` | Publication joignable depuis le client, horaires du centre, catalogue de qualifications, journal d'audit | **À appliquer**                |
+| Fichier                                             | Contenu                                                                                                  | État                           |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `supabase/migrations/0001_foundation.sql`           | Organisations, équipes, profils, droits, campagnes, participants, disponibilités                         | Appliquée le 18 septembre 2026 |
+| `supabase/migrations/0002_planning.sql`             | Qualifications, créneaux types, besoins, plannings, affectations, notifications, audit                   | Appliquée le 18 septembre 2026 |
+| `supabase/migrations/0003_client_writes.sql`        | Publication joignable depuis le client, horaires du centre, catalogue de qualifications, journal d'audit | Appliquée le 18 septembre 2026 |
+| `supabase/migrations/0004_agent_administration.sql` | Fiche agent, invitations, administration des équipes et qualifications                                   | Appliquée le 18 septembre 2026 |
+| `supabase/migrations/0005_notifications.sql`        | Notification à l'ouverture d'une campagne                                                                | Appliquée le 18 septembre 2026 |
+| `supabase/migrations/0006_email_dispatch.sql`       | Adresse des agents, file d'envoi, rappel avant clôture                                                   | **À appliquer**                |
 
 Chaque fichier est une transaction : la moindre erreur annule la migration entière, sans état partiel. Aucun n'est rejouable — ce sont des `create`, pas des `create if not exists`, pour qu'un second passage échoue au lieu d'écraser silencieusement une base déjà en service. `0002` commence par vérifier que `0001` est présente et qu'elle-même ne l'est pas, et s'arrête sur un message explicite plutôt que sur un « relation already exists ».
 
@@ -68,6 +71,18 @@ Pour vérifier ce qui est déjà en place sur un projet :
 select string_agg(table_name, ', ' order by table_name)
 from information_schema.tables where table_schema = 'public';
 ```
+
+### Notifications et envoi des emails
+
+Une notification est écrite au moment où elle est méritée : un déclencheur l'inscrit à l'ouverture d'une campagne, la fonction de publication à la publication, et `public.remind_campaign()` quand un responsable relance. L'envoi est un acte séparé, qui peut échouer.
+
+`public.notifications` sert donc de file d'attente : `sent_at` appartient à l'expéditeur, `read_at` au destinataire. Après une commande qui en produit, `src/lib/mailer.server.ts` lit la file, envoie le lot à Resend, et marque. **Sans `RESEND_API_KEY`, rien ne casse** : les notifications arrivent dans le centre de l'application, et la file attend un prochain passage. C'est la raison d'être de la file — un envoi raté ne doit pas annuler l'écriture qui l'a provoqué.
+
+`RESEND_API_KEY` est le premier secret du projet. Jamais de préfixe `NEXT_PUBLIC_` : il partirait dans le paquet du navigateur. Lire la file suppose de lire les notifications et les adresses d'autrui, ce qu'aucune policy n'autorise et qu'aucune ne devrait ; `public.pending_notifications()` est une fonction définisseure délibérément étroite, qui ne rend rien à qui n'encadre pas le centre.
+
+L'adresse elle-même vient de `auth.users`, que PostgREST n'expose pas. `0006` en garde une copie sur `profiles`, remplie à la création du profil et tenue à jour par déclencheur : l'autorité reste au schéma d'authentification, et aucune session cliente ne peut la modifier.
+
+Le rappel avant clôture est un geste, pas une horloge : personne ne fait tourner de tâche planifiée. Le bouton du tableau de bord vise les agents qui n'ont pas validé, et la base refuse d'empiler deux rappels sur la même personne.
 
 ### Deux modes
 

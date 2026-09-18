@@ -165,6 +165,24 @@ export function createDemoState(now = new Date()): AppState {
     teams: [],
     qualificationCatalogue: [],
     invitations: [],
+    notifications: [
+      {
+        id: "notice-campaign",
+        kind: "CAMPAIGN_OPENED",
+        subject: `Campagne ouverte : ${campaignName(month)}`,
+        body: `Renseignez vos disponibilités avant le ${closesOn.slice(8)}/${closesOn.slice(5, 7)}/${closesOn.slice(0, 4)}, puis validez votre réponse.`,
+        createdAt: new Date(`${opensOn}T08:00:00`).toISOString(),
+        readAt: null,
+      },
+      {
+        id: "notice-schedule",
+        kind: "SCHEDULE_PUBLISHED",
+        subject: "Votre planning a été publié",
+        body: "Retrouvez vos gardes dans Mon planning.",
+        createdAt: new Date(now.getTime() - 3 * 86_400_000).toISOString(),
+        readAt: new Date(now.getTime() - 2 * 86_400_000).toISOString(),
+      },
+    ],
     campaigns: [
       {
         id: `campaign-${month}`,

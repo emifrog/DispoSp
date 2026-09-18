@@ -72,6 +72,18 @@ export const stateSchema = z.object({
     )
     .default([]),
   teams: z.array(z.object({ id: z.string(), name: z.string() })).default([]),
+  notifications: z
+    .array(
+      z.object({
+        id: z.string(),
+        kind: z.string(),
+        subject: z.string(),
+        body: z.string(),
+        createdAt: z.string(),
+        readAt: z.string().nullable(),
+      }),
+    )
+    .default([]),
   qualificationCatalogue: z.array(z.string()).default([]),
   invitations: z
     .array(
@@ -288,6 +300,8 @@ export const commandSchema = z.discriminatedUnion("type", [
     role: memberRoleSchema,
   }),
   z.object({ type: z.literal("revokeInvitation"), invitationId: id }),
+  z.object({ type: z.literal("readNotifications"), ids: z.array(id).min(1).max(100) }),
+  z.object({ type: z.literal("remind"), campaignId: id }),
   z.object({ type: z.literal("team"), teamId: z.string().max(64).optional(), name: z.string().trim().min(1).max(60) }),
   z.object({
     type: z.literal("settings"),
@@ -327,6 +341,13 @@ export const commandEntities: Record<Command["type"], string> = {
   invite: "invitation",
   revokeInvitation: "invitation",
   team: "team",
+  readNotifications: "notification",
+  remind: "notification",
+};
+export const notificationLabels: Record<string, string> = {
+  CAMPAIGN_OPENED: "Campagne ouverte",
+  CAMPAIGN_REMINDER: "Rappel avant clôture",
+  SCHEDULE_PUBLISHED: "Planning publié",
 };
 export const commandLabels: Record<Command["type"], string> = {
   availability: "Disponibilités modifiées",
@@ -341,6 +362,8 @@ export const commandLabels: Record<Command["type"], string> = {
   invite: "Invitation envoyée",
   revokeInvitation: "Invitation annulée",
   team: "Équipe enregistrée",
+  readNotifications: "Notifications marquées comme lues",
+  remind: "Relance envoyée",
 };
 
 // Pure business layer shared by the demonstration and the future server commands.
@@ -351,7 +374,7 @@ export function execute(state: AppState, actor: Actor, command: Command, now = n
   const today = localDate(now);
   // Administration writes to tables the demonstration does not model at all.
   // Connected mode handles these four; refusing plainly beats pretending.
-  if (["member", "invite", "revokeInvitation", "team"].includes(command.type))
+  if (["member", "invite", "revokeInvitation", "team", "remind"].includes(command.type))
     throw new Error("L’administration des agents n’est disponible qu’en mode connecté.");
   const campaign = "campaignId" in command ? next.campaigns.find(c => c.id === command.campaignId) : undefined;
   if ("campaignId" in command && !campaign) throw new Error("Campagne introuvable.");
@@ -442,6 +465,10 @@ export function execute(state: AppState, actor: Actor, command: Command, now = n
     campaign.closed = command.closed;
     action = command.closed ? "Campagne verrouillée" : "Campagne déverrouillée";
     detail = campaign.name;
+  } else if (command.type === "readNotifications") {
+    // Deliberately unaudited: reading a notice is not an act on the centre.
+    for (const notification of next.notifications)
+      if (command.ids.includes(notification.id) && !notification.readAt) notification.readAt = stamp;
   } else if (command.type === "settings") {
     if (
       ![command.dayStart, command.nightStart].every(n => Number.isInteger(n) && n >= 0 && n <= 23) ||
@@ -453,13 +480,16 @@ export function execute(state: AppState, actor: Actor, command: Command, now = n
     action = "Horaires par défaut modifiés";
     detail = `Jour ${command.dayStart} h–${command.nightStart} h · nouvelles campagnes uniquement`;
   }
-  next.audit.unshift({
-    id: crypto.randomUUID(),
-    at: stamp,
-    actor: author.name,
-    action,
-    detail,
-    entity: commandEntities[command.type],
-  });
+  // A command that names no action leaves no line: an empty entry in the trail
+  // is worse than none, because it looks like something was lost.
+  if (action)
+    next.audit.unshift({
+      id: crypto.randomUUID(),
+      at: stamp,
+      actor: author.name,
+      action,
+      detail,
+      entity: commandEntities[command.type],
+    });
   return next;
 }
