@@ -1940,6 +1940,9 @@ label {
   flex-direction: column;
   padding: 0 22px 22px;
 }
+.empty-filters {
+  padding: 0 22px 18px;
+}
 .invitation-list > div {
   display: flex;
   align-items: center;

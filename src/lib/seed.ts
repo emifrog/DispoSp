@@ -217,6 +217,7 @@ export function createDemoState(now = new Date()): AppState {
     actor: "Julien Bernard",
     action: "Campagne ouverte",
     detail: `${campaign.name} · ${state.agents.length} agents invités`,
+    entity: "availability_campaign",
   });
   return state;
 }

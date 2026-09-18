@@ -46,11 +46,14 @@ const initials = (name: string) =>
     .toUpperCase();
 
 export function Shell({ children, session }: { children: ReactNode; session: AttachedSession | null }) {
-  const { state, actor, agent, switchRole, campaignId, setCampaignId, ready } = useApp();
+  const { state, actor, agent, switchRole, campaignId, setCampaignId, ready, memberRole, canAdminister } = useApp();
   const path = usePathname();
   const [menu, setMenu] = useState(false);
   const nav = actor.role === "MANAGER" ? managerNav : agentNav;
   const managerOnly = [...managerNav.map(n => n.href), "/historique", "/parametres"].includes(path);
+  // §2 has four roles. A responsable manages their team but administers nothing,
+  // so the two administration entries would only lead to screens refusing them.
+  const space = memberRole ? roleLabels[memberRole].toUpperCase() : actor.role === "MANAGER" ? "RESPONSABLE" : "AGENT";
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main">
@@ -74,7 +77,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
           </div>
           <ChevronDown size={15} />
         </div>
-        <span className="nav-caption">ESPACE {actor.role === "MANAGER" ? "RESPONSABLE" : "AGENT"}</span>
+        <span className="nav-caption">ESPACE {space}</span>
         <nav aria-label="Navigation principale">
           {nav.map(item => (
             <Link
@@ -90,7 +93,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
             </Link>
           ))}
         </nav>
-        {actor.role === "MANAGER" && (
+        {actor.role === "MANAGER" && canAdminister && (
           <>
             <span className="nav-caption nav-caption-second">ADMINISTRATION</span>
             <nav aria-label="Administration">

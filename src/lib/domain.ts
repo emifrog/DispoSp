@@ -113,7 +113,16 @@ export const stateSchema = z.object({
     z.object({ agents: z.array(z.string()), publishedAt: z.string(), revision: z.number() }),
   ),
   audit: z.array(
-    z.object({ id: z.string(), at: z.string(), actor: z.string(), action: z.string(), detail: z.string() }),
+    z.object({
+      id: z.string(),
+      at: z.string(),
+      actor: z.string(),
+      action: z.string(),
+      detail: z.string(),
+      /** The table the line came from. Empty on a demonstration saved before it
+          existed, which the filter then simply never matches. */
+      entity: z.string().default(""),
+    }),
   ),
 });
 export type AppState = z.infer<typeof stateSchema>;
@@ -290,6 +299,35 @@ export type Command = z.infer<typeof commandSchema>;
 // What the toast says once the database has accepted the write. The demonstration
 // takes its wording from the audit entry execute() builds; connected mode has no
 // such entry to read back, so the label lives here for both to stay in step.
+// The trail groups by table; a reader groups by subject. One place decides which
+// is which, and the history screen offers nothing the vocabulary cannot fill.
+export const auditFamilies = [
+  { key: "availability", label: "Disponibilités", entities: ["availability_entry", "campaign_participant"] },
+  { key: "planning", label: "Planning", entities: ["schedule_assignment", "schedule_shift"] },
+  { key: "needs", label: "Besoins", entities: ["staffing_requirement"] },
+  { key: "campaigns", label: "Campagnes", entities: ["availability_campaign"] },
+  {
+    key: "administration",
+    label: "Administration",
+    entities: ["profile", "membership", "team", "invitation", "user_qualification", "qualification", "organization"],
+  },
+] as const;
+// Which table each command touches, so the demonstration files its own lines
+// under the same headings the database triggers use.
+export const commandEntities: Record<Command["type"], string> = {
+  availability: "availability_entry",
+  validate: "campaign_participant",
+  assign: "schedule_assignment",
+  publish: "schedule_shift",
+  requirement: "staffing_requirement",
+  campaign: "availability_campaign",
+  close: "availability_campaign",
+  settings: "organization",
+  member: "membership",
+  invite: "invitation",
+  revokeInvitation: "invitation",
+  team: "team",
+};
 export const commandLabels: Record<Command["type"], string> = {
   availability: "Disponibilités modifiées",
   validate: "Réponse validée",
@@ -421,6 +459,7 @@ export function execute(state: AppState, actor: Actor, command: Command, now = n
     actor: author.name,
     action,
     detail,
+    entity: commandEntities[command.type],
   });
   return next;
 }

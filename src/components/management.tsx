@@ -32,6 +32,7 @@ import {
   localDate,
   localMonth,
   monthDays,
+  auditFamilies,
   gradeLabel,
   memberRoles,
   monthLabel,
@@ -560,8 +561,43 @@ function TeamDialog({ initial, onClose }: { initial: { id?: string; name: string
   );
 }
 
+// A screen an administrator alone may read. The database says so too — the audit
+// policy returns nothing to anyone else — but an empty page explains nothing.
+function AdministrationOnly({ title }: { title: string }) {
+  return (
+    <>
+      <PageTitle
+        eyebrow="ACCÈS RÉSERVÉ"
+        title={title}
+        description="Cet écran est réservé à l’administration du centre."
+      />
+      <div className="info-card horizontal">
+        <ShieldCheck size={24} />
+        <p>
+          Seuls les profils gestionnaire et administrateur y ont accès. Rapprochez-vous de l’administrateur de votre
+          centre si vous pensez devoir en faire partie.
+        </p>
+      </div>
+    </>
+  );
+}
+
 export function Audit() {
-  const { state, connected } = useApp();
+  const { state, connected, canAdminister } = useApp();
+  const [family, setFamily] = useState("");
+  const [author, setAuthor] = useState("");
+  const [search, setSearch] = useState("");
+  if (connected && !canAdminister) return <AdministrationOnly title="Historique des actions" />;
+  const authors = [...new Set(state.audit.map(e => e.actor))].sort((a, b) => a.localeCompare(b, "fr"));
+  const entities = auditFamilies.find(f => f.key === family)?.entities as readonly string[] | undefined;
+  // The trail is kept line by line on purpose; reading it back by the handful is
+  // what this screen is for. A month filled by one agent is thirty-one lines.
+  const shown = state.audit.filter(
+    event =>
+      (!entities || entities.includes(event.entity)) &&
+      (!author || event.actor === author) &&
+      `${event.action} ${event.detail}`.toLocaleLowerCase("fr").includes(search.toLocaleLowerCase("fr")),
+  );
   return (
     <>
       <PageTitle
@@ -569,9 +605,45 @@ export function Audit() {
         title="Historique des actions"
         description={`Retrouvez les saisies, validations et publications ${connected ? "de votre centre" : "de cette démonstration"}.`}
       />
-      <Panel title="Dernières modifications" subtitle={`${state.audit.length} action(s) enregistrée(s)`}>
+      <div className="table-filters">
+        <label className="search-field">
+          <Search size={17} />
+          <input
+            placeholder="Rechercher une action, un agent, une date…"
+            aria-label="Rechercher dans l’historique"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </label>
+        <select aria-label="Filtrer par sujet" value={family} onChange={e => setFamily(e.target.value)}>
+          <option value="">Tous les sujets</option>
+          {auditFamilies.map(f => (
+            <option key={f.key} value={f.key}>
+              {f.label}
+            </option>
+          ))}
+        </select>
+        <select aria-label="Filtrer par auteur" value={author} onChange={e => setAuthor(e.target.value)}>
+          <option value="">Tous les auteurs</option>
+          {authors.map(name => (
+            <option key={name}>{name}</option>
+          ))}
+        </select>
+        <span className="muted small">
+          {shown.length} {plural(shown.length, "action")} sur {state.audit.length}
+        </span>
+      </div>
+      <Panel
+        title="Dernières modifications"
+        subtitle={
+          state.audit.length >= 200
+            ? "Les deux cents dernières actions du centre."
+            : `${state.audit.length} ${plural(state.audit.length, "action")} ${plural(state.audit.length, "enregistrée")}`
+        }
+      >
+        {!shown.length && <p className="muted small empty-filters">Aucune action ne correspond à ces filtres.</p>}
         <ol className="audit-list">
-          {state.audit.map(event => (
+          {shown.map(event => (
             <li key={event.id}>
               <span className="audit-icon">
                 <CheckCheck size={18} />
@@ -593,9 +665,10 @@ export function Audit() {
 }
 
 export function Settings() {
-  const { state, run } = useApp();
+  const { state, run, connected, canAdminister } = useApp();
   const [dayStart, setDayStart] = useState(state.organization.dayStart);
   const [nightStart, setNightStart] = useState(state.organization.nightStart);
+  if (connected && !canAdminister) return <AdministrationOnly title="Paramètres du centre" />;
   return (
     <>
       <PageTitle

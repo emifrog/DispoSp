@@ -274,6 +274,13 @@ describe("Construction de l’état depuis la base", () => {
       "Horaires par défaut modifiés — 8 h – 20 h → 7 h – 19 h",
     ]);
     for (const event of state.audit) expect(`${event.action}${event.detail}`).not.toMatch(/[{}"]|_[a-z]/);
+    // L’entité voyage avec la ligne : c’est sur elle que l’écran filtre.
+    expect(state.audit.map(e => e.entity)).toEqual([
+      "schedule_shift",
+      "staffing_requirement",
+      "availability_entry",
+      "organization",
+    ]);
   });
 
   it("retombe sur le nom de la session si l’organisation n’est pas lisible", () => {

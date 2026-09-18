@@ -317,6 +317,7 @@ export function buildState(raw: Raw, fallbackOrganizationName: string): AppState
       actor: (row.actor_id && nameById.get(row.actor_id)) || "—",
       action: auditLabels[`${row.entity}/${row.action}`] ?? `${row.entity} · ${row.action}`,
       detail: auditDetail(row.entity, before, after, nameById) || row.entity,
+      entity: row.entity,
     };
   });
 
