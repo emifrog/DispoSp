@@ -20,7 +20,10 @@ beforeAll(async () => {
   await db.exec(
     `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`,
   );
-  await db.exec(readFileSync(new URL("../supabase/schema.sql", import.meta.url), "utf8"));
+  // Applied in order, exactly as they are against the real project: the tests
+  // therefore check the migration sequence, not a single hand-kept schema file.
+  for (const migration of ["0001_foundation.sql", "0002_planning.sql"])
+    await db.exec(readFileSync(new URL(`../supabase/migrations/${migration}`, import.meta.url), "utf8"));
   await db.exec(`insert into auth.users values ('${agentA}'), ('${agentB}'), ('${managerA}');
     insert into public.profiles values ('${agentA}', 'Agent A'), ('${agentB}', 'Agent B'), ('${managerA}', 'Responsable A');
     insert into public.organizations(id,name) values ('${orgA}','Centre A'), ('${orgB}','Centre B');
@@ -296,4 +299,36 @@ describe("Planning, publication et audit", () => {
     await asUser(managerC);
     expect((await db.query("select * from public.audit_logs")).rows.length).toBeGreaterThan(0);
   });
+});
+
+// The situation that produced "relation organizations already exists": a script
+// meant for a fresh database replayed on one that already carries part of it.
+describe("Enchaînement des migrations", () => {
+  const read = (name: string) => readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), "utf8");
+  const authSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
+
+  it("refuse 0002 sur une base qui n’a jamais reçu 0001", async () => {
+    const fresh = new PGlite();
+    await fresh.exec(authSchema);
+    await expect(fresh.exec(read("0002_planning.sql"))).rejects.toThrow("Apply 0001_foundation.sql first");
+    await fresh.close();
+  }, 30000);
+
+  it("refuse 0002 une seconde fois, sans rien laisser derrière", async () => {
+    const fresh = new PGlite();
+    await fresh.exec(authSchema);
+    await fresh.exec(read("0001_foundation.sql"));
+    await fresh.exec(read("0002_planning.sql"));
+    // PGlite surfaces the follow-on "transaction is aborted" rather than the
+    // guard's own message here, so assert the property that matters instead:
+    // the replay is refused and leaves the first application untouched.
+    await expect(fresh.exec(read("0002_planning.sql"))).rejects.toThrow();
+    // The session is left inside the aborted transaction; leave it before reading.
+    await fresh.exec("rollback");
+    const tables = await fresh.query<{ count: number }>(
+      "select count(*)::int as count from information_schema.tables where table_schema='public'",
+    );
+    expect(tables.rows[0].count).toBe(17);
+    await fresh.close();
+  }, 30000);
 });

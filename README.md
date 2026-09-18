@@ -42,17 +42,35 @@ Voir `DECISIONS_FONCTIONNELLES.md`. Jour 8 h–20 h, Nuit 20 h–8 h le lendemai
 - `src/components/provider.tsx` : stockage local de démonstration. **Les rôles du navigateur ne constituent pas un contrôle de sécurité.**
 - `src/lib/exports.ts` : exports CSV et ICS.
 - `src/lib/supabase/` : fabriques de clients pour le futur raccordement, inactives dans la démonstration.
-- `supabase/schema.sql` : socle PostgreSQL non déployé, 17 tables couvrant organisations, équipes, profils, droits, campagnes, participants, disponibilités, qualifications, créneaux types, besoins d'effectifs et de qualifications, plannings, affectations, notifications et audit. Isolation RLS, validation, invalidation et publication contrôlées en base.
+- `supabase/migrations/` : 17 tables couvrant organisations, équipes, profils, droits, campagnes, participants, disponibilités, qualifications, créneaux types, besoins d'effectifs et de qualifications, plannings, affectations, notifications et audit. Isolation RLS, validation, invalidation et publication contrôlées en base.
 - `.github/workflows/ci.yml` : formatage, lint, types, tests unitaires et schéma, build et tests de bout en bout à chaque push et chaque pull request.
 
 ## Raccordement Supabase restant à réaliser
 
-Le projet de développement dédié est désigné : ses coordonnées sont dans `.env` (URL et clé publiable), qui n'est pas versionné. Aucun schéma n'y a encore été déployé et l'interface ne l'appelle pas — les clients de `src/lib/supabase/` ne sont importés nulle part, et les valeurs n'apparaissent donc pas dans le paquet livré au navigateur.
+Le projet de développement dédié est désigné : ses coordonnées sont dans `.env`, qui n'est pas versionné. L'interface ne l'appelle pas encore — les clients de `src/lib/supabase/` ne sont importés nulle part, et les valeurs n'apparaissent donc pas dans le paquet livré au navigateur.
+
+### Migrations
+
+Le schéma est découpé en migrations successives, à appliquer dans l'ordre et une seule fois chacune :
+
+| Fichier                                   | Contenu                                                                                | État                           |
+| ----------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------ |
+| `supabase/migrations/0001_foundation.sql` | Organisations, équipes, profils, droits, campagnes, participants, disponibilités       | Appliquée le 18 septembre 2026 |
+| `supabase/migrations/0002_planning.sql`   | Qualifications, créneaux types, besoins, plannings, affectations, notifications, audit | À appliquer                    |
+
+Chaque fichier est une transaction : la moindre erreur annule la migration entière, sans état partiel. Aucun n'est rejouable — ce sont des `create`, pas des `create if not exists`, pour qu'un second passage échoue au lieu d'écraser silencieusement une base déjà en service. `0002` commence par vérifier que `0001` est présente et qu'elle-même ne l'est pas, et s'arrête sur un message explicite plutôt que sur un « relation already exists ».
+
+Pour vérifier ce qui est déjà en place sur un projet :
+
+```sql
+select string_agg(table_name, ', ' order by table_name)
+from information_schema.tables where table_schema = 'public';
+```
 
 La prochaine tranche doit :
 
-1. Initialiser les migrations sur ce projet via la CLI Supabase.
-2. Exécuter et vérifier le schéma, vérifier les advisors, provisionner la première organisation, ses membres et le catalogue de qualifications.
+1. Appliquer `0002_planning.sql`, vérifier les advisors, provisionner la première organisation, ses membres et le catalogue de qualifications.
+2. Lier le projet à la CLI Supabase (`supabase link`) et déclarer les migrations déjà appliquées avec `supabase migration repair --status applied`, pour que les suivantes soient gérées par la CLI plutôt que collées dans l'éditeur SQL.
 3. Ajouter authentification, renouvellement de session, invitations et opérations serveur autorisées ; remplacer le stockage local par les accès à la base.
 4. Brancher l'envoi des emails sur la table `notifications` et exposer le journal d'audit dans l'interface.
 
