@@ -192,8 +192,8 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
         </header>
         {session ? (
           <div className="demo-banner">
-            Session ouverte sur {session.membership.organizationName} · les écrans affichent encore les données locales
-            de démonstration, le raccordement des données est l’étape suivante.
+            {session.membership.organizationName} · {session.membership.teamName} — données lues en base,
+            <strong> lecture seule</strong> : l’enregistrement des saisies arrive à l’étape suivante.
           </div>
         ) : (
           <div className="demo-banner">

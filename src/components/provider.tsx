@@ -21,11 +21,21 @@ type Context = {
   ready: boolean;
 };
 const Store = createContext<Context | null>(null);
-export function AppProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AppState>(createDemoState);
-  const [actor, setActor] = useState<Actor>({ id: "julien", role: "MANAGER" });
-  const [campaignId, setCampaignId] = useState(() => state.campaigns[0].id);
-  const [ready, setReady] = useState(false);
+export function AppProvider({
+  children,
+  initialState,
+  initialActor,
+}: {
+  children: ReactNode;
+  /** Connected mode passes the state read from the database; demonstration passes nothing. */
+  initialState?: AppState;
+  initialActor?: Actor;
+}) {
+  const connected = Boolean(initialState);
+  const [state, setState] = useState<AppState>(() => initialState ?? createDemoState());
+  const [actor, setActor] = useState<Actor>(initialActor ?? { id: "julien", role: "MANAGER" });
+  const [campaignId, setCampaignId] = useState(() => state.campaigns[0]?.id ?? "");
+  const [ready, setReady] = useState(connected);
   const [message, setMessage] = useState("");
   const router = useRouter();
   const path = usePathname();
@@ -33,6 +43,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // the server render has no localStorage. This is the one effect allowed to set state.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
+    if (connected) return;
     try {
       const saved = localStorage.getItem(STATE_KEY);
       if (saved) {
@@ -59,7 +70,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setMessage("La sauvegarde locale n’a pas pu être lue. Les données d’exemple sont affichées.");
     }
     setReady(true);
-  }, []);
+  }, [connected]);
   /* eslint-enable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!message) return;
@@ -67,6 +78,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timer);
   }, [message]);
   function run(command: Command) {
+    // Connected mode reads from the database but does not write to it yet.
+    // Falling back to localStorage here would silently drop the change.
+    if (connected) {
+      setMessage("Mode connecté : la saisie sera enregistrée en base à la prochaine étape.");
+      return false;
+    }
     try {
       const next = execute(state, actor, command);
       // Save first: do not announce success if storage is blocked or full.

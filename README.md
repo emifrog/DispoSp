@@ -77,12 +77,17 @@ NEXT_PUBLIC_DISPOSP_MODE=connected pnpm build
 NEXT_PUBLIC_DISPOSP_MODE=connected pnpm start
 ```
 
-|                                    | Démonstration  | Connecté                                                   |
-| ---------------------------------- | -------------- | ---------------------------------------------------------- |
-| Compte requis                      | non            | oui, email et mot de passe                                 |
-| Données affichées                  | `localStorage` | `localStorage` — le raccordement des données reste à faire |
-| Rendu des écrans                   | statique       | dynamique, session lue côté serveur                        |
-| Sélecteur de rôle de démonstration | visible        | masqué, le rôle vient de la base                           |
+|                                    | Démonstration  | Connecté                                          |
+| ---------------------------------- | -------------- | ------------------------------------------------- |
+| Compte requis                      | non            | oui, email et mot de passe                        |
+| Données affichées                  | `localStorage` | lues en base, sous RLS                            |
+| Saisie                             | enregistrée    | **lecture seule**, l'enregistrement reste à faire |
+| Rendu des écrans                   | statique       | dynamique, session lue côté serveur               |
+| Sélecteur de rôle de démonstration | visible        | masqué, le rôle vient de la base                  |
+
+En mode connecté, `src/lib/data.server.ts` construit depuis la base exactement la forme que les écrans consomment déjà : aucun écran n'a eu à changer. Le mapping vit à part dans `src/lib/data-mapping.ts`, pur et testé seul, parce que c'est là que se logent les erreurs — fuseau de la fenêtre de réponse, séparation brouillon/publication, révisions périmées, lignes hors de portée RLS.
+
+Une écriture tentée en mode connecté est refusée avec un message. Elle n'est jamais renvoyée en silence vers `localStorage`, ce qui donnerait l'illusion d'un enregistrement.
 
 En mode connecté, un middleware renouvelle la session à chaque requête et renvoie tout visiteur sans session vers `/connexion`. `getUser()` y est utilisé plutôt que `getSession()` : le second se contenterait d'un cookie que le navigateur pourrait forger.
 
@@ -90,13 +95,16 @@ En mode connecté, un middleware renouvelle la session à chaque requête et ren
 
 1. Créer le compte depuis `/connexion` et **confirmer l'adresse** reçue par email.
 2. Adapter les quatre valeurs en tête de `supabase/provisioning/premiere-organisation.sql`, puis exécuter le fichier dans l'éditeur SQL du tableau de bord.
+3. Adapter le nom du centre et de l'équipe dans `supabase/provisioning/premiere-campagne.sql`, puis l'exécuter : il ouvre la campagne du mois suivant, invite les membres actifs et prépare les créneaux Jour et Nuit du mois. Sans campagne, l'application affiche un écran l'expliquant, puisque tous les écrans en dépendent.
+
+Ces deux scripts sont des gabarits : les tests les exécutent sur PostgreSQL en substituant les valeurs **par nom de variable**, jamais par le texte du gabarit, de sorte qu'ils continuent de passer quelles que soient les valeurs que vous y écrivez.
 
 Ce script est nécessaire parce que le schéma interdit volontairement au client de créer organisations, équipes et rôles. Sans lui, un compte connecté n'est rattaché à rien : l'application affiche alors un écran l'expliquant, plutôt que dix écrans vides. Il refuse un compte inexistant, un compte non confirmé, et un second passage.
 
 La prochaine tranche doit :
 
-1. Remplacer les lectures de `localStorage` par les requêtes à la base, écran par écran.
-2. Porter les huit commandes du domaine en actions serveur, la publication passant par `private.publish_schedule_shift()`.
+1. Porter les huit commandes du domaine en actions serveur, la publication passant par `private.publish_schedule_shift()`.
+2. Ajouter au schéma le grade, le matricule et le téléphone d'un agent, exigés au §3 du cahier des charges et absents aujourd'hui : l'annuaire affiche le rôle faute de grade.
 3. Ouvrir l'administration des agents, équipes et qualifications aux profils gestionnaire et administrateur.
 4. Brancher l'envoi des emails sur la table `notifications` et exposer le journal d'audit dans l'interface.
 5. Lier le projet à la CLI Supabase (`supabase link`) et déclarer les migrations déjà appliquées avec `supabase migration repair --status applied`, pour que les suivantes soient gérées par la CLI plutôt que collées dans l'éditeur SQL.

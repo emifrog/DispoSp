@@ -333,13 +333,25 @@ describe("Enchaînement des migrations", () => {
   }, 30000);
 });
 
+// The provisioning scripts are templates whose top declarations get edited by
+// whoever runs them. Substituting by variable name rather than by the placeholder
+// value keeps these tests working whatever is currently typed in the file.
+function withValues(sql: string, values: Record<string, string>) {
+  return Object.entries(values).reduce((out, [name, value]) => {
+    const declaration = new RegExp(`(${name}\\s+constant text\\s*:=\\s*')[^']*'`);
+    if (!declaration.test(out)) throw new Error(`Déclaration « ${name} » introuvable dans le script.`);
+    return out.replace(declaration, `$1${value}'`);
+  }, sql);
+}
+
 // The provisioning script is pasted by hand into the Supabase SQL editor, so it
 // gets the same scrutiny as the migrations: run it against a real engine first.
 describe("Provisionnement de la première organisation", () => {
   const authSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
   const script = () =>
     readFileSync(new URL("../supabase/provisioning/premiere-organisation.sql", import.meta.url), "utf8");
-  const forEmail = (email: string) => script().replace("a.remplacer@example.org", email);
+  const forEmail = (email: string) =>
+    withValues(script(), { admin_email: email, org_name: "CIS Test", team_name: "Section Test" });
 
   async function ready() {
     const fresh = new PGlite();
@@ -370,7 +382,7 @@ describe("Provisionnement de la première organisation", () => {
     const membership = await fresh.query<{ role: string; name: string }>(
       `select m.role, o.name from public.memberships m join public.organizations o on o.id = m.organization_id`,
     );
-    expect(membership.rows).toEqual([{ role: "ADMIN", name: "CIS Val de Loire" }]);
+    expect(membership.rows).toEqual([{ role: "ADMIN", name: "CIS Test" }]);
     expect((await fresh.query("select 1 from public.qualifications")).rows).toHaveLength(4);
     expect((await fresh.query("select 1 from public.shift_types")).rows).toHaveLength(2);
 
@@ -390,9 +402,101 @@ describe("Provisionnement de la première organisation", () => {
     await fresh.exec("reset role");
     await fresh.query("select set_config('request.jwt.claim.sub', $1, false)", [inserted.rows[0].id]);
     await fresh.exec("set role authenticated");
-    expect((await fresh.query("select name from public.organizations")).rows).toEqual([{ name: "CIS Val de Loire" }]);
+    expect((await fresh.query("select name from public.organizations")).rows).toEqual([{ name: "CIS Test" }]);
     expect((await fresh.query("select role from public.memberships")).rows).toEqual([{ role: "ADMIN" }]);
     expect((await fresh.query("select 1 from public.qualifications")).rows).toHaveLength(4);
+    await fresh.close();
+  }, 30000);
+});
+
+describe("Ouverture de la première campagne", () => {
+  const authSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
+  const file = (name: string) => readFileSync(new URL(`../supabase/provisioning/${name}`, import.meta.url), "utf8");
+
+  async function provisioned() {
+    const fresh = new PGlite();
+    await fresh.exec(authSchema);
+    for (const m of ["0001_foundation.sql", "0002_planning.sql"])
+      await fresh.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    await fresh.query(
+      "insert into auth.users(id,email,email_confirmed_at) values (gen_random_uuid(), 'chef@example.org', now())",
+    );
+    await fresh.exec(
+      withValues(file("premiere-organisation.sql"), {
+        admin_email: "chef@example.org",
+        org_name: "CIS Test",
+        team_name: "Section Test",
+      }),
+    );
+    return fresh;
+  }
+
+  it("refuse une organisation inconnue", async () => {
+    const fresh = await provisioned();
+    await expect(
+      fresh.exec(withValues(file("premiere-campagne.sql"), { org_name: "Centre absent", team_name: "Section Test" })),
+    ).rejects.toThrow();
+    await fresh.exec("rollback");
+    await fresh.close();
+  }, 30000);
+
+  it("ouvre une campagne cohérente, invite l’équipe et prépare les créneaux", async () => {
+    const fresh = await provisioned();
+    await fresh.exec(file("premiere-campagne.sql"));
+
+    const campaign = await fresh.query<{
+      starts_on: string;
+      ends_on: string;
+      day_start: number;
+      night_start: number;
+      ouverte: boolean;
+    }>(`select starts_on, ends_on, day_start, night_start,
+               (now() between opens_at and closes_at) as ouverte
+          from public.availability_campaigns`);
+    expect(campaign.rows).toHaveLength(1);
+    const row = campaign.rows[0];
+    // Le mois prochain, du premier au dernier jour, et ouverte à la saisie dès maintenant.
+    expect(new Date(row.starts_on).getUTCDate()).toBe(1);
+    expect(new Date(row.ends_on).getUTCMonth()).toBe(new Date(row.starts_on).getUTCMonth());
+    expect(new Date(new Date(row.ends_on).getTime() + 86400000).getUTCDate()).toBe(1);
+    expect(row.day_start).toBe(8);
+    expect(row.night_start).toBe(20);
+    expect(row.ouverte).toBe(true);
+
+    expect((await fresh.query("select 1 from public.campaign_participants")).rows).toHaveLength(1);
+    expect((await fresh.query("select 1 from public.schedules")).rows).toHaveLength(1);
+    const shifts = await fresh.query<{ count: number }>("select count(*)::int as count from public.schedule_shifts");
+    const days = (new Date(row.ends_on).getTime() - new Date(row.starts_on).getTime()) / 86400000 + 1;
+    expect(shifts.rows[0].count).toBe(days * 2);
+
+    await expect(fresh.exec(file("premiere-campagne.sql"))).rejects.toThrow();
+    await fresh.exec("rollback");
+    expect((await fresh.query("select 1 from public.availability_campaigns")).rows).toHaveLength(1);
+    await fresh.close();
+  }, 30000);
+
+  it("laisse l’agent saisir puis valider sa réponse sous RLS", async () => {
+    const fresh = await provisioned();
+    await fresh.exec(file("premiere-campagne.sql"));
+    const me = await fresh.query<{ id: string }>("select id from auth.users where email='chef@example.org'");
+    const campaign = await fresh.query<{ id: string; starts_on: string; ends_on: string }>(
+      "select id, starts_on, ends_on from public.availability_campaigns",
+    );
+    await fresh.exec("reset role");
+    await fresh.query("select set_config('request.jwt.claim.sub', $1, false)", [me.rows[0].id]);
+    await fresh.exec("set role authenticated");
+
+    // Ce que fera l'écran agent : renseigner chaque jour, puis valider.
+    await fresh.query(
+      `insert into public.availability_entries(campaign_id,user_id,date,availability_type)
+       select $1, $2, d::date, 'FULL_24H' from generate_series($3::date, $4::date, interval '1 day') d`,
+      [campaign.rows[0].id, me.rows[0].id, campaign.rows[0].starts_on, campaign.rows[0].ends_on],
+    );
+    await fresh.query("update public.campaign_participants set validated_at = now()");
+    const validated = await fresh.query<{ validated_at: unknown }>(
+      "select validated_at from public.campaign_participants",
+    );
+    expect(validated.rows[0].validated_at).not.toBeNull();
     await fresh.close();
   }, 30000);
 });
