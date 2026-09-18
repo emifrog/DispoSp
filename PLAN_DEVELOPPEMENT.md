@@ -27,7 +27,7 @@ Le dernier état documenté du déploiement Vercel était une démonstration. So
 | Historique et audit         | ✅ implémentés           | Journal, filtres sujet/auteur/période/recherche et export du journal                                     |
 | Notifications               | 🟡 recette à compléter   | Centre interne, lecture, rappels manuels et envoi Resend implémentés ; réception à vérifier              |
 | Exports                     | ✅ implémentés           | CSV, ICS, Excel, journal d’audit et impression PDF, matrice mensuelle comprise                           |
-| Application installable     | ❌ à faire               | Interface adaptée au mobile, installation PWA absente                                                    |
+| Application installable     | ✅ implémentée           | Interface adaptée au mobile, manifeste, icônes et installation sur l’écran d’accueil                     |
 | Hébergement et exploitation | 🟡 à confirmer           | Configuration connectée, emails, sauvegardes et recette à plusieurs comptes                              |
 
 ### Garanties métier
@@ -124,9 +124,13 @@ L’envoi nécessite **les trois variables** `RESEND_API_KEY`, `RESEND_FROM` et 
 
 - Recette en mode connecté des exports et des modèles habituels : isolation entre agents, persistance, application et invalidation de la réponse.
 
-### Lot 6 — Application installable ❌ à faire
+### Lot 6 — Application installable ✅ implémentée
 
-Installation PWA sur l’écran d’accueil du téléphone. La consultation hors ligne reste une extension à cadrer ; les notifications poussées relèvent de la V2.
+Manifeste, icônes et agent de service : l’application s’ajoute à l’écran d’accueil et s’ouvre en plein écran. L’écran de profil propose l’installation lorsque le navigateur la signale, et donne le chemin iOS, que Safari ne signale jamais.
+
+**L’agent de service ne met aucune donnée en cache**, et c’est délibéré : un planning ou une disponibilité servis depuis un cache seraient présentés comme à jour sans l’être. Il n’existe que parce qu’un navigateur exige un gestionnaire `fetch` pour proposer l’installation, et il laisse tout passer au réseau. Seule la page `/hors-ligne`, qui ne contient aucune donnée, est conservée.
+
+La consultation hors ligne reste une extension à cadrer ; les notifications poussées relèvent de la V2. **À confirmer :** installation réelle depuis l’URL publique, sur Android et sur iOS — un manifeste servi en HTTPS est nécessaire, et l’environnement de développement ne le fournit pas.
 
 ### Hors périmètre V1
 
@@ -154,7 +158,7 @@ Notifications poussées, échanges de garde entre agents, proposition automatiqu
 | Historique et audit (§12)                      | ✅   | Journal, filtres sujet/auteur/période/recherche et export CSV               |
 | Modèle de données (§14)                        | ✅   | 19 tables, huit migrations appliquées                                       |
 | Sécurité et RGPD (§16)                         | 🟡   | Contrôles techniques présents ; dispositions d’exploitation à compléter     |
-| Responsive et installable (§17)                | 🟡   | Adapté au mobile, PWA restante                                              |
+| Responsive et installable (§17)                | ✅   | Adapté au mobile, manifeste, icônes et agent de service                     |
 | Interface à plusieurs centaines d’agents (§21) | 🟡   | Scénario de virtualisation à 300 agents ; charge hébergée à mesurer         |
 
 ## 5. À décider ou confirmer, hors développement

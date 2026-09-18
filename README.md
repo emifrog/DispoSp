@@ -45,6 +45,7 @@ Voir `DECISIONS_FONCTIONNELLES.md`. Jour 8 h–20 h, Nuit 20 h–8 h le lendemai
 - `src/lib/domain.ts` : règles métier pures, calculs de couverture et commandes testables.
 - `src/components/provider.tsx` : stockage local en démonstration, commandes serveur en mode connecté. **Les rôles du navigateur ne constituent pas un contrôle de sécurité.**
 - `src/lib/exports.ts` : exports CSV et ICS ; `/api/export` : classeur Excel généré côté serveur en mode connecté.
+- `src/app/manifest.ts`, `public/sw.js` et `src/components/pwa.tsx` : installation sur l'écran d'accueil.
 - `src/lib/supabase/` : fabriques de clients, middleware de session et détection du mode. Inactives en démonstration.
 - `src/lib/session.ts` et `src/lib/session.server.ts` : types partagés d'un côté, lecture de session de l'autre. La séparation est nécessaire — un composant client qui importerait `next/headers` casse la compilation.
 - `supabase/migrations/` : 19 tables couvrant organisations, équipes, profils, droits, campagnes, participants, disponibilités, qualifications, créneaux types, besoins d'effectifs et de qualifications, plannings, affectations, invitations, disponibilités habituelles, notifications et audit. Isolation RLS, validation, invalidation et publication contrôlées en base.
@@ -86,6 +87,14 @@ from information_schema.tables where table_schema = 'public';
 Le classeur Excel du §11 est construit par une route serveur, `/api/export`, et non par une action : la réponse est un fichier, et ce choix garde ExcelJS hors de tous les paquets livrés au navigateur — vérifié, la bibliothèque n'apparaît dans aucun morceau client. Six feuilles : disponibilités, synthèse, couverture, affectations, qualifications, statistiques. Le classeur porte sur la campagne sélectionnée et les données accessibles au compte sous RLS. Il ne reprend pas les filtres locaux de la synthèse : l’export CSV, lui, porte sur la vue filtrée.
 
 Le PDF passe par l'impression du navigateur, avec une feuille de style dédiée qui retire la navigation et empêche les coupures au milieu d'une ligne. La matrice mensuelle est virtualisée pour rester utilisable à l'écran, ce qui la rendait inimprimable : **le temps de l'impression, la virtualisation est désactivée** et toutes les lignes sont rendues. `beforeprint` déclenche un rendu synchrone — le navigateur photographie la page dès qu'il reprend la main — et l'écouteur couvre aussi bien le bouton « Imprimer le mois » que le Ctrl+P du navigateur. La page passe alors en A4 paysage, l'en-tête des jours se répète en haut de chaque feuille et les colonnes épinglées redeviennent normales. Trois cents agents font une vingtaine de pages.
+
+### Application installable
+
+`src/app/manifest.ts` décrit l'application, ses icônes et deux raccourcis ; `src/components/pwa.tsx` enregistre l'agent de service et propose l'installation depuis l'écran de profil. Les icônes de `public/` sont engendrées à partir de `src/app/icon.svg` — la même flamme que la marque, sur le bleu nuit de la barre latérale — en trois formes : deux tailles ordinaires et une version « maskable » qui laisse Android découper le contour sans rogner le dessin. iOS ignore le manifeste et prend `apple-touch-icon.png`.
+
+**L'agent de service ne met aucune donnée en cache.** C'est une décision, pas un raccourci : une disponibilité, une affectation ou un planning servis depuis un cache seraient une information périmée présentée comme à jour, ce qui dans ce métier est pire que pas d'information du tout. Il n'existe que parce qu'un navigateur ne propose l'installation qu'à une application dotée d'un gestionnaire `fetch`, et celui-ci laisse tout passer au réseau. Une seule ressource est conservée, `/hors-ligne`, qui ne contient rien et ne peut donc pas dater. La consultation hors ligne reste une extension à cadrer, et les notifications poussées relèvent de la V2.
+
+Sur Chrome et ses dérivés, le profil affiche un bouton lorsque le navigateur signale que l'installation est possible. Safari ne le signale jamais : le chemin iOS — Partager, puis « Sur l'écran d'accueil » — est donc écrit en toutes lettres.
 
 ### Notifications et envoi des emails
 
@@ -186,7 +195,6 @@ Les neuf migrations (`0001` à `0007`, puis les deux migrations horodatées) son
 
 - Confirmer la configuration du site hébergé et effectuer une recette avec plusieurs comptes : invitation, confirmation d’adresse, disponibilités habituelles, validation, publication et réception des emails.
 - Déployer la version qui appelle `public.create_campaign()`, `public.save_availability_template()` et `public.apply_availability_template()`, puis vérifier ces parcours en mode connecté : les migrations sont appliquées, le comportement hébergé reste à observer.
-- Ajouter l’installation PWA ; les notifications poussées relèvent de la V2.
 - Finaliser la mise en service : configuration de l’expéditeur, suivi des échecs d’envoi, sauvegardes/restauration et règles de conservation des données.
 
 L’envoi Resend traite des lots de 50 notifications après certaines commandes. Il n’existe ni rappel planifié ni traitement autonome de toute la file en attente. L’envoi automatique des invitations reste à développer. Le SSO et les échanges de garde ne sont pas implémentés.

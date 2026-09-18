@@ -45,6 +45,7 @@ import {
   type MemberRole,
 } from "@/lib/domain";
 import { auditCsv, download, personalCalendar } from "@/lib/exports";
+import { InstallApp } from "./pwa";
 import { roleLabels } from "@/lib/session";
 
 export function Campaigns() {
@@ -895,6 +896,7 @@ export function Profile() {
             </div>
           </dl>
         </Panel>
+        <InstallApp />
         {/* Simulation control. On real data it would present someone else's
             record as fictional, so it never renders in connected mode. */}
         {!connected && (

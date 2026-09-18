@@ -2260,9 +2260,30 @@ fieldset.field legend {
 .empty-state > svg {
   color: #a2b9d9;
 }
+.empty-state h1,
 .empty-state h2 {
   font-size: 20px;
   letter-spacing: -0.5px;
+  margin: 0;
+}
+/* L'action d'une page d'arrêt — introuvable, hors ligne — est la seule chose
+   qu'il y ait à y faire : elle se voit comme un bouton, pas comme un mot. */
+.empty-state a,
+.empty-state button {
+  background: var(--blue);
+  color: #fff;
+  border: 0;
+  border-radius: 10px;
+  padding: 11px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+.empty-state a:hover,
+.empty-state button:hover {
+  background: #1454cc;
 }
 .empty-state p {
   font-size: 13px;
@@ -3089,4 +3110,27 @@ fieldset.field legend {
   flex-direction: column;
   gap: 8px;
   padding: 0 22px 6px;
+}
+
+.install-app {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 0 22px 14px;
+  line-height: 1.55;
+}
+.install-app svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--blue);
+}
+.install-app p {
+  margin: 0;
+}
+.install-app.muted svg {
+  color: var(--muted);
+}
+.install-buttons {
+  display: flex;
+  padding: 0 22px 14px;
 }
