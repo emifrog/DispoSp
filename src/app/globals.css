@@ -75,6 +75,10 @@ textarea {
   background: white;
   color: var(--text);
   min-width: 0;
+  /* Hauteur plancher : sans elle, la taille d'une commande ne tient qu'aux
+     métriques de la police, qui diffèrent d'un système à l'autre — 24 px ici,
+     23 là, et la cible tactile passe sous le minimum selon la machine. */
+  min-height: 26px;
 }
 input::placeholder,
 textarea::placeholder {
@@ -307,7 +311,7 @@ label {
 .demo-banner a {
   display: flex;
   align-items: center;
-  min-height: 24px;
+  min-height: 26px;
   gap: 5px;
   color: #356db5;
 }
@@ -848,9 +852,9 @@ label {
   padding-bottom: 2px;
 }
 .heatmap {
-  min-width: 920px;
+  min-width: 980px;
   display: grid;
-  grid-template-columns: 48px repeat(31, minmax(24px, 1fr));
+  grid-template-columns: 48px repeat(31, minmax(26px, 1fr));
   column-gap: 4px;
   row-gap: 6px;
 }
@@ -1847,7 +1851,7 @@ label {
 .availability-table th > button {
   display: flex;
   align-items: center;
-  min-height: 24px;
+  min-height: 26px;
   gap: 8px;
   background: none;
   color: #6a84a6;
@@ -3097,6 +3101,6 @@ fieldset.field legend {
 .campaign-ribbon a,
 .panel-footnote a,
 .response-counts a {
-  min-height: 24px;
+  min-height: 26px;
   align-items: center;
 }
