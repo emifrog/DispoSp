@@ -41,7 +41,7 @@ Le dernier état documenté du déploiement Vercel était une démonstration. So
 
 ### Vérification et portée
 
-La suite couvre les règles métier, les migrations et droits sur PostgreSQL embarqué via PGlite, les exports et des parcours navigateur sur ordinateur et mobile. Un scénario à 300 agents vérifie notamment la virtualisation de la synthèse. Il ne remplace pas une mesure de charge du service hébergé avec plusieurs utilisateurs simultanés.
+La suite couvre les règles métier, les migrations et droits sur PostgreSQL embarqué via PGlite, les exports et des parcours navigateur sur ordinateur et mobile. Un scénario à 300 agents vérifie notamment la virtualisation de la synthèse. Deux tests gardent l’adaptation aux écrans : aucun débordement horizontal à 320 ni 768 px, et aucune commande sous 24 px de côté. Il ne remplace pas une mesure de charge du service hébergé avec plusieurs utilisateurs simultanés.
 
 Les six contrôles de l’intégration continue sont le formatage, le lint, les types, les tests unitaires et de base, la construction et les tests navigateur. Leurs résultats courants font foi ; aucun nouveau résultat de test applicatif n’est revendiqué par cette mise à jour documentaire.
 
@@ -158,7 +158,7 @@ Notifications poussées, échanges de garde entre agents, proposition automatiqu
 | Historique et audit (§12)                      | ✅   | Journal, filtres sujet/auteur/période/recherche et export CSV               |
 | Modèle de données (§14)                        | ✅   | 19 tables, huit migrations appliquées                                       |
 | Sécurité et RGPD (§16)                         | 🟡   | Contrôles techniques présents ; dispositions d’exploitation à compléter     |
-| Responsive et installable (§17)                | ✅   | Adapté au mobile, manifeste, icônes et agent de service                     |
+| Responsive et installable (§17)                | ✅   | De 320 px au grand écran, sans débordement ; manifeste, icônes et agent     |
 | Interface à plusieurs centaines d’agents (§21) | 🟡   | Scénario de virtualisation à 300 agents ; charge hébergée à mesurer         |
 
 ## 5. À décider ou confirmer, hors développement

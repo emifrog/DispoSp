@@ -351,6 +351,7 @@ label {
 .demo-banner a {
   display: flex;
   align-items: center;
+  min-height: 24px;
   gap: 5px;
   color: #356db5;
 }
@@ -901,9 +902,9 @@ label {
   padding-bottom: 2px;
 }
 .heatmap {
-  min-width: 900px;
+  min-width: 920px;
   display: grid;
-  grid-template-columns: 48px repeat(31, minmax(22px, 1fr));
+  grid-template-columns: 48px repeat(31, minmax(24px, 1fr));
   column-gap: 4px;
   row-gap: 6px;
 }
@@ -1800,6 +1801,7 @@ label {
    et il faut pouvoir revenir au journal entier sans recharger l'écran. */
 .period-filter {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
 }
@@ -1807,12 +1809,18 @@ label {
   display: flex;
   align-items: center;
   gap: 5px;
+  /* Le champ date a une largeur propre que rien ne réduit sans min-width: 0 ;
+     c'est elle qui poussait la page au-delà de l'écran sur un petit téléphone. */
+  flex: 1 1 128px;
+  min-width: 0;
 }
 .period-filter span {
   font-size: 11px;
   color: var(--muted);
 }
 .period-filter input {
+  flex: 1;
+  min-width: 0;
   font-size: 11px;
   padding: 8px 10px;
   border: 1px solid var(--border);
@@ -1888,6 +1896,7 @@ label {
 .availability-table th > button {
   display: flex;
   align-items: center;
+  min-height: 24px;
   gap: 8px;
   background: none;
   color: #6a84a6;
@@ -3133,4 +3142,13 @@ fieldset.field legend {
 .install-buttons {
   display: flex;
   padding: 0 22px 14px;
+}
+
+/* Un lien seul reste une cible tactile, même quand il n'a l'air que d'un mot.
+   Vingt-quatre pixels de haut au minimum, sans changer sa place dans la page. */
+.campaign-ribbon a,
+.panel-footnote a,
+.response-counts a {
+  min-height: 24px;
+  align-items: center;
 }

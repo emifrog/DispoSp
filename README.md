@@ -187,7 +187,7 @@ node node_modules/@playwright/test/cli.js install chromium
 node node_modules/@playwright/test/cli.js test
 ```
 
-Les tests couvrent notamment les validations explicites, la clôture, les disponibilités 24 h, les publications, les exports, l'isolation des organisations en PostgreSQL, la publication contrôlée en base, la résistance à une sauvegarde locale inutilisable, la virtualisation de la synthèse et les parcours utilisateur sur ordinateur et mobile. Les tests navigateur fixent l'horloge au 18 septembre 2026 pour rendre la campagne d'exemple reproductible.
+Les tests couvrent notamment les validations explicites, la clôture, les disponibilités 24 h, les publications, les exports, l'isolation des organisations en PostgreSQL, la publication contrôlée en base, la résistance à une sauvegarde locale inutilisable, la virtualisation de la synthèse et les parcours utilisateur sur ordinateur et mobile. Deux d'entre eux gardent l'adaptation aux écrans : aucune page ne dépasse la largeur de l'appareil à 320 et 768 px, et aucune commande ne descend sous 24 px de côté. Les tests navigateur fixent l'horloge au 18 septembre 2026 pour rendre la campagne d'exemple reproductible.
 
 ## Limites et prochaines étapes
 
