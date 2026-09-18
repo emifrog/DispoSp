@@ -57,15 +57,18 @@ Le projet de développement dédié est désigné : ses coordonnées sont dans `
 
 Le schéma est découpé en migrations successives, à appliquer dans l'ordre et une seule fois chacune :
 
-| Fichier                                               | Contenu                                                                                                  | État                                          |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `supabase/migrations/0001_foundation.sql`             | Organisations, équipes, profils, droits, campagnes, participants, disponibilités                         | Appliquée le 18 septembre 2026                |
-| `supabase/migrations/0002_planning.sql`               | Qualifications, créneaux types, besoins, plannings, affectations, notifications, audit                   | Appliquée le 18 septembre 2026                |
-| `supabase/migrations/0003_client_writes.sql`          | Publication joignable depuis le client, horaires du centre, catalogue de qualifications, journal d'audit | Appliquée le 18 septembre 2026                |
-| `supabase/migrations/0004_agent_administration.sql`   | Fiche agent, invitations, administration des équipes et qualifications                                   | Appliquée le 18 septembre 2026                |
-| `supabase/migrations/0005_notifications.sql`          | Notification à l'ouverture d'une campagne                                                                | Appliquée le 18 septembre 2026                |
-| `supabase/migrations/0006_email_dispatch.sql`         | Adresse des agents, file d'envoi, rappel avant clôture                                                   | Appliquée le 18 septembre 2026                |
-| `supabase/migrations/0007_availability_templates.sql` | Disponibilité habituelle par jour de semaine                                                             | Appliquée — confirmation du porteur du projet |
+| Fichier                                                           | Contenu                                                                                                  | État                                          |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `supabase/migrations/0001_foundation.sql`                         | Organisations, équipes, profils, droits, campagnes, participants, disponibilités                         | Appliquée le 18 septembre 2026                |
+| `supabase/migrations/0002_planning.sql`                           | Qualifications, créneaux types, besoins, plannings, affectations, notifications, audit                   | Appliquée le 18 septembre 2026                |
+| `supabase/migrations/0003_client_writes.sql`                      | Publication joignable depuis le client, horaires du centre, catalogue de qualifications, journal d'audit | Appliquée le 18 septembre 2026                |
+| `supabase/migrations/0004_agent_administration.sql`               | Fiche agent, invitations, administration des équipes et qualifications                                   | Appliquée le 18 septembre 2026                |
+| `supabase/migrations/0005_notifications.sql`                      | Notification à l'ouverture d'une campagne                                                                | Appliquée le 18 septembre 2026                |
+| `supabase/migrations/0006_email_dispatch.sql`                     | Adresse des agents, file d'envoi, rappel avant clôture                                                   | Appliquée le 18 septembre 2026                |
+| `supabase/migrations/0007_availability_templates.sql`             | Disponibilité habituelle par jour de semaine                                                             | Appliquée — confirmation du porteur du projet |
+| `supabase/migrations/20260918151529_atomic_campaign_creation.sql` | Création atomique des campagnes, plannings, créneaux et participants                                     | Appliquée — confirmation du porteur du projet |
+
+La migration horodatée, générée par la CLI Supabase, ajoute `public.create_campaign()` sans modifier les données existantes. Son application est confirmée par le porteur du projet ; le déploiement de l’application et la vérification du parcours hébergé restent à confirmer.
 
 Chaque fichier est une transaction : la moindre erreur annule la migration entière, sans état partiel. Aucun n'est rejouable — ce sont des `create`, pas des `create if not exists`, pour qu'un second passage échoue au lieu d'écraser silencieusement une base déjà en service. `0002` commence par vérifier que `0001` est présente et qu'elle-même ne l'est pas, et s'arrête sur un message explicite plutôt que sur un « relation already exists ».
 
@@ -120,7 +123,7 @@ En mode connecté, `src/lib/data.server.ts` construit depuis la base exactement 
 
 Les commandes métier passent par une action serveur unique, `submitCommand`. C'est un point d'entrée public : sa charge utile est parsée par Zod et l'identité vient du cookie de session, jamais de ce que le navigateur annonce. Un refus de la base est traduit en français par `src/lib/command-errors.ts` ; un message inconnu n'est jamais affiché tel quel, puisqu'il décrirait le schéma. Aucune écriture refusée n'est renvoyée en silence vers `localStorage`, ce qui donnerait l'illusion d'un enregistrement.
 
-Une exception connue : la création d'une campagne écrit la campagne, son planning, ses créneaux puis ses participants en quatre requêtes, faute de transaction côté client. L'ordre est choisi pour qu'un échec laisse une campagne visiblement incomplète plutôt qu'un planning manquant. La déplacer derrière une fonction de base de données reste à faire.
+La création d’une campagne passe désormais par `public.create_campaign()` : campagne, planning, créneaux Jour/Nuit, participants actifs et notifications sont créés dans une transaction unique. Une erreur annule aussi les écritures d’audit. La fonction utilise les droits de l’appelant (`security invoker`) et conserve les contrôles RLS ; les horaires proviennent du centre et la clôture correspond à 23 h 59 min 59 s en Europe/Paris. L’envoi des emails intervient seulement après le succès de la transaction. La migration correspondante est appliquée ; la version de l’application qui appelle cette fonction doit être déployée pour en bénéficier.
 
 En mode connecté, un middleware renouvelle la session à chaque requête et renvoie tout visiteur sans session vers `/connexion`. `getUser()` y est utilisé plutôt que `getSession()` : le second se contenterait d'un cookie que le navigateur pourrait forger.
 
@@ -177,10 +180,10 @@ Les tests couvrent notamment les validations explicites, la clôture, les dispon
 
 ## Limites et prochaines étapes
 
-Les migrations `0001` à `0007` sont appliquées sur le projet de développement ; l’application lit et écrit les données en mode connecté. Les étapes restantes sont suivies dans [le plan de développement](PLAN_DEVELOPPEMENT.md) :
+Les huit migrations (`0001` à `0007`, puis `20260918151529_atomic_campaign_creation.sql`) sont appliquées sur le projet de développement ; l’application lit et écrit les données en mode connecté. Les étapes restantes sont suivies dans [le plan de développement](PLAN_DEVELOPPEMENT.md) :
 
 - Confirmer la configuration du site hébergé et effectuer une recette avec plusieurs comptes : invitation, confirmation d’adresse, disponibilités habituelles, validation, publication et réception des emails.
-- Rendre atomique la création d’une campagne, actuellement répartie entre plusieurs requêtes. La sauvegarde et l’application des disponibilités habituelles comportent également plusieurs écritures à fiabiliser en cas d’échec partiel.
+- Déployer la version utilisant la création atomique des campagnes et vérifier le parcours en mode connecté. La sauvegarde et l’application des disponibilités habituelles comportent encore plusieurs écritures à fiabiliser en cas d’échec partiel.
 - Compléter l’historique par un filtre de période et un export du journal.
 - Compléter l’export PDF de la synthèse mensuelle : l’impression de la matrice virtualisée ne restitue pas toutes les lignes.
 - Ajouter l’installation PWA ; les notifications poussées relèvent de la V2.

@@ -1,15 +1,12 @@
 import "server-only";
-import { fromZonedTime } from "date-fns-tz";
 import { frenchMessage, type DatabaseFailure } from "./command-errors";
 import { dispatch } from "./mailer.server";
-import { lastDayOfMonth, monthDays, templateEntries, type Availability, type Command, type Shift } from "./domain";
+import { templateEntries, type Availability, type Command, type Shift } from "./domain";
 import type { AttachedSession } from "./session";
 import { createActionClient } from "./supabase/server";
 
 type Client = Awaited<ReturnType<typeof createActionClient>>;
 type Of<T extends Command["type"]> = Extract<Command, { type: T }>;
-
-const PARIS = "Europe/Paris";
 
 function fail(error: DatabaseFailure): never {
   throw new Error(frenchMessage(error));
@@ -346,73 +343,15 @@ async function qualificationIds(client: Client, organizationId: string, names: s
 
 async function openCampaign(client: Client, session: AttachedSession, command: Of<"campaign">) {
   const { organizationId, teamId } = session.membership;
-  const { data: organization, error: organizationFailure } = await client
-    .from("organizations")
-    .select("day_start, night_start")
-    .eq("id", organizationId)
-    .single();
-  if (organizationFailure) fail(organizationFailure);
-
-  const startsOn = `${command.month}-01`;
-  const { data: campaign, error } = await client
-    .from("availability_campaigns")
-    .insert({
-      organization_id: organizationId,
-      team_id: teamId,
-      name: command.name,
-      starts_on: startsOn,
-      ends_on: lastDayOfMonth(command.month),
-      opens_at: new Date().toISOString(),
-      // A closing date is a day on screen and an instant in the database: the
-      // window ends when that day ends in the centre's own timezone.
-      closes_at: fromZonedTime(`${command.closesOn}T23:59:59`, PARIS).toISOString(),
-      day_start: organization.day_start,
-      night_start: organization.night_start,
-    })
-    .select("id")
-    .single();
+  const { error } = await client.rpc("create_campaign", {
+    org: organizationId,
+    team: teamId,
+    campaign_name: command.name,
+    campaign_month: `${command.month}-01`,
+    closes_on: command.closesOn,
+  });
   if (error) fail(error);
-  const campaignId = campaign.id as string;
-
-  // The schedule comes before the invitations: a campaign whose planning is
-  // missing breaks every manager screen, while one missing an invitation shows
-  // the gap plainly. These four statements are not one transaction — see the
-  // note in the README about moving this behind a single database function.
-  const { data: schedule, error: scheduleFailure } = await client
-    .from("schedules")
-    .insert({ organization_id: organizationId, campaign_id: campaignId, team_id: teamId })
-    .select("id")
-    .single();
-  if (scheduleFailure) fail(scheduleFailure);
-  const shifts = monthDays(command.month).flatMap(date =>
-    (["DAY", "NIGHT"] as Shift[]).map(shift => ({
-      organization_id: organizationId,
-      schedule_id: schedule.id as string,
-      date,
-      shift_code: shift,
-    })),
-  );
-  const { error: shiftFailure } = await client.from("schedule_shifts").insert(shifts);
-  if (shiftFailure) fail(shiftFailure);
-
-  const { data: members, error: memberFailure } = await client
-    .from("memberships")
-    .select("user_id")
-    .eq("organization_id", organizationId)
-    .eq("team_id", teamId)
-    .eq("active", true);
-  if (memberFailure) fail(memberFailure);
-  if (!members?.length) return;
-  const { error: participantFailure } = await client.from("campaign_participants").insert(
-    members.map(member => ({
-      organization_id: organizationId,
-      campaign_id: campaignId,
-      user_id: member.user_id as string,
-    })),
-  );
-  if (participantFailure) fail(participantFailure);
-  // Les participants viennent d être inscrits : le déclencheur de 0005 a écrit
-  // une notification pour chacun, et elles partent maintenant.
+  // Only send after the campaign, planning, participants and notices commit.
   await dispatch(client, organizationId);
 }
 

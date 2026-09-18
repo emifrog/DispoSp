@@ -1,6 +1,6 @@
 # Plan de développement — DISPO SP
 
-État au 18 septembre 2026, mis à jour après confirmation de l’application de `0007_availability_templates.sql`. Les sept migrations sont appliquées sur le projet de développement. Les statuts ci-dessous distinguent les fonctionnalités implémentées des vérifications restant à effectuer sur le site hébergé.
+État au 18 septembre 2026, mis à jour après confirmation de l’application de `20260918151529_atomic_campaign_creation.sql`. Les huit migrations (`0001` à `0007`, puis la migration de création atomique des campagnes) sont appliquées sur le projet de développement. Les statuts ci-dessous distinguent les fonctionnalités implémentées des vérifications restant à effectuer sur le site hébergé.
 
 Ce document complète le cahier des charges V1.0 du 17 septembre 2026 et `DECISIONS_FONCTIONNELLES.md`, qui restent la référence fonctionnelle. La configuration et les commandes sont détaillées dans le [README](README.md).
 
@@ -17,7 +17,7 @@ Le dernier état documenté du déploiement Vercel était une démonstration. So
 | Domaine                     | État                     | Détail                                                                                                   |
 | --------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------- |
 | Socle technique             | ✅ implémenté            | Versionnement, formatage, lint, types et intégration continue                                            |
-| Base de données             | ✅ migrations appliquées | 19 tables, migrations `0001` à `0007`, isolation RLS et règles métier                                    |
+| Base de données             | ✅ migrations appliquées | 19 tables, huit migrations appliquées, isolation RLS et règles métier                                    |
 | Authentification            | ✅ implémentée           | Inscription, confirmation d’adresse, connexion, session et déconnexion                                   |
 | Lecture et écriture         | ✅ implémentées          | Données et commandes métier raccordées à Supabase                                                        |
 | Administration              | ✅ implémentée           | Fiches agents, invitations, équipes, quatre rôles et qualifications                                      |
@@ -53,7 +53,7 @@ Les six contrôles de l’intégration continue sont le formatage, le lint, les 
 | 2        | Tester l’invitation avec un second compte                             | Compte confirmé, rattaché au bon centre avec le bon rôle                      |
 | 3        | Configurer Resend et vérifier la réception                            | Emails d’ouverture, de rappel et de publication reçus avec des liens corrects |
 | 4        | Faire une recette métier avec plusieurs agents                        | Modèles habituels, validation, couverture, publication et exports cohérents   |
-| 5        | Fiabiliser les écritures composées                                    | Pas de campagne ou de modèle partiellement enregistré après un échec          |
+| 5        | Déployer la création atomique et fiabiliser les modèles               | Pas de campagne ou de modèle partiellement enregistré après un échec          |
 | 6        | Préparer l’exploitation                                               | Sauvegarde restaurable, suivi des erreurs et règles de conservation définis   |
 
 Le développement des lots 3 et 5 a avancé : la priorité porte désormais sur leur recette en mode connecté, les limites identifiées et la mise en service. L’application d’une migration ne prouve pas à elle seule le bon fonctionnement du parcours utilisateur hébergé.
@@ -62,7 +62,7 @@ Le développement des lots 3 et 5 a avancé : la priorité porte désormais sur 
 
 ### Lot 0 — Socle ✅ implémenté
 
-Versionnement et outillage, authentification, lecture des données, intégration continue et virtualisation de la synthèse. Les migrations `0001_foundation.sql` à `0007_availability_templates.sql` sont appliquées ; le schéma compte 19 tables.
+Versionnement et outillage, authentification, lecture des données, intégration continue et virtualisation de la synthèse. Les migrations `0001_foundation.sql` à `0007_availability_templates.sql`, puis `20260918151529_atomic_campaign_creation.sql`, sont appliquées ; le schéma compte 19 tables.
 
 ### Lot 1 — Écriture des données ✅ implémentée, fiabilisation restante
 
@@ -70,7 +70,11 @@ Les commandes métier passent par l’action serveur `submitCommand`. La charge 
 
 Sont raccordés : saisie et validation, affectation/retrait, besoins, publication, création/clôture des campagnes, horaires, administration, notifications et disponibilités habituelles. La migration `0003_client_writes.sql` a ouvert les opérations de publication et de paramétrage et complété l’audit.
 
-**À fiabiliser :** la création d’une campagne écrit la campagne, le planning, les créneaux puis les participants en plusieurs requêtes sans transaction commune. Regrouper cette opération en base et vérifier le comportement en cas d’échec. La sauvegarde et l’application d’un modèle habituel comportent également plusieurs écritures à examiner.
+**Fiabilisation livrée :** `public.create_campaign()` regroupe la campagne, le planning, les créneaux, les participants et leurs notifications dans une transaction, sous les droits de l’appelant. Un échec annule aussi l’audit ; les emails ne partent qu’après réussite. Les tests PostgreSQL couvrent l’échec tardif, les droits entre équipes et centres, les membres inactifs, les longueurs de mois et la clôture en heure de Paris.
+
+**Migration appliquée :** `20260918151529_atomic_campaign_creation.sql`, confirmation du porteur du projet. **À confirmer ensuite :** déploiement de la version de l’application utilisant cette fonction, puis vérification de la création d’une campagne sur le centre de test.
+
+**À fiabiliser ensuite :** la sauvegarde et l’application d’un modèle habituel comportent encore plusieurs écritures.
 
 ### Lot 2 — Agents et administration ✅ implémentés, recette d’invitation restante
 
@@ -137,7 +141,7 @@ Notifications poussées, échanges de garde entre agents, proposition automatiqu
 | Calendrier cinq états (§4)                     | ✅   | Saisie persistée, validation explicite et invalidation                      |
 | Saisie multiple et règles répétitives (§4)     | ✅   | Périodes et jours de semaine                                                |
 | Disponibilités habituelles (§4)                | ✅   | Modèles personnels ; migration `0007` appliquée                             |
-| Campagnes (§5)                                 | ✅   | Création, clôture et horaires ; atomicité à améliorer                       |
+| Campagnes (§5)                                 | ✅   | Création atomique et migration livrées ; déploiement et recette à confirmer |
 | Tableau de synthèse (§6)                       | ✅   | Colonne figée, tri, filtres, virtualisation                                 |
 | Vue par journée nominative (§6)                | ✅   | Listes nominatives et impression                                            |
 | Besoins et couverture (§7)                     | ✅   | Effectifs, qualifications, potentiel et planifié distincts                  |
@@ -147,7 +151,7 @@ Notifications poussées, échanges de garde entre agents, proposition automatiqu
 | Notifications (§10)                            | 🟡   | Centre interne et Resend implémentés ; réception à vérifier, rappel manuel  |
 | Exports (§11)                                  | 🟡   | CSV, ICS et Excel ; PDF par impression, matrice mensuelle complète restante |
 | Historique et audit (§12)                      | 🟡   | Journal et filtres livrés ; période et export restants                      |
-| Modèle de données (§14)                        | ✅   | 19 tables, sept migrations appliquées                                       |
+| Modèle de données (§14)                        | ✅   | 19 tables, huit migrations appliquées                                       |
 | Sécurité et RGPD (§16)                         | 🟡   | Contrôles techniques présents ; dispositions d’exploitation à compléter     |
 | Responsive et installable (§17)                | 🟡   | Adapté au mobile, PWA restante                                              |
 | Interface à plusieurs centaines d’agents (§21) | 🟡   | Scénario de virtualisation à 300 agents ; charge hébergée à mesurer         |
@@ -163,16 +167,16 @@ Notifications poussées, échanges de garde entre agents, proposition automatiqu
 
 ## 6. Risques à suivre
 
-| Risque                                              | Portée                                              | Réduction                                                               |
-| --------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------- |
-| Échec pendant la création d’une campagne            | Campagne incomplète                                 | Transaction en base et vérification des échecs                          |
-| Échec pendant la sauvegarde/application d’un modèle | Modèle ou calendrier partiellement modifié          | Fiabiliser les écritures et leur reprise                                |
-| Deux responsables modifient le même planning        | Conflit de modification                             | Vérifier la concurrence et signaler les conflits dans l’interface       |
-| Mode public ou URL Auth mal configurés              | Démonstration affichée ou confirmation inaccessible | Recette depuis l’URL publique avec un second compte                     |
-| Invitation non éprouvée sur le projet hébergé       | Arrivée d’un agent bloquée                          | Vérifier inscription, confirmation, rattachement et droits              |
-| Emails en attente ou renvoyés                       | Agents non prévenus ou messages en double           | Suivi de la file, reprise et prévention des doublons                    |
-| Impression de la matrice virtualisée                | PDF incomplet                                       | Utiliser Excel ou la vue par journée en attendant l’export complet      |
-| Charge et restauration non vérifiées en hébergement | Dégradation ou reprise difficile                    | Essai à plusieurs comptes, mesure de charge et exercice de restauration |
+| Risque                                              | Portée                                              | Réduction                                                                  |
+| --------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------- |
+| Échec pendant la création d’une campagne            | Campagne incomplète                                 | Transaction testée, migration appliquée ; déployer et vérifier le parcours |
+| Échec pendant la sauvegarde/application d’un modèle | Modèle ou calendrier partiellement modifié          | Fiabiliser les écritures et leur reprise                                   |
+| Deux responsables modifient le même planning        | Conflit de modification                             | Vérifier la concurrence et signaler les conflits dans l’interface          |
+| Mode public ou URL Auth mal configurés              | Démonstration affichée ou confirmation inaccessible | Recette depuis l’URL publique avec un second compte                        |
+| Invitation non éprouvée sur le projet hébergé       | Arrivée d’un agent bloquée                          | Vérifier inscription, confirmation, rattachement et droits                 |
+| Emails en attente ou renvoyés                       | Agents non prévenus ou messages en double           | Suivi de la file, reprise et prévention des doublons                       |
+| Impression de la matrice virtualisée                | PDF incomplet                                       | Utiliser Excel ou la vue par journée en attendant l’export complet         |
+| Charge et restauration non vérifiées en hébergement | Dégradation ou reprise difficile                    | Essai à plusieurs comptes, mesure de charge et exercice de restauration    |
 
 ## 7. Comment vérifier l’état à tout moment
 
@@ -190,6 +194,8 @@ Ces six contrôles sont exécutés par l’intégration continue ; leurs résult
 Les tests de `tests/e2e/connexion.spec.ts` nécessitent un build et un environnement en mode connecté. Ils vérifient les protections et erreurs d’authentification, pas le parcours complet d’un agent invité. Voir le README pour les commandes et prérequis.
 
 ## 8. Prochaine action
+
+La migration de création atomique étant appliquée, déployer la version de l’application qui appelle `public.create_campaign()`, si ce n’est pas déjà fait. Vérifier la création d’une campagne : un planning complet, deux créneaux par date et les seuls membres actifs de l’équipe comme participants.
 
 Effectuer une recette sur l’URL publique avec un administrateur et un second compte agent :
 

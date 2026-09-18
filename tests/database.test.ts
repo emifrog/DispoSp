@@ -11,6 +11,7 @@ const MIGRATIONS = [
   "0005_notifications.sql",
   "0006_email_dispatch.sql",
   "0007_availability_templates.sql",
+  "20260918151529_atomic_campaign_creation.sql",
 ];
 const baseAuthSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
 const orgA = "10000000-0000-0000-0000-000000000001";
@@ -1166,5 +1167,254 @@ describe("Disponibilité habituelle ouverte par 0007", () => {
   it("n’entre dans aucune disponibilité tant que rien n’est appliqué", async () => {
     await be(agent);
     expect((await live.query("select * from public.availability_entries")).rows).toHaveLength(0);
+  });
+});
+
+// Test the actual RPC under RLS, including failures after the planning was built.
+describe("Création atomique d’une campagne", () => {
+  const org = "10000000-0000-0000-0000-000000000060";
+  const foreignOrg = "10000000-0000-0000-0000-000000000061";
+  const team = "20000000-0000-0000-0000-000000000060";
+  const otherTeam = "20000000-0000-0000-0000-000000000061";
+  const foreignTeam = "20000000-0000-0000-0000-000000000062";
+  const manager = "30000000-0000-0000-0000-000000000060";
+  const agent = "30000000-0000-0000-0000-000000000061";
+  const inactive = "30000000-0000-0000-0000-000000000062";
+  const otherAgent = "30000000-0000-0000-0000-000000000063";
+  const admin = "30000000-0000-0000-0000-000000000064";
+  const foreignManager = "30000000-0000-0000-0000-000000000065";
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+  const create = async (
+    overrides: { org?: string; team?: string; name?: string; month?: string; closes?: string } = {},
+  ) => {
+    const { rows } = await live.query<{ id: string }>(
+      "select public.create_campaign($1,$2,$3,$4::date,$5::date) as id",
+      [
+        overrides.org ?? org,
+        overrides.team ?? team,
+        overrides.name ?? "Campagne test",
+        overrides.month ?? "2096-02-01",
+        overrides.closes ?? "2096-01-25",
+      ],
+    );
+    return rows[0].id;
+  };
+  const counts = async () => {
+    await live.exec("reset role");
+    return (
+      await live.query(`select
+      (select count(*)::int from public.availability_campaigns) as campaigns,
+      (select count(*)::int from public.schedules) as schedules,
+      (select count(*)::int from public.schedule_shifts) as shifts,
+      (select count(*)::int from public.campaign_participants) as participants,
+      (select count(*)::int from public.notifications) as notifications,
+      (select count(*)::int from public.audit_logs) as audit`)
+    ).rows;
+  };
+
+  beforeAll(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const migration of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${migration}`, import.meta.url), "utf8"));
+    await live.exec(`
+      insert into auth.users(id) values ('${manager}'), ('${agent}'), ('${inactive}'), ('${otherAgent}'), ('${admin}'), ('${foreignManager}');
+      insert into public.profiles(user_id,display_name) values ('${manager}','Responsable'), ('${agent}','Agent'), ('${inactive}','Inactif'), ('${otherAgent}','Autre équipe'), ('${admin}','Administrateur'), ('${foreignManager}','Autre centre');
+      insert into public.organizations(id,name,day_start,night_start) values ('${org}','Centre transaction',7,19), ('${foreignOrg}','Autre centre',8,20);
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha'), ('${otherTeam}','${org}','Bravo'), ('${foreignTeam}','${foreignOrg}','Charlie');
+      insert into public.memberships values
+        ('${org}','${manager}','${team}','RESPONSABLE',true),
+        ('${org}','${agent}','${team}','AGENT',true),
+        ('${org}','${inactive}','${team}','RESPONSABLE',false),
+        ('${org}','${otherAgent}','${otherTeam}','AGENT',true),
+        ('${org}','${admin}','${otherTeam}','ADMIN',true),
+        ('${foreignOrg}','${foreignManager}','${foreignTeam}','RESPONSABLE',true);
+    `);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("crée un mois bissextile complet, avec les horaires du centre et ses seuls membres actifs", async () => {
+    await be(manager);
+    const id = await create({ name: "  Février 2096  " });
+    expect(
+      (
+        await live.query(
+          `select name, starts_on::text, ends_on::text, day_start, night_start,
+      to_char(closes_at at time zone 'UTC','YYYY-MM-DD HH24:MI:SS') as closing,
+      locked from public.availability_campaigns where id=$1`,
+          [id],
+        )
+      ).rows,
+    ).toEqual([
+      {
+        name: "Février 2096",
+        starts_on: "2096-02-01",
+        ends_on: "2096-02-29",
+        day_start: 7,
+        night_start: 19,
+        closing: "2096-01-25 22:59:59",
+        locked: false,
+      },
+    ]);
+    expect((await live.query("select team_id from public.schedules where campaign_id=$1", [id])).rows).toEqual([
+      { team_id: team },
+    ]);
+    const shifts = await live.query<{ date: string; shift_code: string; published_revision: number }>(
+      `select sh.date::text, sh.shift_code, sh.published_revision from public.schedule_shifts sh
+       join public.schedules s on s.id=sh.schedule_id where s.campaign_id=$1 order by sh.date, sh.shift_code`,
+      [id],
+    );
+    expect(shifts.rows).toHaveLength(58);
+    expect(shifts.rows.slice(-2)).toEqual([
+      { date: "2096-02-29", shift_code: "DAY", published_revision: 0 },
+      { date: "2096-02-29", shift_code: "NIGHT", published_revision: 0 },
+    ]);
+    expect(
+      (
+        await live.query(
+          "select user_id, validated_at from public.campaign_participants where campaign_id=$1 order by user_id",
+          [id],
+        )
+      ).rows,
+    ).toEqual([
+      { user_id: manager, validated_at: null },
+      { user_id: agent, validated_at: null },
+    ]);
+    await live.exec("reset role");
+    expect(
+      (
+        await live.query(
+          "select user_id from public.notifications where subject='Campagne ouverte : Février 2096' order by user_id",
+        )
+      ).rows,
+    ).toEqual([{ user_id: manager }, { user_id: agent }]);
+    expect(
+      (
+        await live.query(
+          "select actor_id from public.audit_logs where entity='availability_campaign' and entity_id=$1",
+          [id],
+        )
+      ).rows,
+    ).toEqual([{ actor_id: manager }]);
+  });
+
+  it("respecte l’heure d’été et laisse un administrateur gérer une autre équipe de son centre", async () => {
+    await be(admin);
+    const id = await create({ month: "2096-08-01", closes: "2096-07-25" });
+    expect(
+      (
+        await live.query(
+          "select to_char(closes_at at time zone 'UTC','HH24:MI:SS') as closing from public.availability_campaigns where id=$1",
+          [id],
+        )
+      ).rows,
+    ).toEqual([{ closing: "21:59:59" }]);
+    expect(
+      (
+        await live.query(
+          "select count(*)::int as count from public.schedule_shifts sh join public.schedules s on s.id=sh.schedule_id where s.campaign_id=$1",
+          [id],
+        )
+      ).rows,
+    ).toEqual([{ count: 62 }]);
+  });
+
+  it.each([
+    [agent, org, team],
+    [inactive, org, team],
+    [manager, org, otherTeam],
+    [manager, foreignOrg, foreignTeam],
+    [foreignManager, org, team],
+    [admin, foreignOrg, foreignTeam],
+  ])("refuse la création hors droits (%s, %s, %s)", async (user, targetOrg, targetTeam) => {
+    const before = await counts();
+    await be(user);
+    await expect(create({ org: targetOrg, team: targetTeam })).rejects.toThrow("Not allowed to create this campaign");
+    expect(await counts()).toEqual(before);
+  });
+
+  it.each([{ name: "  " }, { month: "2096-02-02" }, { closes: "2000-01-01" }, { team: foreignTeam }])(
+    "refuse les paramètres invalides sans rien écrire (%j)",
+    async overrides => {
+      const before = await counts();
+      await be(admin);
+      await expect(create(overrides)).rejects.toThrow();
+      expect(await counts()).toEqual(before);
+    },
+  );
+
+  it("annule aussi le planning, les participants, les notifications et l’audit en cas d’échec tardif", async () => {
+    const before = await counts();
+    // Simulate an error after a notification has actually been inserted.
+    await live.exec(`create function private.fail_test_notification() returns trigger language plpgsql as $$
+      begin raise exception 'Simulated notification failure'; end; $$;
+      create trigger fail_test_notification after insert on public.notifications
+        for each row execute function private.fail_test_notification();`);
+    try {
+      await be(manager);
+      await expect(create({ name: "Annulation tardive" })).rejects.toThrow("Simulated notification failure");
+      expect(await counts()).toEqual(before);
+    } finally {
+      await live.exec(
+        "reset role; drop trigger fail_test_notification on public.notifications; drop function private.fail_test_notification();",
+      );
+    }
+    await be(manager);
+    const id = await create({ name: "Reprise après échec" });
+    expect((await live.query("select id from public.schedules where campaign_id=$1", [id])).rows).toHaveLength(1);
+  });
+
+  it.each([
+    ["2097-02-01", 56],
+    ["2096-04-01", 60],
+  ])("génère exactement les deux créneaux quotidiens du mois %s", async (month, expected) => {
+    await be(manager);
+    const id = await create({ month });
+    expect(
+      (
+        await live.query(
+          "select count(*)::int as count from public.schedule_shifts sh join public.schedules s on s.id=sh.schedule_id where s.campaign_id=$1",
+          [id],
+        )
+      ).rows,
+    ).toEqual([{ count: expected }]);
+  });
+
+  it("refuse une seconde application de la migration sans modifier la fonction ni les données", async () => {
+    const before = await counts();
+    await expect(
+      live.exec(
+        readFileSync(
+          new URL("../supabase/migrations/20260918151529_atomic_campaign_creation.sql", import.meta.url),
+          "utf8",
+        ),
+      ),
+    ).rejects.toThrow("already exists");
+    await live.exec("rollback");
+    expect(await counts()).toEqual(before);
+    await be(manager);
+    expect(await create()).toEqual(expect.any(String));
+  });
+
+  it("garde les droits de l’appelant et refuse les appels anonymes ou sans identité", async () => {
+    await live.exec("reset role");
+    expect(
+      (
+        await live.query(
+          `select prosecdef from pg_proc where oid='public.create_campaign(uuid,uuid,text,date,date)'::regprocedure`,
+        )
+      ).rows,
+    ).toEqual([{ prosecdef: false }]);
+    await live.exec("set role anon");
+    await expect(create()).rejects.toThrow("permission denied for function create_campaign");
+    await be("");
+    await expect(create()).rejects.toThrow("Not allowed to create this campaign");
   });
 });

@@ -7,6 +7,10 @@ export type DatabaseFailure = { message?: string | null; code?: string | null };
 // between the migrations and their tests, not user-facing copy. Translating here
 // keeps the contract intact and still shows an agent something actionable.
 const byMessage: [RegExp, (match: RegExpMatchArray) => string][] = [
+  [/^Not allowed to create this campaign/, () => "Vous n’avez pas le droit de créer une campagne pour cette équipe."],
+  [/^Campaign name is too short/, () => "Le nom de la campagne doit contenir au moins trois caractères."],
+  [/^Campaign month must start on the first day/, () => "Choisissez un mois valide pour la campagne."],
+  [/^Campaign closing date must be in the future/, () => "La date de clôture de la campagne doit être à venir."],
   [/^Campaign is closed/, () => "La campagne est fermée : la saisie n’est plus possible."],
   [/^Date outside campaign/, () => "Cette date ne fait pas partie de la campagne."],
   [/^Availability identity is immutable/, () => "Une disponibilité ne peut changer ni de date ni d’agent."],
