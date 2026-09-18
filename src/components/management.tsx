@@ -16,6 +16,7 @@ import {
   Settings2,
   ShieldCheck,
   UnlockKeyhole,
+  UserPlus,
 } from "lucide-react";
 import { useApp } from "./provider";
 import { Avatar, PageTitle, Panel } from "./common";
@@ -31,12 +32,18 @@ import {
   localDate,
   localMonth,
   monthDays,
+  gradeLabel,
+  memberRoles,
   monthLabel,
   plural,
   shiftKey,
   shiftMonth,
+  type Agent,
+  type AppState,
+  type MemberRole,
 } from "@/lib/domain";
 import { download, personalCalendar } from "@/lib/exports";
+import { roleLabels } from "@/lib/session";
 
 export function Campaigns() {
   const { state, run, setCampaignId, connected } = useApp();
@@ -173,43 +180,383 @@ export function Campaigns() {
 }
 
 export function Agents() {
-  const { state } = useApp();
+  const { state, run, connected, canAdminister } = useApp();
   const [search, setSearch] = useState("");
+  const [edited, setEdited] = useState<Agent | null>(null);
+  const [inviting, setInviting] = useState(false);
+  const [team, setTeam] = useState<{ id?: string; name: string } | null>(null);
+  // The database decides; this only keeps the screen from offering what it would
+  // refuse — and the demonstration models none of these tables.
+  const administering = connected && canAdminister;
+  const matches = (a: Agent) =>
+    `${a.name} ${a.team} ${a.grade} ${a.matricule}`.toLowerCase().includes(search.toLowerCase());
   return (
     <>
       <PageTitle
         eyebrow="VOTRE COLLECTIF"
         title="Agents & équipes"
         description={`${state.agents.length} ${plural(state.agents.length, "agent")} ${plural(state.agents.length, "réuni")} au sein du ${state.organization.name}.`}
+        action={
+          administering ? (
+            <Button onClick={() => setInviting(true)}>
+              <UserPlus size={17} />
+              Inviter un agent
+            </Button>
+          ) : undefined
+        }
       />
       <label className="search-field standalone-search">
         <Search size={17} />
         <input
           aria-label="Rechercher dans l’équipe"
-          placeholder="Rechercher un nom, une équipe…"
+          placeholder="Rechercher un nom, une équipe, un matricule…"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
       </label>
-      <div className="agents-grid">
-        {state.agents
-          .filter(a => `${a.name} ${a.team}`.toLowerCase().includes(search.toLowerCase()))
-          .map(a => (
-            <article className="profile-card" key={a.id}>
-              <Avatar agent={a} />
-              <h2>{a.name}</h2>
-              <p>
-                {a.grade} · {a.team}
-              </p>
-              <div className="qualification-tags">
-                {a.qualifications.map(q => (
-                  <span key={q}>{q}</span>
-                ))}
+
+      {administering && state.invitations.length > 0 && (
+        <Panel
+          title="Invitations en attente"
+          subtitle="L’agent crée son compte lui-même ; le rattachement se fait à la confirmation de son adresse."
+        >
+          <div className="invitation-list">
+            {state.invitations.map(invitation => (
+              <div key={invitation.id}>
+                <span>
+                  <strong>{invitation.name}</strong>
+                  <small>
+                    {invitation.email} · {invitation.team} · {roleLabels[invitation.role] ?? invitation.role}
+                  </small>
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => run({ type: "revokeInvitation", invitationId: invitation.id })}
+                >
+                  Annuler
+                </Button>
               </div>
-            </article>
-          ))}
+            ))}
+          </div>
+        </Panel>
+      )}
+
+      <div className="agents-grid">
+        {state.agents.filter(matches).map(a => (
+          <article className="profile-card" key={a.id}>
+            <Avatar agent={a} />
+            <h2>{a.name}</h2>
+            <p>
+              {gradeLabel(a)} · {a.team}
+            </p>
+            {(a.matricule || a.phone) && (
+              <p className="muted small">{[a.matricule, a.phone].filter(Boolean).join(" · ")}</p>
+            )}
+            <div className="qualification-tags">
+              {a.qualifications.map(q => (
+                <span key={q}>{q}</span>
+              ))}
+            </div>
+            {administering && (
+              <Button size="sm" variant="secondary" onClick={() => setEdited(a)}>
+                <Settings2 size={15} />
+                Modifier
+              </Button>
+            )}
+          </article>
+        ))}
       </div>
+
+      {administering && state.inactiveAgents.length > 0 && (
+        <Panel title="Agents désactivés" subtitle="Ils ne comptent dans aucune synthèse et ne peuvent être affectés.">
+          <div className="invitation-list">
+            {state.inactiveAgents.filter(matches).map(a => (
+              <div key={a.id}>
+                <span>
+                  <strong>{a.name}</strong>
+                  <small>
+                    {gradeLabel(a)} · {a.team}
+                  </small>
+                </span>
+                <Button size="sm" variant="ghost" onClick={() => setEdited(a)}>
+                  Réactiver
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
+
+      {administering && (
+        <Panel
+          title="Équipes"
+          subtitle="Une campagne appartient à une équipe ; renommer n’en déplace aucune."
+          action={
+            <Button size="sm" variant="secondary" onClick={() => setTeam({ name: "" })}>
+              <Plus size={15} />
+              Nouvelle équipe
+            </Button>
+          }
+        >
+          <div className="invitation-list">
+            {state.teams.map(t => (
+              <div key={t.id}>
+                <span>
+                  <strong>{t.name}</strong>
+                  <small>
+                    {state.agents.filter(a => a.teamId === t.id).length}{" "}
+                    {plural(state.agents.filter(a => a.teamId === t.id).length, "agent")}
+                  </small>
+                </span>
+                <Button size="sm" variant="ghost" onClick={() => setTeam({ id: t.id, name: t.name })}>
+                  Renommer
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
+
+      {edited && <MemberDialog agent={edited} onClose={() => setEdited(null)} />}
+      <InviteDialog open={inviting} onClose={() => setInviting(false)} />
+      {team && <TeamDialog initial={team} onClose={() => setTeam(null)} />}
     </>
+  );
+}
+
+function RecordFields({
+  value,
+  onChange,
+}: {
+  value: { name: string; grade: string; matricule: string; phone: string };
+  onChange: (next: Partial<typeof value>) => void;
+}) {
+  return (
+    <>
+      <label className="field">
+        Nom et prénom
+        <input value={value.name} onChange={e => onChange({ name: e.target.value })} required maxLength={100} />
+      </label>
+      <label className="field">
+        Grade ou fonction
+        <input value={value.grade} onChange={e => onChange({ grade: e.target.value })} maxLength={60} />
+      </label>
+      <label className="field">
+        Matricule
+        <input value={value.matricule} onChange={e => onChange({ matricule: e.target.value })} maxLength={30} />
+      </label>
+      <label className="field">
+        Téléphone
+        <input value={value.phone} onChange={e => onChange({ phone: e.target.value })} maxLength={30} />
+      </label>
+    </>
+  );
+}
+
+function TeamAndRole({
+  teams,
+  teamId,
+  role,
+  onChange,
+}: {
+  teams: AppState["teams"];
+  teamId: string;
+  role: MemberRole;
+  onChange: (next: { teamId?: string; role?: MemberRole }) => void;
+}) {
+  return (
+    <>
+      <label className="field">
+        Équipe
+        <select value={teamId} onChange={e => onChange({ teamId: e.target.value })}>
+          {teams.map(t => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field">
+        Rôle
+        <select value={role} onChange={e => onChange({ role: e.target.value as MemberRole })}>
+          {memberRoles.map(r => (
+            <option key={r} value={r}>
+              {roleLabels[r]}
+            </option>
+          ))}
+        </select>
+      </label>
+    </>
+  );
+}
+
+function MemberDialog({ agent, onClose }: { agent: Agent; onClose: () => void }) {
+  const { state, run } = useApp();
+  const [form, setForm] = useState({
+    name: agent.name,
+    grade: agent.grade,
+    matricule: agent.matricule,
+    phone: agent.phone,
+    teamId: agent.teamId || (state.teams[0]?.id ?? ""),
+    role: agent.role,
+    active: state.agents.some(a => a.id === agent.id),
+    qualifications: agent.qualifications,
+  });
+  const [added, setAdded] = useState("");
+  // The catalogue plus whatever this agent already holds: a qualification
+  // removed from the catalogue must not silently vanish from a record.
+  const offered = [...new Set([...state.qualificationCatalogue, ...form.qualifications])].sort((a, b) =>
+    a.localeCompare(b, "fr"),
+  );
+  const toggle = (name: string) =>
+    setForm(f => ({
+      ...f,
+      qualifications: f.qualifications.includes(name)
+        ? f.qualifications.filter(q => q !== name)
+        : [...f.qualifications, name],
+    }));
+  return (
+    <Modal open onOpenChange={open => !open && onClose()} title={agent.name} description="Fiche, équipe et rôle.">
+      <RecordFields value={form} onChange={next => setForm(f => ({ ...f, ...next }))} />
+      <TeamAndRole
+        teams={state.teams}
+        teamId={form.teamId}
+        role={form.role}
+        onChange={next => setForm(f => ({ ...f, ...next }))}
+      />
+      <fieldset className="field">
+        <legend>Qualifications</legend>
+        <div className="qualification-choices">
+          {offered.map(name => (
+            <label key={name}>
+              <input type="checkbox" checked={form.qualifications.includes(name)} onChange={() => toggle(name)} />
+              {name}
+            </label>
+          ))}
+        </div>
+        <div className="inline-add">
+          <input
+            aria-label="Ajouter une qualification"
+            placeholder="Ajouter une qualification…"
+            value={added}
+            maxLength={60}
+            onChange={e => setAdded(e.target.value)}
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              const name = added.trim();
+              if (!name || form.qualifications.includes(name)) return;
+              setForm(f => ({ ...f, qualifications: [...f.qualifications, name] }));
+              setAdded("");
+            }}
+          >
+            Ajouter
+          </Button>
+        </div>
+      </fieldset>
+      <label className="field checkbox-field">
+        <input
+          type="checkbox"
+          checked={form.active}
+          onChange={e => setForm(f => ({ ...f, active: e.target.checked }))}
+        />
+        Agent actif
+      </label>
+      <Button
+        className="full-width"
+        onClick={async () => {
+          if (await run({ type: "member", userId: agent.id, ...form })) onClose();
+        }}
+      >
+        Enregistrer la fiche
+      </Button>
+    </Modal>
+  );
+}
+
+function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { state, run } = useApp();
+  const empty = {
+    email: "",
+    name: "",
+    grade: "",
+    matricule: "",
+    phone: "",
+    teamId: state.teams[0]?.id ?? "",
+    role: "AGENT" as MemberRole,
+  };
+  const [form, setForm] = useState(empty);
+  return (
+    <Modal
+      open={open}
+      onOpenChange={next => !next && onClose()}
+      title="Inviter un agent"
+      description="L’agent crée son propre compte. Le rattachement se fait automatiquement à la confirmation de son adresse."
+    >
+      <label className="field">
+        Adresse électronique
+        <input
+          type="email"
+          value={form.email}
+          onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+          required
+          maxLength={200}
+        />
+      </label>
+      <RecordFields value={form} onChange={next => setForm(f => ({ ...f, ...next }))} />
+      <TeamAndRole
+        teams={state.teams}
+        teamId={form.teamId}
+        role={form.role}
+        onChange={next => setForm(f => ({ ...f, ...next }))}
+      />
+      <Button
+        className="full-width"
+        onClick={async () => {
+          if (await run({ type: "invite", ...form })) {
+            setForm(empty);
+            onClose();
+          }
+        }}
+      >
+        <UserPlus size={16} />
+        Enregistrer l’invitation
+      </Button>
+      <p className="muted small">
+        Transmettez-lui l’adresse de l’application : il s’inscrit avec cette même adresse électronique. L’envoi
+        automatique arrivera avec le service de notifications.
+      </p>
+    </Modal>
+  );
+}
+
+function TeamDialog({ initial, onClose }: { initial: { id?: string; name: string }; onClose: () => void }) {
+  const { run } = useApp();
+  const [name, setName] = useState(initial.name);
+  return (
+    <Modal
+      open
+      onOpenChange={open => !open && onClose()}
+      title={initial.id ? "Renommer l’équipe" : "Nouvelle équipe"}
+      description="Les campagnes déjà ouvertes gardent l’équipe à laquelle elles appartiennent."
+    >
+      <label className="field">
+        Nom de l’équipe
+        <input value={name} onChange={e => setName(e.target.value)} required maxLength={60} />
+      </label>
+      <Button
+        className="full-width"
+        onClick={async () => {
+          if (await run({ type: "team", teamId: initial.id, name })) onClose();
+        }}
+      >
+        Enregistrer
+      </Button>
+    </Modal>
   );
 }
 
@@ -384,7 +731,7 @@ export function Profile() {
         description="Vos informations d’équipe et vos qualifications."
       />
       <div className="settings-width">
-        <Panel title={agent.name} subtitle={`${agent.grade} · ${agent.team}`}>
+        <Panel title={agent.name} subtitle={`${gradeLabel(agent)} · ${agent.team}`}>
           <div className="profile-details">
             <Avatar agent={agent} />
             <div className="qualification-tags">
@@ -393,6 +740,16 @@ export function Profile() {
               ))}
             </div>
           </div>
+          <dl className="record-fields">
+            <div>
+              <dt>Matricule</dt>
+              <dd>{agent.matricule || "—"}</dd>
+            </div>
+            <div>
+              <dt>Téléphone</dt>
+              <dd>{agent.phone || "—"}</dd>
+            </div>
+          </dl>
         </Panel>
         {/* Simulation control. On real data it would present someone else's
             record as fictional, so it never renders in connected mode. */}

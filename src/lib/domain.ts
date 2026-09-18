@@ -1,9 +1,19 @@
 import { z } from "zod";
+import { roleLabels } from "./session";
 
 export const availabilitySchema = z.enum(["DAY", "NIGHT", "FULL_24H", "UNAVAILABLE"]);
 export type Availability = z.infer<typeof availabilitySchema>;
 export type Shift = "DAY" | "NIGHT";
 export type Role = "AGENT" | "MANAGER";
+// The four roles of §2, as the database spells them. The Actor above keeps its
+// two, because the business rules only ever ask « does this person manage? ».
+export const memberRoles = ["AGENT", "RESPONSABLE", "GESTIONNAIRE", "ADMIN"] as const;
+export const memberRoleSchema = z.enum(memberRoles);
+export type MemberRole = (typeof memberRoles)[number];
+export const administers = (role: MemberRole) => role === "GESTIONNAIRE" || role === "ADMIN";
+// A centre that has not filled the rank in yet still gets an honest line. This is
+// a display fallback and stays one: the stored grade may legitimately be empty.
+export const gradeLabel = (agent: { grade: string; role: MemberRole }) => agent.grade || roleLabels[agent.role];
 export const labels: Record<Availability, { label: string; short: string; className: string }> = {
   DAY: { label: "Jour", short: "J", className: "day" },
   NIGHT: { label: "Nuit", short: "N", className: "night" },
@@ -34,9 +44,48 @@ export const stateSchema = z.object({
       name: z.string(),
       team: z.string(),
       grade: z.string(),
+      /** Empty when unknown: §3 makes both optional on the agent record. The
+          default also lets a demonstration saved before they existed still load,
+          instead of being thrown away as incompatible. */
+      matricule: z.string().default(""),
+      phone: z.string().default(""),
       qualifications: z.array(z.string()),
+      role: memberRoleSchema.default("AGENT"),
+      teamId: z.string().default(""),
     }),
   ),
+  /** Administration only. Every other screen reads `agents`, which stays the
+      active roster: a deactivated agent must not reappear in a synthesis. */
+  inactiveAgents: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        team: z.string(),
+        grade: z.string(),
+        matricule: z.string().default(""),
+        phone: z.string().default(""),
+        qualifications: z.array(z.string()),
+        role: memberRoleSchema.default("AGENT"),
+        teamId: z.string().default(""),
+      }),
+    )
+    .default([]),
+  teams: z.array(z.object({ id: z.string(), name: z.string() })).default([]),
+  qualificationCatalogue: z.array(z.string()).default([]),
+  invitations: z
+    .array(
+      z.object({
+        id: z.string(),
+        email: z.string(),
+        name: z.string(),
+        role: memberRoleSchema,
+        teamId: z.string(),
+        team: z.string(),
+        createdAt: z.string(),
+      }),
+    )
+    .default([]),
   campaigns: z.array(
     z.object({
       id: z.string(),
@@ -208,6 +257,30 @@ export const commandSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("close"), campaignId: id, closed: z.boolean() }),
   z.object({
+    type: z.literal("member"),
+    userId: id,
+    name: z.string().trim().min(1).max(100),
+    grade: z.string().trim().max(60),
+    matricule: z.string().trim().max(30),
+    phone: z.string().trim().max(30),
+    teamId: id,
+    role: memberRoleSchema,
+    active: z.boolean(),
+    qualifications: z.array(z.string().trim().min(1).max(60)).max(20),
+  }),
+  z.object({
+    type: z.literal("invite"),
+    email: z.string().trim().toLowerCase().email().max(200),
+    name: z.string().trim().min(1).max(100),
+    grade: z.string().trim().max(60),
+    matricule: z.string().trim().max(30),
+    phone: z.string().trim().max(30),
+    teamId: id,
+    role: memberRoleSchema,
+  }),
+  z.object({ type: z.literal("revokeInvitation"), invitationId: id }),
+  z.object({ type: z.literal("team"), teamId: z.string().max(64).optional(), name: z.string().trim().min(1).max(60) }),
+  z.object({
     type: z.literal("settings"),
     dayStart: z.number().int().min(0).max(23),
     nightStart: z.number().int().min(0).max(23),
@@ -226,6 +299,10 @@ export const commandLabels: Record<Command["type"], string> = {
   campaign: "Campagne ouverte",
   close: "Verrouillage de la campagne modifié",
   settings: "Horaires par défaut modifiés",
+  member: "Fiche agent mise à jour",
+  invite: "Invitation envoyée",
+  revokeInvitation: "Invitation annulée",
+  team: "Équipe enregistrée",
 };
 
 // Pure business layer shared by the demonstration and the future server commands.
@@ -234,6 +311,10 @@ export function execute(state: AppState, actor: Actor, command: Command, now = n
   const next = structuredClone(state);
   const stamp = now.toISOString();
   const today = localDate(now);
+  // Administration writes to tables the demonstration does not model at all.
+  // Connected mode handles these four; refusing plainly beats pretending.
+  if (["member", "invite", "revokeInvitation", "team"].includes(command.type))
+    throw new Error("L’administration des agents n’est disponible qu’en mode connecté.");
   const campaign = "campaignId" in command ? next.campaigns.find(c => c.id === command.campaignId) : undefined;
   if ("campaignId" in command && !campaign) throw new Error("Campagne introuvable.");
   if (!["availability", "validate"].includes(command.type) && actor.role !== "MANAGER")

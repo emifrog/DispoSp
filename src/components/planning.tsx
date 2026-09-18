@@ -22,6 +22,7 @@ import {
   availableAgents,
   coverage,
   dateLabel,
+  gradeLabel,
   hours,
   monthDays,
   plural,
@@ -83,7 +84,7 @@ export function Planning() {
         <div className="agent-info">
           <strong>{agent.name}</strong>
           <small>
-            {agent.grade} · {agent.team.replace("Équipe ", "")}
+            {gradeLabel(agent)} · {agent.team.replace("Équipe ", "")}
           </small>
           <div className="qualification-tags">
             {agent.qualifications.map(q => (

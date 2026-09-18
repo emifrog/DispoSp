@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildState, type Raw } from "../src/lib/data-mapping";
-import { entryKey, responseKey, shiftKey } from "../src/lib/domain";
+import { entryKey, gradeLabel, responseKey, shiftKey } from "../src/lib/domain";
 
 const CAMPAIGN = "c1";
 const SHIFT_DAY = "s-day";
@@ -11,8 +11,28 @@ function raw(overrides: Partial<Raw> = {}): Raw {
   return {
     organization: { name: "CIS Test", day_start: 7, night_start: 19 },
     members: [
-      { user_id: "u1", role: "ADMIN", profiles: { display_name: "Chef Un" }, teams: { name: "Section Test" } },
-      { user_id: "u2", role: "AGENT", profiles: null, teams: null },
+      {
+        user_id: "u1",
+        role: "ADMIN",
+        team_id: "t1",
+        active: true,
+        profiles: { display_name: "Chef Un", grade: "Sergent", matricule: "SP-7", phone: "06 24 18 00 00" },
+        teams: { name: "Section Test" },
+      },
+      { user_id: "u2", role: "AGENT", team_id: "t1", active: true, profiles: null, teams: null },
+      { user_id: "u3", role: "AGENT", team_id: "t1", active: false, profiles: { display_name: "Parti" }, teams: null },
+    ],
+    teams: [{ id: "t1", name: "Section Test" }],
+    qualificationCatalogue: [{ name: "SAP" }, { name: "Chef" }],
+    invitations: [
+      {
+        id: "i1",
+        email: "attendu@example.org",
+        display_name: "Attendu",
+        role: "AGENT",
+        team_id: "t1",
+        created_at: "2026-09-20T08:00:00Z",
+      },
     ],
     memberQualifications: [
       { user_id: "u1", qualifications: { name: "Chef" } },
@@ -121,13 +141,43 @@ describe("Construction de l’état depuis la base", () => {
       id: "u1",
       name: "Chef Un",
       team: "Section Test",
-      grade: "Administrateur",
+      grade: "Sergent",
+      matricule: "SP-7",
+      phone: "06 24 18 00 00",
       qualifications: ["Chef", "SAP"],
+      role: "ADMIN",
+      teamId: "t1",
     });
     // Profil ou équipe absents : des libellés neutres, jamais un écran cassé.
     expect(state.agents[1].name).toBe("Agent");
     expect(state.agents[1].team).toBe("Équipe");
     expect(state.agents[1].qualifications).toEqual([]);
+    // Le grade stocké reste vide ; c’est l’affichage qui retombe sur le rôle.
+    expect(state.agents[1].grade).toBe("");
+    expect(gradeLabel(state.agents[1])).toBe("Agent");
+    expect(state.agents[1].matricule).toBe("");
+    expect(state.agents[1].phone).toBe("");
+  });
+
+  it("sort les agents désactivés de l’effectif, sans les perdre", () => {
+    const state = buildState(raw(), "Secours");
+    // Un agent désactivé ne doit reparaître ni dans une synthèse, ni dans un vivier.
+    expect(state.agents.map(a => a.id)).toEqual(["u1", "u2"]);
+    expect(state.inactiveAgents.map(a => a.name)).toEqual(["Parti"]);
+    expect(state.teams).toEqual([{ id: "t1", name: "Section Test" }]);
+    // Le catalogue est trié pour l’affichage, pas dans l’ordre des lignes.
+    expect(state.qualificationCatalogue).toEqual(["Chef", "SAP"]);
+    expect(state.invitations).toEqual([
+      {
+        id: "i1",
+        email: "attendu@example.org",
+        name: "Attendu",
+        role: "AGENT",
+        teamId: "t1",
+        team: "Section Test",
+        createdAt: "2026-09-20T08:00:00Z",
+      },
+    ]);
   });
 
   it("ne retient que les réponses validées et les disponibilités connues", () => {

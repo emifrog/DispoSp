@@ -1916,6 +1916,85 @@ label {
   width: 48px;
   height: 48px;
 }
+/* The optional half of the agent record: shown as « — » rather than hidden, so
+   an incomplete file looks incomplete instead of looking absent. */
+.record-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0 22px 22px;
+}
+.record-fields dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.record-fields dd {
+  margin: 3px 0 0;
+  font-weight: 500;
+}
+.invitation-list {
+  display: flex;
+  flex-direction: column;
+  padding: 0 22px 22px;
+}
+.invitation-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid #eff2f7;
+}
+.invitation-list > div:last-child {
+  border-bottom: none;
+}
+.invitation-list strong {
+  display: block;
+  font-size: 13px;
+}
+.invitation-list small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.qualification-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 6px;
+}
+.qualification-choices label,
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 400;
+}
+.qualification-choices input,
+.checkbox-field input {
+  width: auto;
+  margin: 0;
+}
+.inline-add {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.inline-add input {
+  flex: 1;
+}
+fieldset.field {
+  border: none;
+  padding: 0;
+  margin: 0 0 14px;
+}
+fieldset.field legend {
+  padding: 0;
+  font-size: 12px;
+  font-weight: 500;
+}
 .empty-state {
   text-align: center;
   padding: 70px 25px;

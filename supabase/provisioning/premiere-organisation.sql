@@ -10,10 +10,10 @@
 begin;
 do $$
 declare
-  admin_email constant text := 'a.remplacer@example.org';
-  admin_name  constant text := 'Prénom Nom';
-  org_name    constant text := 'CIS Val de Loire';
-  team_name   constant text := 'Équipe Alpha';
+  admin_email constant text := 'demo@dispo06.fr';
+  admin_name  constant text := 'Demo Test';
+  org_name    constant text := 'CIS Test';
+  team_name   constant text := 'Section Test';
   admin_id uuid;
   confirmed timestamptz;
   org_id uuid;

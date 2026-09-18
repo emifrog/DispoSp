@@ -4,11 +4,13 @@ import {
   dateLabel,
   entryKey,
   labels,
+  memberRoles,
   plural,
   responseKey,
   shiftKey,
   type AppState,
   type Availability,
+  type MemberRole,
   type Shift,
 } from "./domain";
 import { roleLabels } from "./session";
@@ -23,8 +25,20 @@ export type Raw = {
   members: {
     user_id: string;
     role: string;
-    profiles: { display_name: string } | null;
+    team_id: string;
+    active: boolean;
+    profiles: { display_name: string; grade?: string | null; matricule?: string | null; phone?: string | null } | null;
     teams: { name: string } | null;
+  }[];
+  teams: { id: string; name: string }[];
+  qualificationCatalogue: { name: string }[];
+  invitations: {
+    id: string;
+    email: string;
+    display_name: string;
+    role: string;
+    team_id: string;
+    created_at: string;
   }[];
   memberQualifications: { user_id: string; qualifications: { name: string } | null }[];
   campaigns: {
@@ -87,6 +101,20 @@ const auditLabels: Record<string, string> = {
   "qualification/CREATE": "Qualification créée",
   "qualification/RENAME": "Qualification renommée",
   "qualification/DELETE": "Qualification supprimée",
+  "profile/UPDATE": "Fiche agent modifiée",
+  "membership/JOIN": "Agent rattaché au centre",
+  "membership/ROLE": "Rôle modifié",
+  "membership/ACTIVATE": "Agent réactivé",
+  "membership/DEACTIVATE": "Agent désactivé",
+  "membership/TEAM": "Changement d’équipe",
+  "team/CREATE": "Équipe créée",
+  "team/RENAME": "Équipe renommée",
+  "invitation/CREATE": "Invitation créée",
+  "invitation/ACCEPT": "Invitation acceptée",
+  "invitation/CANCEL": "Invitation annulée",
+  "invitation/UPDATE": "Invitation modifiée",
+  "user_qualification/GRANT": "Qualification attribuée",
+  "user_qualification/REVOKE": "Qualification retirée",
 };
 
 type Values = Record<string, unknown> | null;
@@ -97,8 +125,8 @@ const num = (from: Values, key: string) => (typeof from?.[key] === "number" ? (f
 
 // Old and new value are both recorded; a line only shows the difference when
 // there is one to show, rather than repeating the row twice.
-function auditDetail(entity: string, before: Values, after: Values, nameById: Map<string, string>): string {
-  const subject = after ?? before;
+function auditDetail(entity: string, previous: Values, after: Values, nameById: Map<string, string>): string {
+  const subject = after ?? previous;
   const who = (id: string) => nameById.get(id) ?? "un agent";
   const slot = (code: string) => (code === "NIGHT" ? "Nuit" : "Jour");
   const day = (from: Values) => (text(from, "date") ? dateLabel(text(from, "date")) : "");
@@ -117,7 +145,7 @@ function auditDetail(entity: string, before: Values, after: Values, nameById: Ma
       const line = `${day(subject)} · ${slot(text(subject, "shift_code"))}`;
       const to = num(after, "headcount");
       if (to === null) return `${line} · besoins retirés`;
-      const from = num(before, "headcount");
+      const from = num(previous, "headcount");
       return from !== null && from !== to
         ? `${line} · ${from} → ${to} ${plural(to, "agent")}`
         : `${line} · ${to} ${plural(to, "agent")}`;
@@ -128,10 +156,33 @@ function auditDetail(entity: string, before: Values, after: Values, nameById: Ma
     }
     case "organization": {
       const range = (from: Values) => `${num(from, "day_start")} h – ${num(from, "night_start")} h`;
-      return before ? `${range(before)} → ${range(after)}` : range(after);
+      return previous ? `${range(previous)} → ${range(after)}` : range(after);
     }
     case "qualification":
       return text(subject, "name");
+    case "profile": {
+      const before = text(previous, "grade");
+      const now = text(after, "grade");
+      const name = text(subject, "display_name");
+      return before !== now && (before || now) ? `${name} · ${before || "sans grade"} → ${now || "sans grade"}` : name;
+    }
+    case "membership": {
+      const name = who(text(subject, "user_id"));
+      const before = text(previous, "role");
+      const now = text(after, "role");
+      return before && now && before !== now
+        ? `${name} · ${roleLabels[before] ?? before} → ${roleLabels[now] ?? now}`
+        : `${name} · ${roleLabels[now] ?? now}`;
+    }
+    case "team": {
+      const before = text(previous, "name");
+      const now = text(after, "name");
+      return before && before !== now ? `${before} → ${now}` : now;
+    }
+    case "invitation":
+      return `${text(subject, "display_name")} · ${text(subject, "email")}`;
+    case "user_qualification":
+      return who(text(subject, "user_id"));
     default:
       return "";
   }
@@ -147,15 +198,27 @@ export function buildState(raw: Raw, fallbackOrganizationName: string): AppState
     qualificationsByUser.set(row.user_id, [...(qualificationsByUser.get(row.user_id) ?? []), name]);
   }
 
-  const agents: AppState["agents"] = raw.members.map(row => ({
+  const toAgent = (row: Raw["members"][number]): AppState["agents"][number] => ({
     id: row.user_id,
     name: row.profiles?.display_name ?? "Agent",
     team: row.teams?.name ?? "Équipe",
-    // The schema carries no rank yet; the role is the closest honest stand-in.
-    grade: roleLabels[row.role] ?? row.role,
+    // Stored as it is, empty included. Falling back to the role label here would
+    // put that label in the edit form, and the first save would write it to the
+    // database as if someone had chosen it. The display does the falling back.
+    grade: row.profiles?.grade ?? "",
+    matricule: row.profiles?.matricule ?? "",
+    phone: row.profiles?.phone ?? "",
     qualifications: qualificationsByUser.get(row.user_id) ?? [],
-  }));
-  const nameById = new Map(agents.map(a => [a.id, a.name]));
+    role: memberRoles.includes(row.role as MemberRole) ? (row.role as MemberRole) : "AGENT",
+    teamId: row.team_id,
+  });
+  // Every screen but the administration one reads `agents`: a deactivated agent
+  // must not reappear in a synthesis, a pool or a response rate.
+  const agents = raw.members.filter(row => row.active).map(toAgent);
+  const inactiveAgents = raw.members.filter(row => !row.active).map(toAgent);
+  // Both rosters, so an audit line still names someone who has since left.
+  const nameById = new Map([...agents, ...inactiveAgents].map(a => [a.id, a.name]));
+  const teamNameById = new Map(raw.teams.map(t => [t.id, t.name]));
 
   const state: AppState = {
     version: 1,
@@ -165,6 +228,19 @@ export function buildState(raw: Raw, fallbackOrganizationName: string): AppState
       nightStart: raw.organization?.night_start ?? 20,
     },
     agents,
+    inactiveAgents,
+    teams: raw.teams.map(t => ({ id: t.id, name: t.name })),
+    qualificationCatalogue: raw.qualificationCatalogue.map(q => q.name).sort((a, b) => a.localeCompare(b, "fr")),
+    // Empty for anyone but an administrator: the policy filters, we do not.
+    invitations: raw.invitations.map(row => ({
+      id: row.id,
+      email: row.email,
+      name: row.display_name,
+      role: memberRoles.includes(row.role as MemberRole) ? (row.role as MemberRole) : "AGENT",
+      teamId: row.team_id,
+      team: teamNameById.get(row.team_id) ?? "Équipe",
+      createdAt: row.created_at,
+    })),
     campaigns: raw.campaigns.map(c => ({
       id: c.id,
       name: c.name,

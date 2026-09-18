@@ -3,8 +3,13 @@ import { readFileSync } from "node:fs";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 const db = new PGlite();
 // Applied in order everywhere below, exactly as against the real project.
-const MIGRATIONS = ["0001_foundation.sql", "0002_planning.sql", "0003_client_writes.sql"];
-const baseAuthSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
+const MIGRATIONS = [
+  "0001_foundation.sql",
+  "0002_planning.sql",
+  "0003_client_writes.sql",
+  "0004_agent_administration.sql",
+];
+const baseAuthSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
 const orgA = "10000000-0000-0000-0000-000000000001";
 const orgB = "10000000-0000-0000-0000-000000000002";
 const teamA = "20000000-0000-0000-0000-000000000001";
@@ -21,7 +26,7 @@ async function asUser(id: string) {
 }
 beforeAll(async () => {
   await db.exec(
-    `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`,
+    `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`,
   );
   // Applied in order, exactly as they are against the real project: the tests
   // therefore check the migration sequence, not a single hand-kept schema file.
@@ -43,7 +48,12 @@ describe("Fondation Supabase — droits PostgreSQL réels", () => {
     await asUser(agentA);
     expect((await db.query("select id from public.organizations")).rows).toEqual([{ id: orgA }]);
     expect((await db.query("select id from public.availability_campaigns")).rows).toEqual([{ id: campaignA }]);
-    await expect(db.query("update public.memberships set role = 'ADMIN' where user_id=$1", [agentA])).rejects.toThrow();
+    // Since 0004 the column grant exists, so the refusal is a policy filtering the
+    // row rather than an error. The guarantee is the role, not the exception.
+    await db.query("update public.memberships set role = 'ADMIN' where user_id=$1", [agentA]);
+    expect((await db.query("select role from public.memberships where user_id=$1", [agentA])).rows).toEqual([
+      { role: "AGENT" },
+    ]);
     await expect(
       db.query(
         "insert into public.availability_entries(campaign_id,user_id,date,availability_type) values ($1,$2,'2026-10-01','DAY')",
@@ -308,7 +318,7 @@ describe("Planning, publication et audit", () => {
 // meant for a fresh database replayed on one that already carries part of it.
 describe("Enchaînement des migrations", () => {
   const read = (name: string) => readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), "utf8");
-  const authSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
+  const authSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
 
   it("refuse 0002 sur une base qui n’a jamais reçu 0001", async () => {
     const fresh = new PGlite();
@@ -662,6 +672,208 @@ describe("Enchaînement des migrations — 0003", () => {
     // One wrapper, one audit function: the refused replay added nothing.
     const { rows } = await fresh.query<{ count: number }>(
       "select count(*)::int as count from pg_proc where proname in ('publish_shift','record_audit','can_administer')",
+    );
+    expect(rows[0].count).toBe(3);
+    await fresh.close();
+  }, 30000);
+});
+
+// 0004 replaces a SQL script with a mechanism: an administrator records who is
+// expected, the agent creates their own account, and a trigger does the joining.
+// The whole point is that no service key exists anywhere, so the rules have to
+// hold against a real engine rather than against an application's good manners.
+describe("Administration des agents ouverte par 0004", () => {
+  const org = "10000000-0000-0000-0000-000000000020";
+  const team = "20000000-0000-0000-0000-000000000020";
+  const admin = "30000000-0000-0000-0000-000000000020";
+  const manager = "30000000-0000-0000-0000-000000000021";
+  const agent = "30000000-0000-0000-0000-000000000022";
+  const invited = "30000000-0000-0000-0000-000000000023";
+  const later = "30000000-0000-0000-0000-000000000024";
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+
+  beforeAll(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const m of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    await live.exec(`insert into auth.users(id) values ('${admin}'), ('${manager}'), ('${agent}');
+      insert into public.profiles(user_id,display_name) values ('${admin}','Administratrice'), ('${manager}','Gestionnaire'), ('${agent}','Agent');
+      insert into public.organizations(id,name) values ('${org}','Centre 0004');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Écho');
+      insert into public.memberships values
+        ('${org}','${admin}','${team}','ADMIN',true),
+        ('${org}','${manager}','${team}','GESTIONNAIRE',true),
+        ('${org}','${agent}','${team}','AGENT',true);`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("rattache un agent invité dès que son adresse est confirmée", async () => {
+    await be(admin);
+    await live.query(
+      `insert into public.invitations(organization_id,team_id,email,display_name,role,grade,matricule,invited_by)
+       values ($1,$2,'nouveau@example.org','Nouvel Agent','AGENT','Sapeur','SP-42',$3)`,
+      [org, team, admin],
+    );
+    // The account is created by the engine's own auth schema, never by the app.
+    await live.exec("reset role");
+    await live.query("insert into auth.users(id,email,email_confirmed_at) values ($1,'nouveau@example.org',now())", [
+      invited,
+    ]);
+    await be(admin);
+    expect(
+      (await live.query("select display_name, grade, matricule from public.profiles where user_id=$1", [invited])).rows,
+    ).toEqual([{ display_name: "Nouvel Agent", grade: "Sapeur", matricule: "SP-42" }]);
+    expect(
+      (
+        await live.query("select organization_id, team_id, role, active from public.memberships where user_id=$1", [
+          invited,
+        ])
+      ).rows,
+    ).toEqual([{ organization_id: org, team_id: team, role: "AGENT", active: true }]);
+    expect(
+      (await live.query("select accepted_by from public.invitations where email='nouveau@example.org'")).rows,
+    ).toEqual([{ accepted_by: invited }]);
+  });
+
+  it("ne donne sa place qu’à une adresse confirmée", async () => {
+    await be(admin);
+    await live.query(
+      `insert into public.invitations(organization_id,team_id,email,display_name,role,invited_by)
+       values ($1,$2,'plus-tard@example.org','Plus Tard','AGENT',$3)`,
+      [org, team, admin],
+    );
+    await live.exec("reset role");
+    await live.query("insert into auth.users(id,email) values ($1,'plus-tard@example.org')", [later]);
+    expect((await live.query("select 1 from public.memberships where user_id=$1", [later])).rows).toHaveLength(0);
+    await live.query("update auth.users set email_confirmed_at = now() where id=$1", [later]);
+    expect((await live.query("select 1 from public.memberships where user_id=$1", [later])).rows).toHaveLength(1);
+  });
+
+  it("n’attache rien à une inscription que personne n’a invitée", async () => {
+    const stranger = "30000000-0000-0000-0000-000000000025";
+    await live.exec("reset role");
+    await live.query("insert into auth.users(id,email,email_confirmed_at) values ($1,'inconnu@example.org',now())", [
+      stranger,
+    ]);
+    expect((await live.query("select 1 from public.profiles where user_id=$1", [stranger])).rows).toHaveLength(0);
+    expect((await live.query("select 1 from public.memberships where user_id=$1", [stranger])).rows).toHaveLength(0);
+  });
+
+  it("garde les invitations hors de portée d’un agent", async () => {
+    await be(agent);
+    expect((await live.query("select id from public.invitations")).rows).toHaveLength(0);
+    await expect(
+      live.query(
+        `insert into public.invitations(organization_id,team_id,email,display_name,role,invited_by)
+         values ($1,$2,'moi@example.org','Moi','ADMIN',$3)`,
+        [org, team, agent],
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("ne laisse personne se promouvoir, ni un gestionnaire changer un rôle", async () => {
+    await be(manager);
+    await expect(
+      live.query("update public.memberships set role='ADMIN' where organization_id=$1 and user_id=$2", [org, manager]),
+    ).rejects.toThrow("Cannot change your own role");
+    await expect(
+      live.query("update public.memberships set role='ADMIN' where organization_id=$1 and user_id=$2", [org, agent]),
+    ).rejects.toThrow("Only an administrator");
+    // A transfer is not a promotion: the same profile may still move an agent.
+    await live.query("update public.memberships set active=false where organization_id=$1 and user_id=$2", [
+      org,
+      agent,
+    ]);
+    expect(
+      (await live.query("select active from public.memberships where organization_id=$1 and user_id=$2", [org, agent]))
+        .rows,
+    ).toEqual([{ active: false }]);
+    await be(admin);
+    await live.query(
+      "update public.memberships set role='RESPONSABLE', active=true where organization_id=$1 and user_id=$2",
+      [org, agent],
+    );
+    expect(
+      (await live.query("select role from public.memberships where organization_id=$1 and user_id=$2", [org, agent]))
+        .rows,
+    ).toEqual([{ role: "RESPONSABLE" }]);
+  });
+
+  it("refuse qu’un administrateur se désactive lui-même", async () => {
+    await be(admin);
+    await expect(
+      live.query("update public.memberships set active=false where organization_id=$1 and user_id=$2", [org, admin]),
+    ).rejects.toThrow("Cannot deactivate your own account");
+  });
+
+  it("journalise l’administration, l’acceptation au nom de l’agent", async () => {
+    await be(admin);
+    const qualification = (
+      await live.query<{ id: string }>(
+        "insert into public.qualifications(organization_id,name) values ($1,'SAP') returning id",
+        [org],
+      )
+    ).rows[0].id;
+    await live.query(
+      "insert into public.user_qualifications(organization_id,user_id,qualification_id) values ($1,$2,$3)",
+      [org, invited, qualification],
+    );
+    const { rows } = await live.query<{ entity: string; action: string }>(
+      "select distinct entity, action from public.audit_logs where organization_id=$1",
+      [org],
+    );
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        { entity: "invitation", action: "CREATE" },
+        { entity: "invitation", action: "ACCEPT" },
+        { entity: "membership", action: "JOIN" },
+        { entity: "membership", action: "ROLE" },
+        { entity: "membership", action: "DEACTIVATE" },
+        { entity: "user_qualification", action: "GRANT" },
+      ]),
+    );
+    // The acceptance belongs to the agent, not to whoever's session ran the insert.
+    expect(
+      (
+        await live.query(
+          "select actor_id from public.audit_logs where entity='invitation' and action='ACCEPT' and entity_id='nouveau@example.org'",
+        )
+      ).rows,
+    ).toEqual([{ actor_id: invited }]);
+  });
+});
+
+describe("Enchaînement des migrations — 0004", () => {
+  const read = (name: string) => readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), "utf8");
+
+  it("refuse 0004 sur une base qui n’a jamais reçu 0003", async () => {
+    const fresh = new PGlite();
+    await fresh.exec(baseAuthSchema);
+    await fresh.exec(read("0001_foundation.sql"));
+    await fresh.exec(read("0002_planning.sql"));
+    await expect(fresh.exec(read("0004_agent_administration.sql"))).rejects.toThrow(
+      "Apply 0003_client_writes.sql first",
+    );
+    await fresh.close();
+  }, 30000);
+
+  it("refuse 0004 une seconde fois, sans rien laisser derrière", async () => {
+    const fresh = new PGlite();
+    await fresh.exec(baseAuthSchema);
+    for (const m of MIGRATIONS) await fresh.exec(read(m));
+    await expect(fresh.exec(read("0004_agent_administration.sql"))).rejects.toThrow();
+    await fresh.exec("rollback");
+    // The agent record gained three columns, once.
+    const { rows } = await fresh.query<{ count: number }>(
+      "select count(*)::int as count from information_schema.columns where table_name='profiles' and column_name in ('grade','matricule','phone')",
     );
     expect(rows[0].count).toBe(3);
     await fresh.close();

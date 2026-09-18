@@ -2,7 +2,17 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { submitCommand } from "@/app/actions";
-import { execute, stateSchema, type Agent, type AppState, type Campaign, type Command, type Actor } from "@/lib/domain";
+import {
+  administers,
+  execute,
+  stateSchema,
+  type Actor,
+  type Agent,
+  type AppState,
+  type Campaign,
+  type Command,
+  type MemberRole,
+} from "@/lib/domain";
 import { createDemoState } from "@/lib/seed";
 import { ACTOR_KEY, STATE_KEY } from "@/lib/storage";
 
@@ -24,17 +34,24 @@ type Context = {
   /** True when the screens read the database. Demonstration-only controls and
       wording must be hidden behind it: on real data they would be a lie. */
   connected: boolean;
+  /** The §2 role as the database holds it, absent in demonstration. */
+  memberRole?: MemberRole;
+  /** Gates the administration controls. The database decides for real; this only
+      keeps a screen from offering what it would refuse. */
+  canAdminister: boolean;
 };
 const Store = createContext<Context | null>(null);
 export function AppProvider({
   children,
   initialState,
   initialActor,
+  memberRole,
 }: {
   children: ReactNode;
   /** Connected mode passes the state read from the database; demonstration passes nothing. */
   initialState?: AppState;
   initialActor?: Actor;
+  memberRole?: MemberRole;
 }) {
   const connected = Boolean(initialState);
   // Connected mode renders the server's copy directly. Holding it in useState
@@ -142,6 +159,8 @@ export function AppProvider({
         notice: setMessage,
         ready,
         connected,
+        memberRole,
+        canAdminister: memberRole ? administers(memberRole) : actor.role === "MANAGER",
       }}
     >
       {children}

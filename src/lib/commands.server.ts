@@ -36,6 +36,14 @@ export async function runCommand(session: AttachedSession, command: Command): Pr
       return lockCampaign(client, command);
     case "settings":
       return writeSettings(client, session, command);
+    case "member":
+      return writeMember(client, session, command);
+    case "invite":
+      return writeInvitation(client, session, command);
+    case "revokeInvitation":
+      return revokeInvitation(client, command);
+    case "team":
+      return writeTeam(client, session, command);
   }
 }
 
@@ -324,6 +332,113 @@ async function lockCampaign(client: Client, command: Of<"close">) {
     .select("id");
   if (error) fail(error);
   if (!data?.length) throw new Error("Vous n’avez pas le droit de verrouiller cette campagne.");
+}
+
+// ---------------------------------------------------------------------------
+// Administration
+// ---------------------------------------------------------------------------
+
+async function writeMember(client: Client, session: AttachedSession, command: Of<"member">) {
+  const organizationId = session.membership.organizationId;
+  // The record and the membership are two tables with two policies. A partial
+  // edit is visible and re-editable; nothing is derived from the other half.
+  const { data: profile, error: profileFailure } = await client
+    .from("profiles")
+    .update({
+      display_name: command.name,
+      grade: command.grade || null,
+      matricule: command.matricule || null,
+      phone: command.phone || null,
+    })
+    .eq("user_id", command.userId)
+    .select("user_id");
+  if (profileFailure) fail(profileFailure);
+  if (!profile?.length) throw new Error("Vous n’avez pas le droit de modifier cette fiche.");
+
+  const { error: membershipFailure } = await client
+    .from("memberships")
+    .update({ team_id: command.teamId, role: command.role, active: command.active })
+    .eq("organization_id", organizationId)
+    .eq("user_id", command.userId);
+  if (membershipFailure) fail(membershipFailure);
+
+  // The screen always sends the complete set, so the difference is computed here
+  // rather than asking it to remember what it removed.
+  const { data: held, error: heldFailure } = await client
+    .from("user_qualifications")
+    .select("qualification_id, qualifications(name)")
+    .eq("organization_id", organizationId)
+    .eq("user_id", command.userId);
+  if (heldFailure) fail(heldFailure);
+  // A to-one embed comes back as an object, but the untyped client infers an
+  // array: accept either rather than assert one and be wrong at runtime.
+  const embeddedName = (value: unknown): string => {
+    const row = Array.isArray(value) ? value[0] : value;
+    return row && typeof row === "object" && "name" in row ? String((row as { name: unknown }).name) : "";
+  };
+  const current = new Map((held ?? []).map(row => [embeddedName(row.qualifications), row.qualification_id as string]));
+  const wanted = new Set(command.qualifications);
+  const removed = [...current].filter(([name]) => name && !wanted.has(name)).map(([, id]) => id);
+  if (removed.length) {
+    const { error } = await client
+      .from("user_qualifications")
+      .delete()
+      .eq("user_id", command.userId)
+      .in("qualification_id", removed);
+    if (error) fail(error);
+  }
+  const added = command.qualifications.filter(name => !current.has(name));
+  if (!added.length) return;
+  const ids = await qualificationIds(client, organizationId, added);
+  const { error } = await client.from("user_qualifications").insert(
+    added.map(name => ({
+      organization_id: organizationId,
+      user_id: command.userId,
+      qualification_id: ids.get(name),
+    })),
+  );
+  if (error) fail(error);
+}
+
+async function writeInvitation(client: Client, session: AttachedSession, command: Of<"invite">) {
+  // No service key: the invitation only records who is expected. The account is
+  // created by the agent, and 0004's trigger attaches it once the address is
+  // confirmed — an unconfirmed address never takes a seat.
+  const { error } = await client.from("invitations").insert({
+    organization_id: session.membership.organizationId,
+    team_id: command.teamId,
+    email: command.email,
+    display_name: command.name,
+    role: command.role,
+    grade: command.grade || null,
+    matricule: command.matricule || null,
+    phone: command.phone || null,
+    invited_by: session.userId,
+  });
+  if (error) fail(error);
+}
+
+async function revokeInvitation(client: Client, command: Of<"revokeInvitation">) {
+  const { data, error } = await client.from("invitations").delete().eq("id", command.invitationId).select("id");
+  if (error) fail(error);
+  if (!data?.length) throw new Error("Cette invitation n’existe plus, ou a déjà été acceptée.");
+}
+
+async function writeTeam(client: Client, session: AttachedSession, command: Of<"team">) {
+  if (command.teamId) {
+    const { data, error } = await client
+      .from("teams")
+      .update({ name: command.name })
+      .eq("id", command.teamId)
+      .select("id");
+    if (error) fail(error);
+    if (!data?.length) throw new Error("Vous n’avez pas le droit de renommer cette équipe.");
+    return;
+  }
+  const { error } = await client
+    .from("teams")
+    .insert({ organization_id: session.membership.organizationId, name: command.name });
+  if (error) fail(error);
 }
 
 async function writeSettings(client: Client, session: AttachedSession, command: Of<"settings">) {
