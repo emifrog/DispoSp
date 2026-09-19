@@ -136,6 +136,7 @@ label {
   display: block;
   height: auto;
   max-width: 100%;
+  image-rendering: center;
 }
 .sidebar-brand {
   padding: 0 14px 29px;
@@ -2926,6 +2927,7 @@ fieldset.field legend {
 }
 .sign-in-card h1 {
   font-size: 22px;
+  font-weight: 600;
   letter-spacing: -0.5px;
   margin: 10px 0 0;
 }
