@@ -17,7 +17,8 @@ L'application demande un compte. Sans session, toute adresse renvoie vers l'écr
 
 ## Parcours livrés
 
-- Connexion par mot de passe, réinitialisation en cas d’oubli, authentification unique SAML par domaine, inscription avec confirmation d’adresse et déconnexion ; lecture et écriture des données Supabase selon les droits du compte.
+- Connexion par mot de passe, réinitialisation en cas d’oubli, authentification unique SAML par domaine et déconnexion ; lecture et écriture des données Supabase selon les droits du compte.
+- **L’application ne crée pas de compte.** Elle n’appelle ni `signUp`, ni `createUser`, ni `inviteUserByEmail` : enregistrer une invitation n’écrit qu’une ligne métier, et le compte d’authentification doit exister par ailleurs. Un agent invité ne peut donc pas entrer par ses propres moyens. C’est un manque, pas une décision — voir les limites.
 - Accueil agent : campagne en cours, avancement de la saisie, prochaines gardes publiées et accès rapides. La racine aiguille selon le rôle — accueil pour un agent, tableau de bord pour qui encadre.
 - Tableau de bord distinguant la couverture potentielle (disponibilités validées) de la couverture planifiée (affectations du brouillon). Indicateurs déficit, limite et couvert, plus un état « Besoins non définis ».
 - Calendrier agent : cinq états, sélection multiple, saisie par période ou jours de semaine, commentaire, remise à non renseigné.
@@ -174,6 +175,9 @@ Quelques garanties tenues par la base, et non par l'interface :
 - Une révision publiée est écrite par `private.publish_schedule_shift()` seule, qui revérifie l'effectif, les qualifications et l'éligibilité de chaque agent avant de figer la version. Aucune session cliente ne peut écrire une révision publiée ni forcer l'état de publication.
 - Le brouillon est la révision 0 ; modifier le brouillon ne touche pas la version que les agents consultent.
 - Un agent ne lit que ses propres gardes publiées, jamais le brouillon du gestionnaire.
+
+**Une garantie qui n’est pas tenue, et qu’il faut lire comme telle.** « Seul un administrateur change un rôle » vaut pour une fiche existante, et la base le fait respecter. Elle ne vaut pas pour une invitation : la policy d’écriture des invitations vérifie le droit d’administrer le centre — qu’un gestionnaire possède — sans contrôler le rôle accordé. Un gestionnaire peut donc faire entrer un nouvel administrateur alors qu’il ne peut promouvoir personne. Vérifié en base : la promotion directe est refusée, l’invitation aboutit à `ADMIN`.
+
 - Le journal d'audit conserve l'ancienne et la nouvelle valeur, et n'est lisible que par les profils gestionnaire et administrateur.
 
 ## Vérification

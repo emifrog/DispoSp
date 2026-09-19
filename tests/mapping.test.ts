@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildState, type Raw } from "../src/lib/data-mapping";
+import { buildState, taken, READ_FAILED, type Raw } from "../src/lib/data-mapping";
 import { entryKey, gradeLabel, responseKey, shiftKey } from "../src/lib/domain";
 
 const CAMPAIGN = "c1";
@@ -192,6 +192,22 @@ describe("Construction de l’état depuis la base", () => {
     expect(gradeLabel(state.agents[1])).toBe("Agent");
     expect(state.agents[1].matricule).toBe("");
     expect(state.agents[1].phone).toBe("");
+  });
+
+  it("distingue une lecture vide d’une lecture qui a échoué", () => {
+    // Une absence légitime : RLS renvoie un ensemble vide, sans erreur.
+    expect(taken("disponibilités", { data: [], error: null }, [])).toEqual([]);
+    expect(taken("disponibilités", { data: null, error: null }, [])).toEqual([]);
+    // Une panne : elle doit s’entendre, et non ressembler à « personne n’a répondu ».
+    expect(() => taken("disponibilités", { data: null, error: { message: "boom" } }, [])).toThrow(READ_FAILED);
+    // Le message de la base ne remonte pas à l’écran : il décrirait le schéma.
+    expect(() => taken("disponibilités", { data: null, error: { message: "relation x" } }, [])).not.toThrow(/relation/);
+  });
+
+  it("rend le repli demandé, et non une liste vide, pour une lecture d’objet", () => {
+    // L’organisation est lue avec maybeSingle : « rien » y vaut null, pas [].
+    // Un repli déduit aurait rendu un tableau là où l’appelant attend un objet.
+    expect(taken("organisation", { data: null, error: null }, null)).toBeNull();
   });
 
   it("rattache un désistement à sa garde, et jette celui dont le créneau manque", () => {

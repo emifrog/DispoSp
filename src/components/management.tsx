@@ -418,12 +418,29 @@ function TeamField({
   );
 }
 
-function RoleField({ role, onChange }: { role: MemberRole; onChange: (next: { role: MemberRole }) => void }) {
+/**
+ * On ne donne pas plus que ce qu'on a.
+ *
+ * La base refuse désormais qu'un gestionnaire accorde ADMIN, à l'invitation
+ * comme à la modification. L'écran cesse donc de le proposer — non pour
+ * protéger quoi que ce soit, la policy s'en charge, mais pour ne pas offrir un
+ * choix qui serait refusé après coup.
+ */
+function RoleField({
+  role,
+  granter,
+  onChange,
+}: {
+  role: MemberRole;
+  granter: MemberRole;
+  onChange: (next: { role: MemberRole }) => void;
+}) {
+  const offered = memberRoles.filter(r => r !== "ADMIN" || granter === "ADMIN");
   return (
     <label className="field">
       Rôle
       <select value={role} onChange={e => onChange({ role: e.target.value as MemberRole })}>
-        {memberRoles.map(r => (
+        {offered.map(r => (
           <option key={r} value={r}>
             {roleLabels[r]}
           </option>
@@ -434,7 +451,7 @@ function RoleField({ role, onChange }: { role: MemberRole; onChange: (next: { ro
 }
 
 function MemberDialog({ agent, onClose }: { agent: Agent; onClose: () => void }) {
-  const { state, run } = useApp();
+  const { state, run, memberRole } = useApp();
   const [form, setForm] = useState({
     name: agent.name,
     grade: agent.grade,
@@ -463,7 +480,7 @@ function MemberDialog({ agent, onClose }: { agent: Agent; onClose: () => void })
     <Modal open onOpenChange={open => !open && onClose()} title={agent.name} description="Fiche, équipe et rôle.">
       <RecordFields value={form} onChange={next => setForm(f => ({ ...f, ...next }))} />
       <TeamField teams={state.teams} teamId={form.teamId} onChange={next => setForm(f => ({ ...f, ...next }))} />
-      <RoleField role={form.role} onChange={next => setForm(f => ({ ...f, ...next }))} />
+      <RoleField role={form.role} granter={memberRole} onChange={next => setForm(f => ({ ...f, ...next }))} />
       <fieldset className="field">
         <legend>Qualifications</legend>
         <div className="qualification-choices">
@@ -518,7 +535,7 @@ function MemberDialog({ agent, onClose }: { agent: Agent; onClose: () => void })
 }
 
 function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { run, agent } = useApp();
+  const { run, agent, memberRole } = useApp();
   const empty = {
     email: "",
     name: "",
@@ -547,7 +564,7 @@ function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void })
         />
       </label>
       <RecordFields value={form} onChange={next => setForm(f => ({ ...f, ...next }))} />
-      <RoleField role={form.role} onChange={next => setForm(f => ({ ...f, ...next }))} />
+      <RoleField role={form.role} granter={memberRole} onChange={next => setForm(f => ({ ...f, ...next }))} />
       <Button
         className="full-width"
         onClick={async () => {

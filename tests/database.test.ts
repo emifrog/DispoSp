@@ -15,6 +15,7 @@ const MIGRATIONS = [
   "20260918180846_atomic_availability_templates.sql",
   "20260919120000_grades_fonctions_roles.sql",
   "20260919200000_desistements.sql",
+  "20260920090000_correctifs_droits_et_besoins.sql",
 ];
 const baseAuthSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
 const orgA = "10000000-0000-0000-0000-000000000001";
@@ -1946,5 +1947,170 @@ describe("Désistements sur une garde publiée", () => {
       await live.query("select action from public.audit_logs where entity='shift_withdrawal' order by occurred_at")
     ).rows;
     expect(rows).toEqual([{ action: "CREATE" }, { action: "ACCEPTED" }]);
+  });
+});
+
+// Correctifs de l'audit du 19 septembre : l'escalade par invitation et
+// l'écriture partielle d'un besoin. Les deux avaient été reproduits avant
+// correction ; ces tests les rejouent pour qu'ils ne reviennent pas.
+describe("Correctifs de droits et de besoins", () => {
+  const org = "10000000-0000-0000-0000-000000000080";
+  const team = "20000000-0000-0000-0000-000000000080";
+  const admin = "30000000-0000-0000-0000-000000000080";
+  const manager = "30000000-0000-0000-0000-000000000081";
+  const plain = "30000000-0000-0000-0000-000000000082";
+  const campaign = "40000000-0000-0000-0000-000000000080";
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+  const minima = async () => {
+    await live.exec("reset role");
+    return (
+      await live.query<{ name: string; minimum: number }>(
+        `select q.name, rq.minimum from public.staffing_requirement_qualifications rq
+         join public.qualifications q on q.id = rq.qualification_id order by q.name`,
+      )
+    ).rows;
+  };
+  const headcount = async () => {
+    await live.exec("reset role");
+    return (await live.query<{ headcount: number }>("select headcount from public.staffing_requirements")).rows;
+  };
+
+  beforeAll(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const m of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    await live.exec(`
+      insert into auth.users(id) values ('${admin}'), ('${manager}'), ('${plain}');
+      insert into public.profiles(user_id,display_name) values
+        ('${admin}','Administrateur'), ('${manager}','Gestionnaire'), ('${plain}','Agent simple');
+      insert into public.organizations(id,name) values ('${org}','Centre 80');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values
+        ('${org}','${admin}','${team}','ADMIN',true),
+        ('${org}','${manager}','${team}','GESTIONNAIRE',true),
+        ('${org}','${plain}','${team}','AGENT',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        values ('${campaign}','${org}','${team}','Novembre','2026-11-01','2026-11-01',now()-interval '1 day',now()+interval '1 day');`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("refuse à un gestionnaire d’inviter un administrateur", async () => {
+    await be(manager);
+    await expect(
+      live.query(
+        `insert into public.invitations(organization_id,team_id,email,display_name,role,invited_by)
+         values ($1,$2,'escalade@example.org','Escalade','ADMIN',$3)`,
+        [org, team, manager],
+      ),
+    ).rejects.toThrow("row-level security");
+  });
+
+  it("lui laisse inviter un agent ou un gestionnaire", async () => {
+    await be(manager);
+    for (const [email, role] of [
+      ["agent@example.org", "AGENT"],
+      ["collegue@example.org", "GESTIONNAIRE"],
+    ]) {
+      await live.query(
+        `insert into public.invitations(organization_id,team_id,email,display_name,role,invited_by)
+         values ($1,$2,$3,'Invité',$4,$5)`,
+        [org, team, email, role, manager],
+      );
+    }
+    await live.exec("reset role");
+    expect((await live.query("select id from public.invitations")).rows).toHaveLength(2);
+  });
+
+  it("l’empêche aussi de relever le rôle d’une invitation déjà posée", async () => {
+    await be(manager);
+    // Le contournement en deux temps : inviter un agent, puis le passer ADMIN.
+    await expect(
+      live.query("update public.invitations set role='ADMIN' where email='agent@example.org'"),
+    ).rejects.toThrow("row-level security");
+  });
+
+  it("laisse un administrateur inviter un administrateur", async () => {
+    await be(admin);
+    await live.query(
+      `insert into public.invitations(organization_id,team_id,email,display_name,role,invited_by)
+       values ($1,$2,'second.admin@example.org','Second Admin','ADMIN',$3)`,
+      [org, team, admin],
+    );
+    await live.exec("reset role");
+    expect(
+      (await live.query("select role from public.invitations where email='second.admin@example.org'")).rows,
+    ).toEqual([{ role: "ADMIN" }]);
+  });
+
+  it("écrit un besoin en entier, effectif et minima d’un bloc", async () => {
+    await be(manager);
+    await live.query("select public.set_staffing_requirement($1,$2,$3,$4,$5)", [
+      campaign,
+      "2026-11-01",
+      "DAY",
+      4,
+      JSON.stringify({ SAP: 2, Chef: 1 }),
+    ]);
+    expect(await headcount()).toEqual([{ headcount: 4 }]);
+    expect(await minima()).toEqual([
+      { name: "Chef", minimum: 1 },
+      { name: "SAP", minimum: 2 },
+    ]);
+  });
+
+  it("n’efface rien quand le nouveau minimum est refusé", async () => {
+    await be(manager);
+    // Un minimum supérieur à l’effectif : le déclencheur requirement_minimum
+    // refuse. Avant le correctif, l’effacement préalable avait déjà eu lieu et
+    // le créneau se retrouvait sans aucune exigence.
+    await expect(
+      live.query("select public.set_staffing_requirement($1,$2,$3,$4,$5)", [
+        campaign,
+        "2026-11-01",
+        "DAY",
+        4,
+        JSON.stringify({ SAP: 9 }),
+      ]),
+    ).rejects.toThrow();
+    expect(await minima()).toEqual([
+      { name: "Chef", minimum: 1 },
+      { name: "SAP", minimum: 2 },
+    ]);
+    expect(await headcount()).toEqual([{ headcount: 4 }]);
+  });
+
+  it("remplace l’ensemble des minima quand l’écriture aboutit", async () => {
+    await be(manager);
+    await live.query("select public.set_staffing_requirement($1,$2,$3,$4,$5)", [
+      campaign,
+      "2026-11-01",
+      "DAY",
+      5,
+      JSON.stringify({ SAP: 3 }),
+    ]);
+    expect(await minima()).toEqual([{ name: "SAP", minimum: 3 }]);
+    expect(await headcount()).toEqual([{ headcount: 5 }]);
+  });
+
+  it("refuse le besoin à un simple agent, sans rien changer", async () => {
+    await be(plain);
+    await expect(
+      live.query("select public.set_staffing_requirement($1,$2,$3,$4,$5)", [
+        campaign,
+        "2026-11-01",
+        "DAY",
+        1,
+        JSON.stringify({}),
+      ]),
+    ).rejects.toThrow();
+    expect(await headcount()).toEqual([{ headcount: 5 }]);
   });
 });

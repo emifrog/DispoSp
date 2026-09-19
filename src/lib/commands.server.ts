@@ -27,7 +27,7 @@ export async function runCommand(session: AttachedSession, command: Command): Pr
     case "publish":
       return publishShift(client, session.membership.organizationId, command);
     case "requirement":
-      return writeRequirement(client, session, command);
+      return writeRequirement(client, command);
     case "requirements":
       return writeRequirements(client, session, command);
     case "campaign":
@@ -227,45 +227,32 @@ async function publishShift(client: Client, organizationId: string, command: Of<
   await dispatch(client, organizationId);
 }
 
-async function writeRequirement(client: Client, session: AttachedSession, command: Of<"requirement">) {
-  await writeOneRequirement(client, session.membership.organizationId, command);
+async function writeRequirement(client: Client, command: Of<"requirement">) {
+  await writeOneRequirement(client, command);
 }
 
 /**
  * Le même besoin posé sur plusieurs créneaux.
  *
- * Une boucle et non une seule requête : chaque créneau passe par le même
- * chemin, donc par les mêmes policies et le même déclencheur de vérification du
- * minimum. Grouper l'écriture ferait gagner des allers-retours et perdre cette
- * garantie. Ce n'est pas atomique, et c'est acceptable ici — un besoin posé est
- * un besoin posé, et l'écran redit l'état réel après coup.
+ * Une boucle d'appels, et non un seul : chaque créneau passe par la même
+ * fonction, donc par les mêmes policies et le même déclencheur de vérification
+ * du minimum.
+ *
+ * **Chaque créneau est atomique, le lot ne l'est pas.** Un refus au dixième
+ * jour laisse les neuf premiers écrits — mais aucun d'eux à moitié. C'est la
+ * distinction qui compte : un besoin posé est un besoin posé, jamais un besoin
+ * privé de ses qualifications.
  */
 async function writeRequirements(client: Client, session: AttachedSession, command: Of<"requirements">) {
-  const organizationId = session.membership.organizationId;
-  // Le catalogue est le même pour tous les créneaux du lot : le résoudre une
-  // fois épargne une requête par créneau, soit soixante-deux sur un mois.
-  const wanted = Object.entries(command.qualifications).filter(([, minimum]) => minimum > 0);
-  const ids = wanted.length
-    ? await qualificationIds(
-        client,
-        organizationId,
-        wanted.map(([name]) => name),
-      )
-    : new Map<string, string>();
   for (const date of command.dates)
     for (const shift of command.shifts)
-      await writeOneRequirement(
-        client,
-        organizationId,
-        {
-          campaignId: command.campaignId,
-          date,
-          shift,
-          total: command.total,
-          qualifications: command.qualifications,
-        },
-        ids,
-      );
+      await writeOneRequirement(client, {
+        campaignId: command.campaignId,
+        date,
+        shift,
+        total: command.total,
+        qualifications: command.qualifications,
+      });
 }
 
 type RequirementWrite = {
@@ -276,71 +263,24 @@ type RequirementWrite = {
   qualifications: Record<string, number>;
 };
 
-async function writeOneRequirement(
-  client: Client,
-  organizationId: string,
-  command: RequirementWrite,
-  /** Catalogue déjà résolu, quand l'appelant écrit plusieurs créneaux d'affilée. */
-  resolved?: Map<string, string>,
-) {
-  const { data: existing, error: readFailure } = await client
-    .from("staffing_requirements")
-    .select("id")
-    .eq("campaign_id", command.campaignId)
-    .eq("date", command.date)
-    .eq("shift_code", command.shift)
-    .maybeSingle();
-  if (readFailure) fail(readFailure);
-
-  let requirementId = existing?.id as string | undefined;
-  if (requirementId) {
-    const { error } = await client
-      .from("staffing_requirements")
-      .update({ headcount: command.total })
-      .eq("id", requirementId);
-    if (error) fail(error);
-  } else {
-    const { data, error } = await client
-      .from("staffing_requirements")
-      .insert({
-        organization_id: organizationId,
-        campaign_id: command.campaignId,
-        date: command.date,
-        shift_code: command.shift,
-        headcount: command.total,
-      })
-      .select("id")
-      .single();
-    if (error) fail(error);
-    requirementId = data.id as string;
-  }
-
-  // Replace the minima wholesale: the screen always sends the complete set, and
-  // the headcount is already written, so check_requirement_minimum() judges the
-  // new pair rather than a half-applied one.
-  const { error: clearFailure } = await client
-    .from("staffing_requirement_qualifications")
-    .delete()
-    .eq("requirement_id", requirementId);
-  if (clearFailure) fail(clearFailure);
-  const wanted = Object.entries(command.qualifications).filter(([, minimum]) => minimum > 0);
-  if (!wanted.length) return;
-
-  const ids =
-    resolved ??
-    (await qualificationIds(
-      client,
-      organizationId,
-      wanted.map(([name]) => name),
-    ));
-  const { error } = await client.from("staffing_requirement_qualifications").insert(
-    wanted.map(([name, minimum]) => ({
-      organization_id: organizationId,
-      requirement_id: requirementId,
-      qualification_id: ids.get(name),
-      minimum,
-    })),
-  );
+/**
+ * Un besoin écrit en une transaction.
+ *
+ * L'ancienne version enchaînait trois requêtes : l'effectif, l'effacement des
+ * minima, puis leur réécriture. Un refus sur la dernière laissait le créneau
+ * **sans aucune exigence de qualification** alors que l'appelant recevait une
+ * erreur — la moitié du geste tenait, l'autre non. `set_staffing_requirement()`
+ * fait les trois d'un bloc, sous les droits de l'appelant et ses policies.
+ */
+async function writeOneRequirement(client: Client, command: RequirementWrite) {
+  const { error } = await client.rpc("set_staffing_requirement", {
+    campaign: command.campaignId,
+    on_date: command.date,
+    shift: command.shift,
+    total: command.total,
+    // L'écran envoie toujours l'ensemble complet ; la fonction remplace en bloc.
+    minima: Object.fromEntries(Object.entries(command.qualifications).filter(([, minimum]) => minimum > 0)),
+  });
   if (error) fail(error);
 }
 

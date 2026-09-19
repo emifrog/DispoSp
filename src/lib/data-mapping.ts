@@ -15,6 +15,34 @@ import {
 } from "./domain";
 import { roleLabels } from "./session";
 
+/**
+ * Une lecture qui échoue doit s'entendre.
+ *
+ * `data ?? []` seul confondait deux choses opposées : « la base n'a rien à me
+ * montrer » et « la lecture a échoué ». Une panne sur les disponibilités
+ * rendait un état à zéro disponibilité, indiscernable d'un mois où personne
+ * n'a répondu — et les exports consommaient le même état.
+ *
+ * Le détail part au journal du serveur et non à l'écran : un message de
+ * PostgREST décrit le schéma. L'appelant reçoit une phrase stable, que la
+ * frontière d'erreur transforme en « cet écran n'a pas pu s'afficher ».
+ *
+ * Une absence légitime reste une absence : les policies RLS renvoient un
+ * ensemble vide sans erreur, ce qui passe ici sans bruit.
+ *
+ * Le repli est explicite parce qu'il diffère selon la lecture : une liste
+ * absente est une liste vide, un objet absent est `null`. Le déduire aurait
+ * rendu un tableau vide là où l'appelant attend un objet.
+ */
+export const READ_FAILED = "Les données du centre n’ont pas pu être lues en entier.";
+export function taken<T>(what: string, result: { data: unknown; error: { message: string } | null }, fallback: T): T {
+  if (result.error) {
+    console.error(`Lecture impossible : ${what}`, result.error.message);
+    throw new Error(READ_FAILED);
+  }
+  return (result.data ?? fallback) as T;
+}
+
 const PARIS = "Europe/Paris";
 /** A campaign window is a timestamp in the database and a calendar day on screen. */
 export const dayIn = (timestamp: string) => formatInTimeZone(new Date(timestamp), PARIS, "yyyy-MM-dd");

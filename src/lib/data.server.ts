@@ -1,10 +1,15 @@
 import "server-only";
 import type { AppState } from "./domain";
-import { buildState, type Raw } from "./data-mapping";
+import { buildState, taken, type Raw } from "./data-mapping";
 import type { AttachedSession } from "./session";
 import { createReadClient } from "./supabase/server";
 
-const rows = <K extends keyof Raw>(result: { data: unknown }) => (result.data ?? []) as Raw[K];
+// Le garde vit dans data-mapping, pur et testable : ce module-ci est
+// « server-only » et ne s'importe pas depuis un test.
+/** Les clés de `Raw` qui portent une liste — toutes sauf l'organisation. */
+type ListKey = { [K in keyof Raw]: Raw[K] extends unknown[] ? K : never }[keyof Raw];
+const rows = <K extends ListKey>(what: string, result: { data: unknown; error: { message: string } | null }) =>
+  taken<Raw[K]>(what, result, [] as unknown as Raw[K]);
 
 // Everything below runs under RLS as the signed-in user: an agent legitimately
 // sees only their own membership and entries, a manager sees their team's.
@@ -87,23 +92,25 @@ export async function loadState(session: AttachedSession): Promise<AppState> {
   ]);
 
   const raw: Raw = {
-    organization: (organization.data ?? null) as Raw["organization"],
-    members: rows<"members">(members),
-    memberQualifications: rows<"memberQualifications">(memberQualifications),
-    campaigns: rows<"campaigns">(campaigns),
-    teams: rows<"teams">(teams),
-    notifications: rows<"notifications">(notifications),
-    qualificationCatalogue: rows<"qualificationCatalogue">(catalogue),
-    template: rows<"template">(template),
-    invitations: rows<"invitations">(invitations),
-    participants: rows<"participants">(participants),
-    entries: rows<"entries">(entries),
-    requirements: rows<"requirements">(requirements),
-    schedules: rows<"schedules">(schedules),
-    shifts: rows<"shifts">(shifts),
-    assignments: rows<"assignments">(assignments),
-    withdrawals: rows<"withdrawals">(withdrawals),
-    audit: rows<"audit">(audit),
+    // La seule lecture qui rend un objet et non une liste ; elle passe par le
+    // même contrôle, et `null` reste une réponse valable.
+    organization: taken<Raw["organization"]>("organisation", organization, null),
+    members: rows<"members">("membres", members),
+    memberQualifications: rows<"memberQualifications">("qualifications des agents", memberQualifications),
+    campaigns: rows<"campaigns">("campagnes", campaigns),
+    teams: rows<"teams">("équipes", teams),
+    notifications: rows<"notifications">("notifications", notifications),
+    qualificationCatalogue: rows<"qualificationCatalogue">("catalogue de qualifications", catalogue),
+    template: rows<"template">("disponibilité habituelle", template),
+    invitations: rows<"invitations">("invitations", invitations),
+    participants: rows<"participants">("participants aux campagnes", participants),
+    entries: rows<"entries">("disponibilités", entries),
+    requirements: rows<"requirements">("besoins", requirements),
+    schedules: rows<"schedules">("plannings", schedules),
+    shifts: rows<"shifts">("créneaux", shifts),
+    assignments: rows<"assignments">("affectations", assignments),
+    withdrawals: rows<"withdrawals">("désistements", withdrawals),
+    audit: rows<"audit">("journal d’audit", audit),
   };
   return buildState(raw, session.membership.organizationName);
 }
