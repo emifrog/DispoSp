@@ -16,6 +16,7 @@ const MIGRATIONS = [
   "20260919120000_grades_fonctions_roles.sql",
   "20260919200000_desistements.sql",
   "20260920090000_correctifs_droits_et_besoins.sql",
+  "20260920140000_invitation_compte_existant.sql",
 ];
 const baseAuthSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
 const orgA = "10000000-0000-0000-0000-000000000001";
@@ -2112,5 +2113,93 @@ describe("Correctifs de droits et de besoins", () => {
       ]),
     ).rejects.toThrow();
     expect(await headcount()).toEqual([{ headcount: 5 }]);
+  });
+});
+
+// L'invitation rattache dans les deux sens : le compte arrive après elle, ou
+// il existait déjà. Le second cas laissait l'invitation en attente pour
+// toujours, sans recours depuis l'application.
+describe("Rattachement par invitation, compte neuf ou existant", () => {
+  const org = "10000000-0000-0000-0000-000000000090";
+  const team = "20000000-0000-0000-0000-000000000090";
+  const manager = "30000000-0000-0000-0000-000000000090";
+  const fresh = "30000000-0000-0000-0000-000000000091";
+  const already = "30000000-0000-0000-0000-000000000092";
+  const unconfirmed = "30000000-0000-0000-0000-000000000093";
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+  const membership = async (user: string) => {
+    await live.exec("reset role");
+    return (await live.query<{ role: string }>("select role from public.memberships where user_id=$1", [user])).rows;
+  };
+  const pending = async () => {
+    await live.exec("reset role");
+    return (
+      await live.query<{ email: string }>(
+        "select email from public.invitations where accepted_at is null order by email",
+      )
+    ).rows;
+  };
+  const invite = async (email: string) => {
+    await be(manager);
+    await live.query(
+      `insert into public.invitations(organization_id,team_id,email,display_name,role,grade,invited_by)
+       values ($1,$2,$3,'Invité','AGENT','Sergent',$4)`,
+      [org, team, email, manager],
+    );
+  };
+
+  beforeAll(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const m of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    await live.exec(`
+      insert into auth.users(id) values ('${manager}');
+      insert into public.profiles(user_id,display_name) values ('${manager}','Gestionnaire');
+      insert into public.organizations(id,name) values ('${org}','Centre 90');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values ('${org}','${manager}','${team}','GESTIONNAIRE',true);
+      -- Un compte confirmé qui existe avant son invitation.
+      insert into auth.users(id,email,email_confirmed_at) values ('${already}','deja@example.org',now());
+      -- Un compte créé mais jamais confirmé : il ne doit pas être rattaché.
+      insert into auth.users(id,email) values ('${unconfirmed}','jamais@example.org');`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("rattache le compte neuf à la confirmation de son adresse", async () => {
+    await invite("neuf@example.org");
+    expect(await membership(fresh)).toHaveLength(0);
+    await live.exec("reset role");
+    await live.query("insert into auth.users(id,email,email_confirmed_at) values ($1,'neuf@example.org',now())", [
+      fresh,
+    ]);
+    expect(await membership(fresh)).toEqual([{ role: "AGENT" }]);
+  });
+
+  it("rattache immédiatement celui dont le compte existe déjà", async () => {
+    await invite("deja@example.org");
+    // Aucune confirmation à attendre : elle a eu lieu il y a longtemps.
+    expect(await membership(already)).toEqual([{ role: "AGENT" }]);
+    expect((await pending()).map(r => r.email)).not.toContain("deja@example.org");
+  });
+
+  it("recopie la fiche de l’invitation dans le profil, quel que soit le chemin", async () => {
+    await live.exec("reset role");
+    expect(
+      (await live.query<{ grade: string }>("select grade from public.profiles where user_id=$1", [already])).rows,
+    ).toEqual([{ grade: "Sergent" }]);
+  });
+
+  it("laisse en attente une invitation dont le compte n’est pas confirmé", async () => {
+    await invite("jamais@example.org");
+    expect(await membership(unconfirmed)).toHaveLength(0);
+    expect((await pending()).map(r => r.email)).toContain("jamais@example.org");
   });
 });

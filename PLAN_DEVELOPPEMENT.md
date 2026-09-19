@@ -91,7 +91,11 @@ Sont raccordés : saisie et validation, affectation/retrait, besoins, publicatio
 
 La migration `0004_agent_administration.sql` permet ces opérations. Le premier centre et son administrateur nécessitent toujours les scripts de provisionnement ; les agents suivants passent par une invitation enregistrée dans l’application, puis leur inscription et la confirmation de leur adresse.
 
-**À vérifier :** accepter une invitation avec un second compte sur Supabase hébergé et contrôler le rattachement, les droits et l’audit. **L’envoi automatique de l’invitation n’est pas implémenté** : l’administrateur transmet l’adresse de l’application. Les emails métier du lot 3 ne remplacent pas cette étape.
+**L’envoi de l’invitation est implémenté.** Le gestionnaire envoie, l’agent reçoit un lien d’activation, choisit son mot de passe et rejoint son centre : personne ne choisit ni ne transmet le mot de passe d’un agent. Une invitation en attente se renvoie ou s’annule. Un agent dont le compte existe déjà est rattaché à l’enregistrement même de l’invitation, sans message.
+
+Cela introduit **la première clé secrète du projet**, `SUPABASE_SECRET_KEY` : créer un compte est une opération d’administration que la clé publiable ne peut pas faire. Elle est cantonnée à un module `server-only` et ne sert qu’à l’invitation — voir le README.
+
+**À vérifier :** le parcours complet sur Supabase hébergé, avec les deux gabarits d’e-mail réglés, et le contrôle du rattachement, des droits et de l’audit.
 
 ### Lot 3 — Notifications 🟡 implémentées, réception à valider
 

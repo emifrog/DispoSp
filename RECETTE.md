@@ -32,7 +32,7 @@ C'est la partie la plus importante, et celle qu'on saute le plus volontiers.
 
 **Attendu** — L'adresse exacte du site, avec `https://`.
 
-**Sinon** — Les liens de confirmation d'adresse renverront vers `localhost` ou vers une page d'erreur. L'agent ne pourra jamais activer son compte. Ça ne se verra qu'à l'étape 1.3, trop tard pour lui.
+**Sinon** — Les liens d'activation renverront vers `localhost` ou vers une page d'erreur. L'agent ne pourra jamais activer son compte. Ça ne se verra qu'à l'étape 1.2, trop tard pour lui.
 
 ### 0.3 L'expéditeur des emails
 
@@ -40,9 +40,24 @@ C'est la partie la plus importante, et celle qu'on saute le plus volontiers.
 
 **Attendu** — Les trois présentes, le domaine au vert chez Resend.
 
-**Sinon** — Sans ces trois variables, **aucun email ne part**. L'application continue de fonctionner : les notifications s'affichent dans son centre de messages et la file d'attente se garde. Mais personne n'est prévenu de rien, et une application de disponibilités dont on n'est pas prévenu est une application qu'on oublie.
+**Sinon** — Sans ces trois variables, **aucun email métier ne part**. L'application continue de fonctionner : les notifications s'affichent dans son centre de messages et la file d'attente se garde. Mais personne n'est prévenu de rien, et une application de disponibilités dont on n'est pas prévenu est une application qu'on oublie.
 
 Un domaine non validé donne pire : les messages partent et atterrissent en indésirables.
+
+**Deux expéditeurs, à ne pas confondre.** Resend porte les messages métier — ouverture de campagne, rappel, publication, désistement. **Supabase Auth** porte l'activation d'un compte et la réinitialisation d'un mot de passe, avec son propre expéditeur et ses propres gabarits. Un domaine Resend parfait ne fera pas arriver un message d'activation.
+
+### 0.4 Les invitations et leurs gabarits
+
+**Faire** — Vérifier `SUPABASE_SECRET_KEY` sur l'hébergeur. Dans Supabase, Authentication → Email Templates, régler les deux liens :
+
+| Gabarit          | Lien                                                                         |
+| ---------------- | ---------------------------------------------------------------------------- |
+| `Invite user`    | `{{ .SiteURL }}/auth/activation?token_hash={{ .TokenHash }}&type=invite`     |
+| `Reset password` | `{{ .SiteURL }}/auth/recuperation?token_hash={{ .TokenHash }}&type=recovery` |
+
+**Attendu** — La clé présente, les deux gabarits modifiés.
+
+**Sinon** — Sans la clé, aucune invitation ne part : la ligne est enregistrée et l'écran le dit, mais aucun agent ne peut entrer. Sans les gabarits, les liens ne fonctionnent que sur l'appareil qui a fait la demande — ce qui condamne l'activation, toujours demandée par une personne et ouverte par une autre.
 
 ---
 
@@ -52,31 +67,35 @@ Si cette partie échoue, rien d'autre ne sert : personne n'entre.
 
 ### 1.1 Enregistrer une invitation
 
-**Faire** — Connecté en administrateur, écran **Agents & équipes**, bouton **Inviter un agent**. Saisir l'adresse du second compte, son grade, sa fonction et le rôle _Agent_.
+**Faire** — Connecté en administrateur, écran **Agents & équipes**, bouton **Inviter un agent**. Saisir l'adresse du second compte, son grade, sa fonction et le rôle _Agent_, puis **Envoyer l'invitation**.
 
-**L'équipe ne se demande plus** : l'invité rejoint celle de l'invitant, et la boîte le dit. Pour l'affecter ailleurs, ouvrir sa fiche une fois le compte créé.
+**L'équipe ne se demande plus** : l'invité rejoint celle de l'invitant, et la boîte le dit. Pour l'affecter ailleurs, ouvrir sa fiche une fois le compte activé.
 
-**Attendu** — L'invitation apparaît dans « Invitations en attente ».
+**Attendu** — L'invitation apparaît dans « Invitations en attente », avec **Renvoyer** et **Annuler**.
 
-**Sinon** — Si un message d'erreur en français apparaît, il vient de la base et dit la vraie raison. S'il est générique (« La modification n'a pas pu être enregistrée »), la migration `0004` n'est peut-être pas appliquée.
+**Sinon** — Le message « L'invitation est enregistrée, mais le message n'a pas pu partir » signifie que `SUPABASE_SECRET_KEY` manque sur l'hébergeur. La ligne est bien écrite : ajoutez la clé, puis **Renvoyer**. Un autre message d'erreur en français vient de la base et dit la vraie raison.
 
-### 1.2 Créer le compte invité
+**À vérifier aussi** — Un gestionnaire, connecté comme tel, ne doit **pas** pouvoir choisir le rôle _Administrateur_ dans cette liste. C'est une règle de la base autant que de l'écran.
 
-**Faire** — Transmettre l'adresse du site à l'invité. Depuis l'autre messagerie, créer un compte **avec exactement l'adresse invitée**.
+### 1.2 Activer le compte
 
-**Attendu** — Le compte se crée, un email de confirmation arrive.
+**Faire** — Depuis l'autre messagerie, ouvrir le message « Activer mon compte », suivre le lien, choisir un mot de passe.
 
-**Sinon** — Si l'email de confirmation n'arrive pas, regarder les indésirables, puis les logs d'authentification Supabase. C'est Supabase qui envoie celui-là, pas Resend.
+**Attendu** — L'agent arrive connecté sur son accueil, dans son centre, avec son rôle.
 
-**À vérifier aussi** — Essayez une fois avec une adresse **non invitée**. Le compte doit se créer mais rester sans centre, avec l'écran « Compte en attente de rattachement ». C'est voulu : personne ne se rattache seul.
+**Sinon** — Un retour vers `localhost` signifie que l'étape 0.2 est fausse. Un écran « Lien d'activation expiré » alors que le message vient d'arriver signifie que le gabarit **Invite user** n'est pas réglé sur `{{ .SiteURL }}/auth/activation?token_hash={{ .TokenHash }}&type=invite` : le lien par défaut ne fonctionne que sur l'appareil qui a fait la demande — c'est-à-dire celui du gestionnaire, jamais celui de l'agent.
 
-### 1.3 Confirmer l'adresse
+**Ce qu'il ne faut pas voir** — À aucun moment le gestionnaire ne voit, ne choisit ni ne transmet le mot de passe de l'agent. Si un écran vous le propose, arrêtez et signalez-le.
 
-**Faire** — Cliquer le lien de confirmation.
+### 1.3 Le cas de l'agent qui a déjà un compte
 
-**Attendu** — Retour sur le site public, connecté.
+**Faire** — Inviter une adresse qui possède **déjà** un compte DispoSP confirmé, par exemple un agent retiré du centre puis réinvité.
 
-**Sinon** — Un retour vers `localhost` ou une erreur signifie que l'étape 0.2 est fausse.
+**Attendu** — Le rattachement est **immédiat** : l'agent apparaît dans la liste sans passer par « en attente », et aucun message ne part. Il se connecte comme d'habitude.
+
+**Pourquoi** — Un compte déjà confirmé ne repasse jamais par une confirmation d'adresse. Sans ce second chemin, son invitation resterait en attente indéfiniment, sans aucun recours depuis l'application.
+
+**À vérifier aussi** — Inviter une adresse dont le compte existe mais **n'a jamais été confirmé** : l'invitation doit rester en attente. Une adresse non confirmée ne prend pas de place.
 
 ### 1.4 Le rattachement et les droits
 
@@ -303,6 +322,7 @@ Prévoir où regarder quand quelque chose ne va pas : les logs de l'hébergeur, 
 | 0.1   |      |     |          |          |
 | 0.2   |      |     |          |          |
 | 0.3   |      |     |          |          |
+| 0.4   |      |     |          |          |
 | 1.1   |      |     |          |          |
 | 1.2   |      |     |          |          |
 | 1.3   |      |     |          |          |

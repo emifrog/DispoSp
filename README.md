@@ -18,7 +18,7 @@ L'application demande un compte. Sans session, toute adresse renvoie vers l'écr
 ## Parcours livrés
 
 - Connexion par mot de passe, réinitialisation en cas d’oubli, authentification unique SAML par domaine et déconnexion ; lecture et écriture des données Supabase selon les droits du compte.
-- **L’application ne crée pas de compte.** Elle n’appelle ni `signUp`, ni `createUser`, ni `inviteUserByEmail` : enregistrer une invitation n’écrit qu’une ligne métier, et le compte d’authentification doit exister par ailleurs. Un agent invité ne peut donc pas entrer par ses propres moyens. C’est un manque, pas une décision — voir les limites.
+- Arrivée d’un agent : le gestionnaire renseigne la fiche et envoie l’invitation, l’agent reçoit un message d’activation, choisit son mot de passe et rejoint son centre avec le rôle prévu. **Personne ne choisit ni ne transmet le mot de passe d’un agent.** L’invitation en attente se renvoie ou s’annule.
 - Accueil agent : campagne en cours, avancement de la saisie, prochaines gardes publiées et accès rapides. La racine aiguille selon le rôle — accueil pour un agent, tableau de bord pour qui encadre.
 - Tableau de bord distinguant la couverture potentielle (disponibilités validées) de la couverture planifiée (affectations du brouillon). Indicateurs déficit, limite et couvert, plus un état « Besoins non définis ».
 - Calendrier agent : cinq états, sélection multiple, saisie par période ou jours de semaine, commentaire, remise à non renseigné.
@@ -59,7 +59,19 @@ Voir `DECISIONS_FONCTIONNELLES.md`. Jour 8 h–20 h, Nuit 20 h–8 h le lendemai
 
 ## Configuration et fonctionnement Supabase
 
-Le projet de développement dédié est désigné : ses coordonnées sont dans `.env`, qui n'est pas versionné. En mode connecté, l'URL et la clé publiable sont incluses dans le paquet livré au navigateur — c'est le fonctionnement prévu de ces deux valeurs, la clé publiable ne donne accès qu'à ce que les policies RLS autorisent. Aucune clé secrète n'est nécessaire côté client.
+Le projet de développement dédié est désigné : ses coordonnées sont dans `.env`, qui n'est pas versionné. En mode connecté, l'URL et la clé publiable sont incluses dans le paquet livré au navigateur — c'est le fonctionnement prévu de ces deux valeurs, la clé publiable ne donne accès qu'à ce que les policies RLS autorisent. **Aucune clé secrète ne descend dans le navigateur.**
+
+### La clé secrète, et pourquoi elle existe
+
+Le projet en a désormais une, `SUPABASE_SECRET_KEY`, et une seule raison de l'avoir : **créer le compte d'un agent invité**. C'est une opération d'administration, que la clé publiable ne peut pas faire par construction. Sans elle, il faudrait soit ouvrir l'inscription à tout venant, soit qu'un tiers choisisse le mot de passe d'un agent — les deux ont été écartés.
+
+Cette clé passe outre toutes les policies RLS. Trois précautions la cantonnent, et elles se tiennent ensemble :
+
+- Elle ne vit que dans [`admin.server.ts`](src/lib/supabase/admin.server.ts), marqué `server-only` : le module refuse de se compiler dans un paquet navigateur.
+- Pas de préfixe `NEXT_PUBLIC_`, sans quoi elle partirait dans ce paquet.
+- Le client qu'elle ouvre ne sert **qu'à** `auth.admin.inviteUserByEmail`. Il ne lit ni n'écrit aucune table. Une seule lecture faite avec lui contournerait le cloisonnement entre centres sans que rien ne le signale.
+
+Elle est facultative. Sans elle, l'invitation enregistre toujours qui est attendu ; l'agent ne reçoit simplement pas son message, et le gestionnaire le lit à l'écran plutôt que de le découvrir plus tard.
 
 ### Migrations
 
@@ -79,6 +91,8 @@ Le schéma est découpé en migrations successives, à appliquer dans l'ordre et
 
 | `supabase/migrations/20260919120000_grades_fonctions_roles.sql` | Trois rôles au lieu de quatre, séparation du grade et de la fonction | Appliquée — confirmation du porteur du projet |
 | `supabase/migrations/20260919200000_desistements.sql` | Désistements sur une garde publiée, leurs notifications et leur audit | Appliquée — confirmation du porteur du projet |
+| `supabase/migrations/20260920090000_correctifs_droits_et_besoins.sql` | Ferme l'escalade par invitation ; rend l'écriture d'un besoin atomique | Appliquée — confirmation du porteur du projet |
+| `supabase/migrations/20260920140000_invitation_compte_existant.sql` | Rattache un invité dont le compte existe déjà | **À appliquer** |
 
 Les deux migrations du 18 septembre n’ajoutent que des fonctions : `public.create_campaign()` pour la première, `public.save_availability_template()` et `public.apply_availability_template()` pour la seconde. Elles ne modifient aucune donnée existante.
 
@@ -166,7 +180,11 @@ Ces deux scripts sont des gabarits : les tests les exécutent sur PostgreSQL en 
 
 Le premier script crée l’organisation et rattache le premier administrateur. Sans ce rattachement, l’application affiche un écran explicatif. Le script refuse un compte inexistant, non confirmé ou déjà rattaché. Une fois ce socle créé, les écrans d’administration permettent de gérer les équipes, les fiches, les rôles et les qualifications selon les droits du compte.
 
-Pour les agents suivants, enregistrer une invitation depuis l’application, transmettre son adresse à l’agent, puis lui faire créer son compte et confirmer son email. Le rattachement repose sur l’adresse invitée. Vérifier ce parcours avec un second compte sur le projet hébergé ; configurer l’adresse publique dans Supabase → Authentication → URL Configuration.
+Pour les agents suivants, envoyer une invitation depuis l’application : l’agent reçoit un message d’activation, choisit son mot de passe et rejoint le centre avec le rôle prévu. Le rattachement repose sur l’adresse invitée et se fait en base, jamais depuis le navigateur.
+
+Deux chemins, et la base les tient tous les deux. Un compte neuf est rattaché à la confirmation de son adresse. Un compte **qui existe déjà** — agent retiré puis réinvité, ou venu d’un autre centre — est rattaché à l’enregistrement même de l’invitation : il ne repassera jamais par une confirmation, et son invitation serait autrement restée en attente pour toujours. Dans ce cas aucun message ne part, et l’écran le dit.
+
+Configurer l’adresse publique dans Supabase → Authentication → URL Configuration, et les deux gabarits d’e-mail ci-dessus.
 
 Le schéma est testé avec PostgreSQL embarqué via PGlite et un schéma Auth simulé. Cela ne remplace pas une vérification de l’intégration Supabase hébergée. Les fonctions `security definer` couvrent notamment les lectures de droits, la publication, les déclencheurs d’administration et d’audit, ainsi que les opérations de notifications. Les fonctions exposées pour les rappels et l’envoi des emails contrôlent les droits du compte ; aucune clé de service Supabase n’est nécessaire dans le navigateur.
 
@@ -225,7 +243,14 @@ Les onze migrations (`0001` à `0007`, puis les quatre migrations horodatées) s
 - Déployer la version qui appelle `public.create_campaign()`, `public.save_availability_template()` et `public.apply_availability_template()`, puis vérifier ces parcours en mode connecté : les migrations sont appliquées, le comportement hébergé reste à observer.
 - Finaliser la mise en service : configuration de l’expéditeur, suivi des échecs d’envoi, sauvegardes/restauration et règles de conservation des données.
 
-L’envoi Resend traite des lots de 50 notifications après certaines commandes. Il n’existe ni rappel planifié ni traitement autonome de toute la file en attente. L’envoi automatique des invitations reste à développer.
+L’envoi Resend traite des lots de 50 notifications après certaines commandes. Il n’existe ni rappel planifié ni traitement autonome de toute la file en attente.
+
+**Les messages d’activation et de réinitialisation ne passent pas par Resend** : ils sont envoyés par Supabase Auth, avec son propre expéditeur. Deux gabarits sont à régler dans Authentication → Email Templates, faute de quoi les liens ne fonctionnent que sur l’appareil qui a fait la demande — or ce n’est jamais le cas pour une activation, demandée par le gestionnaire et ouverte par l’agent :
+
+| Gabarit          | Lien à mettre                                                                |
+| ---------------- | ---------------------------------------------------------------------------- |
+| `Invite user`    | `{{ .SiteURL }}/auth/activation?token_hash={{ .TokenHash }}&type=invite`     |
+| `Reset password` | `{{ .SiteURL }}/auth/recuperation?token_hash={{ .TokenHash }}&type=recovery` |
 
 **L’authentification unique est écrite mais pas joignable.** `signInWithSSO()` route sur le domaine de l’adresse saisie ; tant qu’aucun fournisseur SAML n’est déclaré côté Supabase — ce qui suppose un plan payant et la CLI — l’écran affiche l’explication et renvoie au mot de passe.
 

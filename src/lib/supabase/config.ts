@@ -33,6 +33,8 @@ export const publicPaths = [
   SIGN_OUT_PATH,
   "/nouveau-mot-de-passe",
   "/auth/recuperation",
+  "/activation",
+  "/auth/activation",
   "/manifest.webmanifest",
   "/sw.js",
   "/hors-ligne",

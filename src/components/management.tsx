@@ -12,6 +12,7 @@ import {
   Megaphone,
   Plus,
   Search,
+  Send,
   Settings2,
   ShieldCheck,
   UnlockKeyhole,
@@ -219,7 +220,7 @@ export function Agents() {
       {administering && state.invitations.length > 0 && (
         <Panel
           title="Invitations en attente"
-          subtitle="L’agent crée son compte lui-même ; le rattachement se fait à la confirmation de son adresse."
+          subtitle="L’agent a reçu un lien d’activation. Il rejoint le centre dès qu’il a choisi son mot de passe."
         >
           <div className="invitation-list">
             {state.invitations.map(invitation => (
@@ -230,6 +231,16 @@ export function Agents() {
                     {invitation.email} · {invitation.team} · {roleLabels[invitation.role] ?? invitation.role}
                   </small>
                 </span>
+                {/* Renvoyer plutôt que réinviter : la ligne existe déjà, seul le
+                    message repart. Un lien d'activation ne sert qu'une fois. */}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => run({ type: "resendInvitation", invitationId: invitation.id })}
+                >
+                  <Send size={15} />
+                  Renvoyer
+                </Button>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -551,7 +562,7 @@ function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void })
       open={open}
       onOpenChange={next => !next && onClose()}
       title="Inviter un agent"
-      description={`L’agent crée son propre compte et rejoint votre équipe, ${agent?.team ?? "la vôtre"}. Le rattachement se fait à la confirmation de son adresse.`}
+      description={`Il recevra un message pour activer son compte et choisir son mot de passe, puis rejoindra votre équipe, ${agent?.team ?? "la vôtre"}. Vous ne choisissez pas son mot de passe, et personne ne vous le montrera.`}
     >
       <label className="field">
         Adresse électronique
@@ -574,12 +585,12 @@ function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void })
           }
         }}
       >
-        <UserPlus size={16} />
-        Enregistrer l’invitation
+        <Send size={16} />
+        Envoyer l’invitation
       </Button>
       <p className="muted small">
-        Transmettez-lui l’adresse de l’application : il s’inscrit avec cette même adresse électronique. L’envoi
-        automatique arrivera avec le service de notifications.
+        <ShieldCheck size={15} /> Si l’agent possède déjà un compte DispoSP, il rejoint le centre immédiatement et aucun
+        message ne part : il se connecte comme d’habitude.
       </p>
     </Modal>
   );

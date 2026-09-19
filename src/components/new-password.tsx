@@ -23,7 +23,39 @@ const schema = z
     message: "Les deux saisies diffèrent.",
   });
 
-export function NewPasswordForm() {
+/**
+ * Deux portes, une seule serrure.
+ *
+ * Réinitialiser un mot de passe oublié et activer un compte invité sont le même
+ * geste — arriver par un lien à usage unique, puis choisir un mot de passe.
+ * Seuls les mots changent, et ils comptent : on ne dit pas « nouveau mot de
+ * passe » à quelqu'un qui n'en a jamais eu.
+ */
+const wording = {
+  reset: {
+    title: "Nouveau mot de passe",
+    intro: "Choisissez un mot de passe que vous n’utilisez nulle part ailleurs.",
+    field: "Nouveau mot de passe",
+    submit: "Enregistrer et me connecter",
+    expiredTitle: "Lien expiré",
+    expiredBody:
+      "Ce lien de réinitialisation n’est plus valable. Ils ne servent qu’une fois et expirent au bout d’une heure.",
+    expiredHelp: "Demandez-en un nouveau depuis l’écran de connexion, en choisissant « Mot de passe oublié ».",
+  },
+  activation: {
+    title: "Activer mon compte",
+    intro:
+      "Votre centre vous a inscrit. Choisissez le mot de passe qui vous servira à vous connecter — personne d’autre ne le connaîtra.",
+    field: "Mot de passe",
+    submit: "Activer mon compte",
+    expiredTitle: "Lien d’activation expiré",
+    expiredBody: "Ce lien ne sert qu’une fois, et il a une durée de validité limitée.",
+    expiredHelp: "Demandez à votre encadrement de vous renvoyer l’invitation depuis l’écran Agents & équipes.",
+  },
+} as const;
+
+export function NewPasswordForm({ variant = "reset" }: { variant?: keyof typeof wording }) {
+  const words = wording[variant];
   const router = useRouter();
   const [visible, setVisible] = useState(false);
   const [failure, setFailure] = useState("");
@@ -82,14 +114,11 @@ export function NewPasswordForm() {
         </div>
         {status === "invalid" ? (
           <>
-            <h1>Lien expiré</h1>
-            <p className="muted">
-              Ce lien de réinitialisation n’est plus valable. Ils ne servent qu’une fois et expirent au bout d’une
-              heure.
-            </p>
+            <h1>{words.expiredTitle}</h1>
+            <p className="muted">{words.expiredBody}</p>
             <div className="info-card horizontal">
               <CircleAlert size={22} />
-              <p>Demandez-en un nouveau depuis l’écran de connexion, en choisissant « Mot de passe oublié ».</p>
+              <p>{words.expiredHelp}</p>
             </div>
             <Button className="full-width" asChild>
               <Link href={SIGN_IN_PATH}>Revenir à la connexion</Link>
@@ -97,13 +126,13 @@ export function NewPasswordForm() {
           </>
         ) : (
           <>
-            <h1>Nouveau mot de passe</h1>
-            <p className="muted">Choisissez un mot de passe que vous n’utilisez nulle part ailleurs.</p>
+            <h1>{words.title}</h1>
+            <p className="muted">{words.intro}</p>
             <form noValidate onSubmit={form.handleSubmit(submit)}>
               {/* Association explicite : le bouton d'affichage, s'il était
                   dans le label, entrerait dans le nom accessible du champ. */}
               <div className="field">
-                <label htmlFor="new-password">Nouveau mot de passe</label>
+                <label htmlFor="new-password">{words.field}</label>
                 <span className="input-affix">
                   <Lock size={17} />
                   <input
@@ -153,7 +182,7 @@ export function NewPasswordForm() {
                   ? "Vérification du lien…"
                   : form.formState.isSubmitting
                     ? "Enregistrement…"
-                    : "Enregistrer et me connecter"}
+                    : words.submit}
               </Button>
             </form>
           </>

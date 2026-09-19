@@ -417,6 +417,7 @@ export const commandSchema = z.discriminatedUnion("type", [
     phone: z.string().trim().max(30),
     role: memberRoleSchema,
   }),
+  z.object({ type: z.literal("resendInvitation"), invitationId: id }),
   z.object({ type: z.literal("revokeInvitation"), invitationId: id }),
   // Un désistement porte sur le créneau, pas sur la campagne : c'est la garde
   // publiée qu'on ne peut plus tenir.
@@ -486,6 +487,7 @@ export const commandLabels: Record<Command["type"], string> = {
   settings: "Horaires par défaut modifiés",
   member: "Fiche agent mise à jour",
   invite: "Invitation envoyée",
+  resendInvitation: "Invitation renvoyée",
   revokeInvitation: "Invitation annulée",
   team: "Équipe enregistrée",
   readNotifications: "Notifications marquées comme lues",
