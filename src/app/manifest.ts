@@ -20,7 +20,7 @@ export default function manifest(): MetadataRoute.Manifest {
     // Le fond du premier écran, pour qu'il n'y ait pas d'éclair blanc au
     // lancement ; la teinte est celle de la barre d'état.
     background_color: "#f6f8fc",
-    theme_color: "#092b4e",
+    theme_color: "#08284a",
     // Surtout pas de verrouillage : la matrice mensuelle se lit en paysage.
     orientation: "any",
     categories: ["productivity", "utilities"],

@@ -13,6 +13,7 @@ const MIGRATIONS = [
   "0007_availability_templates.sql",
   "20260918151529_atomic_campaign_creation.sql",
   "20260918180846_atomic_availability_templates.sql",
+  "20260919120000_grades_fonctions_roles.sql",
 ];
 const baseAuthSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
 const orgA = "10000000-0000-0000-0000-000000000001";
@@ -41,7 +42,7 @@ beforeAll(async () => {
     insert into public.profiles values ('${agentA}', 'Agent A'), ('${agentB}', 'Agent B'), ('${managerA}', 'Responsable A');
     insert into public.organizations(id,name) values ('${orgA}','Centre A'), ('${orgB}','Centre B');
     insert into public.teams(id,organization_id,name) values ('${teamA}','${orgA}','Alpha'), ('${teamB}','${orgB}','Bravo');
-    insert into public.memberships values ('${orgA}','${agentA}','${teamA}','AGENT',true), ('${orgB}','${agentB}','${teamB}','AGENT',true), ('${orgA}','${managerA}','${teamA}','RESPONSABLE',true);
+    insert into public.memberships values ('${orgA}','${agentA}','${teamA}','AGENT',true), ('${orgB}','${agentB}','${teamB}','AGENT',true), ('${orgA}','${managerA}','${teamA}','GESTIONNAIRE',true);
     insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at) values ('${campaignA}','${orgA}','${teamA}','Octobre','2026-10-01','2026-10-02',now()-interval '1 day',now()+interval '1 day'), ('${campaignB}','${orgB}','${teamB}','Octobre','2026-10-01','2026-10-02',now()-interval '1 day',now()+interval '1 day');
     insert into public.campaign_participants(organization_id,campaign_id,user_id) values ('${orgA}','${campaignA}','${agentA}'), ('${orgB}','${campaignB}','${agentB}');`);
 }, 30000);
@@ -309,11 +310,15 @@ describe("Planning, publication et audit", () => {
     ).rejects.toThrow();
   });
 
-  it("réserve le journal d’audit aux profils autorisés", async () => {
+  it("réserve le journal d’audit aux profils autorisés, centre par centre", async () => {
+    // Simple agent de ce centre : rien, quel que soit le centre.
     await asUser(chief);
     expect((await db.query("select * from public.audit_logs")).rows).toHaveLength(0);
+    // Gestionnaire d'un AUTRE centre. Il lit bien un journal — le sien — mais
+    // pas une ligne de celui-ci : c'est le cloisonnement qui est testé ici, et
+    // non plus l'ancien rôle RESPONSABLE, qui ne lisait aucun journal du tout.
     await asUser(managerA);
-    expect((await db.query("select * from public.audit_logs")).rows).toHaveLength(0);
+    expect((await db.query("select * from public.audit_logs where organization_id=$1", [orgC])).rows).toHaveLength(0);
     await asUser(managerC);
     expect((await db.query("select * from public.audit_logs")).rows.length).toBeGreaterThan(0);
   });
@@ -803,13 +808,13 @@ describe("Administration des agents ouverte par 0004", () => {
     ).toEqual([{ active: false }]);
     await be(admin);
     await live.query(
-      "update public.memberships set role='RESPONSABLE', active=true where organization_id=$1 and user_id=$2",
+      "update public.memberships set role='GESTIONNAIRE', active=true where organization_id=$1 and user_id=$2",
       [org, agent],
     );
     expect(
       (await live.query("select role from public.memberships where organization_id=$1 and user_id=$2", [org, agent]))
         .rows,
-    ).toEqual([{ role: "RESPONSABLE" }]);
+    ).toEqual([{ role: "GESTIONNAIRE" }]);
   });
 
   it("refuse qu’un administrateur se désactive lui-même", async () => {
@@ -912,7 +917,7 @@ describe("Notifications ouvertes par 0005", () => {
       insert into public.organizations(id,name) values ('${org}','Centre 0005');
       insert into public.teams(id,organization_id,name) values ('${team}','${org}','Foxtrot');
       insert into public.memberships values
-        ('${org}','${manager}','${team}','RESPONSABLE',true),
+        ('${org}','${manager}','${team}','GESTIONNAIRE',true),
         ('${org}','${agent}','${team}','AGENT',true),
         ('${org}','${other}','${team}','AGENT',true);`);
     await be(manager);
@@ -991,7 +996,7 @@ describe("File d’envoi ouverte par 0006", () => {
       insert into public.organizations(id,name) values ('${org}','Centre 0006');
       insert into public.teams(id,organization_id,name) values ('${team}','${org}','Golf');
       insert into public.memberships values
-        ('${org}','${manager}','${team}','RESPONSABLE',true),
+        ('${org}','${manager}','${team}','GESTIONNAIRE',true),
         ('${org}','${agent}','${team}','AGENT',true);`);
     await be(manager);
     await live.query(
@@ -1229,12 +1234,12 @@ describe("Création atomique d’une campagne", () => {
       insert into public.organizations(id,name,day_start,night_start) values ('${org}','Centre transaction',7,19), ('${foreignOrg}','Autre centre',8,20);
       insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha'), ('${otherTeam}','${org}','Bravo'), ('${foreignTeam}','${foreignOrg}','Charlie');
       insert into public.memberships values
-        ('${org}','${manager}','${team}','RESPONSABLE',true),
+        ('${org}','${manager}','${team}','GESTIONNAIRE',true),
         ('${org}','${agent}','${team}','AGENT',true),
-        ('${org}','${inactive}','${team}','RESPONSABLE',false),
+        ('${org}','${inactive}','${team}','GESTIONNAIRE',false),
         ('${org}','${otherAgent}','${otherTeam}','AGENT',true),
         ('${org}','${admin}','${otherTeam}','ADMIN',true),
-        ('${foreignOrg}','${foreignManager}','${foreignTeam}','RESPONSABLE',true);
+        ('${foreignOrg}','${foreignManager}','${foreignTeam}','GESTIONNAIRE',true);
     `);
   }, 30000);
   afterAll(async () => {
@@ -1327,10 +1332,20 @@ describe("Création atomique d’une campagne", () => {
     ).toEqual([{ count: 62 }]);
   });
 
+  // Ce que la suppression de RESPONSABLE change, affirmé plutôt que sous-entendu :
+  // un gestionnaire n'est plus tenu à son équipe, il gère tout son centre.
+  it("laisse un gestionnaire créer une campagne pour une autre équipe de son centre", async () => {
+    await be(manager);
+    const id = await create({ team: otherTeam });
+    expect((await live.query("select team_id from public.schedules where campaign_id=$1", [id])).rows).toEqual([
+      { team_id: otherTeam },
+    ]);
+  });
+
+  // Le cas [manager, org, otherTeam] a quitté cette liste pour le test ci-dessus.
   it.each([
     [agent, org, team],
     [inactive, org, team],
-    [manager, org, otherTeam],
     [manager, foreignOrg, foreignTeam],
     [foreignManager, org, team],
     [admin, foreignOrg, foreignTeam],
@@ -1646,7 +1661,7 @@ describe("Retrait d’un compte", () => {
   const agent = "30000000-0000-0000-0000-000000000072";
   const campaign = "40000000-0000-0000-0000-000000000070";
   const script = readFileSync(new URL("../supabase/provisioning/retirer-un-compte.sql", import.meta.url), "utf8");
-  const remove = (email: string) => live.exec(script.replace("'demo@dispo06.fr'", `'${email}'`));
+  const remove = (email: string) => live.exec(script.replace("'agent.qui.part@exemple.fr'", `'${email}'`));
   let live: PGlite;
 
   beforeEach(async () => {

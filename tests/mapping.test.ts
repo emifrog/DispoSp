@@ -157,6 +157,7 @@ describe("Construction de l’état depuis la base", () => {
       name: "Chef Un",
       team: "Section Test",
       grade: "Sergent",
+      fonction: "",
       matricule: "SP-7",
       phone: "06 24 18 00 00",
       qualifications: ["Chef", "SAP"],

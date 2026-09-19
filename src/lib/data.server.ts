@@ -28,7 +28,7 @@ export async function loadState(session: AttachedSession): Promise<AppState> {
     // them to bring anyone back. buildState keeps the two rosters apart.
     supabase
       .from("memberships")
-      .select("user_id, role, team_id, active, profiles(display_name, grade, matricule, phone), teams(name)")
+      .select("user_id, role, team_id, active, profiles(display_name, grade, fonction, matricule, phone), teams(name)")
       .eq("organization_id", organizationId),
     supabase.from("user_qualifications").select("user_id, qualifications(name)").eq("organization_id", organizationId),
     supabase

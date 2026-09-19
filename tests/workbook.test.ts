@@ -28,13 +28,15 @@ describe("Classeur Excel", () => {
   it("reprend la matrice telle que l’écran la montre", () => {
     const sheet = book.getWorksheet("Disponibilités");
     expect(sheet?.rowCount).toBe(agents.length + 1);
-    // Cinq colonnes d’identité, puis un jour par colonne.
-    expect(sheet?.columnCount).toBe(5 + days.length);
+    // Six colonnes d’identité — agent, équipe, grade, fonction, matricule,
+    // réponse — puis un jour par colonne.
+    expect(sheet?.columnCount).toBe(6 + days.length);
     const first = agents[0];
     expect(cell("Disponibilités", 2, 1)).toBe(first.name);
-    expect(cell("Disponibilités", 2, 5)).toBe(isValidated(state, campaign.id, first.id) ? "Validée" : "À valider");
+    expect(cell("Disponibilités", 2, 4)).toBe(first.fonction);
+    expect(cell("Disponibilités", 2, 6)).toBe(isValidated(state, campaign.id, first.id) ? "Validée" : "À valider");
     const entry = state.entries[entryKey(campaign.id, first.id, days[0])];
-    expect(cell("Disponibilités", 2, 6)).toBe(entry ? labels[entry.type].short : "?");
+    expect(cell("Disponibilités", 2, 7)).toBe(entry ? labels[entry.type].short : "?");
   });
 
   it("compte chaque état une fois par jour dans la synthèse", () => {
@@ -50,7 +52,7 @@ describe("Classeur Excel", () => {
     const sheet = book.getWorksheet("Affectations");
     const states = new Set<string>();
     sheet?.eachRow((row, index) => {
-      if (index > 1) states.add(String(row.getCell(6).value));
+      if (index > 1) states.add(String(row.getCell(7).value));
     });
     // Le jeu de démonstration ne publie rien : tout doit se lire « Brouillon ».
     expect([...states]).toEqual(["Brouillon"]);

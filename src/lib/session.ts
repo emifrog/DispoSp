@@ -19,7 +19,6 @@ export type AttachedSession = Session & { membership: Membership };
 
 export const roleLabels: Record<string, string> = {
   AGENT: "Agent",
-  RESPONSABLE: "Responsable d’équipe",
   GESTIONNAIRE: "Gestionnaire",
   ADMIN: "Administrateur",
 };

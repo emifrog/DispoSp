@@ -343,6 +343,7 @@ async function writeMember(client: Client, session: AttachedSession, command: Of
     .update({
       display_name: command.name,
       grade: command.grade || null,
+      fonction: command.fonction || null,
       matricule: command.matricule || null,
       phone: command.phone || null,
     })
@@ -400,13 +401,18 @@ async function writeInvitation(client: Client, session: AttachedSession, command
   // No service key: the invitation only records who is expected. The account is
   // created by the agent, and 0004's trigger attaches it once the address is
   // confirmed — an unconfirmed address never takes a seat.
+  //
+  // L'équipe ne se demande plus à l'invitation, mais la colonne reste
+  // obligatoire : l'invité rejoint celle de l'invitant. Un gestionnaire qui
+  // veut l'affecter ailleurs le fait depuis sa fiche, une fois le compte créé.
   const { error } = await client.from("invitations").insert({
     organization_id: session.membership.organizationId,
-    team_id: command.teamId,
+    team_id: session.membership.teamId,
     email: command.email,
     display_name: command.name,
     role: command.role,
     grade: command.grade || null,
+    fonction: command.fonction || null,
     matricule: command.matricule || null,
     phone: command.phone || null,
     invited_by: session.userId,

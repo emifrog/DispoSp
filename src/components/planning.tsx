@@ -63,7 +63,7 @@ export function Planning() {
   const candidates = pool.filter(
     a =>
       !assignedIds.includes(a.id) &&
-      `${a.name} ${a.grade} ${a.qualifications.join(" ")}`
+      `${a.name} ${a.grade} ${a.fonction} ${a.qualifications.join(" ")}`
         .toLocaleLowerCase("fr")
         .includes(search.toLocaleLowerCase("fr")),
   );
@@ -187,7 +187,7 @@ export function Planning() {
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Nom, grade, qualification…"
+              placeholder="Nom, grade, fonction, qualification…"
               aria-label="Rechercher un agent disponible"
             />
           </label>

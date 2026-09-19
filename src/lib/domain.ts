@@ -5,12 +5,37 @@ export const availabilitySchema = z.enum(["DAY", "NIGHT", "FULL_24H", "UNAVAILAB
 export type Availability = z.infer<typeof availabilitySchema>;
 export type Shift = "DAY" | "NIGHT";
 export type Role = "AGENT" | "MANAGER";
-// The four roles of §2, as the database spells them. The Actor above keeps its
-// two, because the business rules only ever ask « does this person manage? ».
-export const memberRoles = ["AGENT", "RESPONSABLE", "GESTIONNAIRE", "ADMIN"] as const;
+// Les trois rôles, tels que la base les écrit. L'Actor ci-dessus n'en garde que
+// deux, parce que les règles métier ne demandent jamais que « cette personne
+// encadre-t-elle ? ». RESPONSABLE a disparu : un centre n'a pas de responsable
+// d'équipe distinct du gestionnaire.
+export const memberRoles = ["AGENT", "GESTIONNAIRE", "ADMIN"] as const;
 export const memberRoleSchema = z.enum(memberRoles);
 export type MemberRole = (typeof memberRoles)[number];
 export const administers = (role: MemberRole) => role === "GESTIONNAIRE" || role === "ADMIN";
+/** Les grades proposés à la saisie, du plus bas au plus élevé. La base, elle,
+    accepte n'importe quel texte : cette liste guide l'écran sans interdire une
+    valeur déjà enregistrée qui n'y figurerait pas. */
+export const grades = [
+  "Sapeur",
+  "Caporal",
+  "Caporal-Chef",
+  "Sergent",
+  "Sergent-Chef",
+  "Adjudant",
+  "Adjudant-Chef",
+  "Lieutenant",
+] as const;
+/** Les fonctions proposées à la saisie. Elle n'existe que côté écran : la base
+    accepte n'importe quel texte, donc la compléter ne demande aucune migration. */
+export const fonctions = [
+  "Équipier",
+  "Chef d'équipe",
+  "Chef d'agrès une équipe",
+  "Chef d'agrès tout engin",
+  "Conducteur",
+  "Chef de groupe",
+] as const;
 // A centre that has not filled the rank in yet still gets an honest line. This is
 // a display fallback and stays one: the stored grade may legitimately be empty.
 export const gradeLabel = (agent: { grade: string; role: MemberRole }) => agent.grade || roleLabels[agent.role];
@@ -44,6 +69,9 @@ export const stateSchema = z.object({
       name: z.string(),
       team: z.string(),
       grade: z.string(),
+      /** La fonction tenue sur un engin, distincte du grade. Par défaut vide :
+          une fiche saisie avant la séparation des deux n'a que son grade. */
+      fonction: z.string().default(""),
       /** Empty when unknown: §3 makes both optional on the agent record. The
           default also lets a demonstration saved before they existed still load,
           instead of being thrown away as incompatible. */
@@ -63,6 +91,7 @@ export const stateSchema = z.object({
         name: z.string(),
         team: z.string(),
         grade: z.string(),
+        fonction: z.string().default(""),
         matricule: z.string().default(""),
         phone: z.string().default(""),
         qualifications: z.array(z.string()),
@@ -340,6 +369,7 @@ export const commandSchema = z.discriminatedUnion("type", [
     userId: id,
     name: z.string().trim().min(1).max(100),
     grade: z.string().trim().max(60),
+    fonction: z.string().trim().max(60),
     matricule: z.string().trim().max(30),
     phone: z.string().trim().max(30),
     teamId: id,
@@ -347,14 +377,17 @@ export const commandSchema = z.discriminatedUnion("type", [
     active: z.boolean(),
     qualifications: z.array(z.string().trim().min(1).max(60)).max(20),
   }),
+  // Pas de teamId : l'équipe ne se choisit plus à l'invitation. Le serveur
+  // rattache l'invité à celle de l'invitant, et la fiche agent permet ensuite
+  // de le déplacer. La colonne reste obligatoire en base.
   z.object({
     type: z.literal("invite"),
     email: z.string().trim().toLowerCase().email().max(200),
     name: z.string().trim().min(1).max(100),
     grade: z.string().trim().max(60),
+    fonction: z.string().trim().max(60),
     matricule: z.string().trim().max(30),
     phone: z.string().trim().max(30),
-    teamId: id,
     role: memberRoleSchema,
   }),
   z.object({ type: z.literal("revokeInvitation"), invitationId: id }),

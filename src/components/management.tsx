@@ -34,7 +34,9 @@ import {
   localMonth,
   monthDays,
   auditFamilies,
+  fonctions,
   gradeLabel,
+  grades,
   memberRoles,
   monthLabel,
   plural,
@@ -191,7 +193,7 @@ export function Agents() {
   // refuse — and the demonstration models none of these tables.
   const administering = canAdminister;
   const matches = (a: Agent) =>
-    `${a.name} ${a.team} ${a.grade} ${a.matricule}`.toLowerCase().includes(search.toLowerCase());
+    `${a.name} ${a.team} ${a.grade} ${a.fonction} ${a.matricule}`.toLowerCase().includes(search.toLowerCase());
   const teams = [...new Set(state.agents.map(a => a.team))];
   return (
     <>
@@ -327,11 +329,42 @@ export function Agents() {
   );
 }
 
+/** Une liste fermée à l'écran, ouverte en base. La valeur déjà enregistrée est
+    proposée même si elle ne figure pas dans le catalogue : sans cela, ouvrir une
+    fiche portant un grade hors liste l'effacerait au premier enregistrement,
+    sans que personne ne l'ait demandé. */
+function ChoiceField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: readonly string[];
+  onChange: (next: string) => void;
+}) {
+  const offered = value && !options.includes(value) ? [value, ...options] : options;
+  return (
+    <label className="field">
+      {label}
+      <select value={value} onChange={e => onChange(e.target.value)}>
+        <option value="">Non renseigné</option>
+        {offered.map(option => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function RecordFields({
   value,
   onChange,
 }: {
-  value: { name: string; grade: string; matricule: string; phone: string };
+  value: { name: string; grade: string; fonction: string; matricule: string; phone: string };
   onChange: (next: Partial<typeof value>) => void;
 }) {
   return (
@@ -340,10 +373,16 @@ function RecordFields({
         Nom et prénom
         <input value={value.name} onChange={e => onChange({ name: e.target.value })} required maxLength={100} />
       </label>
-      <label className="field">
-        Grade ou fonction
-        <input value={value.grade} onChange={e => onChange({ grade: e.target.value })} maxLength={60} />
-      </label>
+      {/* Deux choses distinctes : le grade se gagne à l'ancienneté et suit la
+          personne, la fonction se tient sur un engin. Les confondre dans un
+          seul champ obligeait à choisir laquelle des deux on renonçait à dire. */}
+      <ChoiceField label="Grade" value={value.grade} options={grades} onChange={grade => onChange({ grade })} />
+      <ChoiceField
+        label="Fonction"
+        value={value.fonction}
+        options={fonctions}
+        onChange={fonction => onChange({ fonction })}
+      />
       <label className="field">
         Matricule
         <input value={value.matricule} onChange={e => onChange({ matricule: e.target.value })} maxLength={30} />
@@ -356,40 +395,44 @@ function RecordFields({
   );
 }
 
-function TeamAndRole({
+// L'équipe et le rôle se posaient ensemble tant que les deux se choisissaient au
+// même moment. L'invitation ne demande plus que le rôle : l'invité rejoint
+// l'équipe de l'invitant, et sa fiche permet ensuite de le déplacer.
+function TeamField({
   teams,
   teamId,
-  role,
   onChange,
 }: {
   teams: AppState["teams"];
   teamId: string;
-  role: MemberRole;
-  onChange: (next: { teamId?: string; role?: MemberRole }) => void;
+  onChange: (next: { teamId: string }) => void;
 }) {
   return (
-    <>
-      <label className="field">
-        Équipe
-        <select value={teamId} onChange={e => onChange({ teamId: e.target.value })}>
-          {teams.map(t => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="field">
-        Rôle
-        <select value={role} onChange={e => onChange({ role: e.target.value as MemberRole })}>
-          {memberRoles.map(r => (
-            <option key={r} value={r}>
-              {roleLabels[r]}
-            </option>
-          ))}
-        </select>
-      </label>
-    </>
+    <label className="field">
+      Équipe
+      <select value={teamId} onChange={e => onChange({ teamId: e.target.value })}>
+        {teams.map(t => (
+          <option key={t.id} value={t.id}>
+            {t.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function RoleField({ role, onChange }: { role: MemberRole; onChange: (next: { role: MemberRole }) => void }) {
+  return (
+    <label className="field">
+      Rôle
+      <select value={role} onChange={e => onChange({ role: e.target.value as MemberRole })}>
+        {memberRoles.map(r => (
+          <option key={r} value={r}>
+            {roleLabels[r]}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -398,6 +441,7 @@ function MemberDialog({ agent, onClose }: { agent: Agent; onClose: () => void })
   const [form, setForm] = useState({
     name: agent.name,
     grade: agent.grade,
+    fonction: agent.fonction,
     matricule: agent.matricule,
     phone: agent.phone,
     teamId: agent.teamId || (state.teams[0]?.id ?? ""),
@@ -421,12 +465,8 @@ function MemberDialog({ agent, onClose }: { agent: Agent; onClose: () => void })
   return (
     <Modal open onOpenChange={open => !open && onClose()} title={agent.name} description="Fiche, équipe et rôle.">
       <RecordFields value={form} onChange={next => setForm(f => ({ ...f, ...next }))} />
-      <TeamAndRole
-        teams={state.teams}
-        teamId={form.teamId}
-        role={form.role}
-        onChange={next => setForm(f => ({ ...f, ...next }))}
-      />
+      <TeamField teams={state.teams} teamId={form.teamId} onChange={next => setForm(f => ({ ...f, ...next }))} />
+      <RoleField role={form.role} onChange={next => setForm(f => ({ ...f, ...next }))} />
       <fieldset className="field">
         <legend>Qualifications</legend>
         <div className="qualification-choices">
@@ -481,14 +521,14 @@ function MemberDialog({ agent, onClose }: { agent: Agent; onClose: () => void })
 }
 
 function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { state, run } = useApp();
+  const { run, agent } = useApp();
   const empty = {
     email: "",
     name: "",
     grade: "",
+    fonction: "",
     matricule: "",
     phone: "",
-    teamId: state.teams[0]?.id ?? "",
     role: "AGENT" as MemberRole,
   };
   const [form, setForm] = useState(empty);
@@ -497,7 +537,7 @@ function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void })
       open={open}
       onOpenChange={next => !next && onClose()}
       title="Inviter un agent"
-      description="L’agent crée son propre compte. Le rattachement se fait automatiquement à la confirmation de son adresse."
+      description={`L’agent crée son propre compte et rejoint votre équipe, ${agent?.team ?? "la vôtre"}. Le rattachement se fait à la confirmation de son adresse.`}
     >
       <label className="field">
         Adresse électronique
@@ -510,12 +550,7 @@ function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void })
         />
       </label>
       <RecordFields value={form} onChange={next => setForm(f => ({ ...f, ...next }))} />
-      <TeamAndRole
-        teams={state.teams}
-        teamId={form.teamId}
-        role={form.role}
-        onChange={next => setForm(f => ({ ...f, ...next }))}
-      />
+      <RoleField role={form.role} onChange={next => setForm(f => ({ ...f, ...next }))} />
       <Button
         className="full-width"
         onClick={async () => {

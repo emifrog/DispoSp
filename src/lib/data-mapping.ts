@@ -27,7 +27,13 @@ export type Raw = {
     role: string;
     team_id: string;
     active: boolean;
-    profiles: { display_name: string; grade?: string | null; matricule?: string | null; phone?: string | null } | null;
+    profiles: {
+      display_name: string;
+      grade?: string | null;
+      fonction?: string | null;
+      matricule?: string | null;
+      phone?: string | null;
+    } | null;
     teams: { name: string } | null;
   }[];
   teams: { id: string; name: string }[];
@@ -215,6 +221,7 @@ export function buildState(raw: Raw, fallbackOrganizationName: string): AppState
     // put that label in the edit form, and the first save would write it to the
     // database as if someone had chosen it. The display does the falling back.
     grade: row.profiles?.grade ?? "",
+    fonction: row.profiles?.fonction ?? "",
     matricule: row.profiles?.matricule ?? "",
     phone: row.profiles?.phone ?? "",
     qualifications: qualificationsByUser.get(row.user_id) ?? [],

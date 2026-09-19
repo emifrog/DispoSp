@@ -21,7 +21,7 @@
 
 do $$
 declare
-  compte constant text := 'demo@dispo06.fr';
+  compte constant text := 'agent.qui.part@exemple.fr';
   cible uuid;
   centre uuid;
   affectations int;
@@ -84,6 +84,6 @@ $$;
 -- Pour vérifier qu'il ne reste rien avant de le faire :
 --
 --   select 'memberships' as t, count(*) from public.memberships m
---     join auth.users u on u.id = m.user_id where u.email = 'demo@dispo06.fr'
+--     join auth.users u on u.id = m.user_id where u.email = 'agent.qui.part@exemple.fr'
 --   union all select 'profiles', count(*) from public.profiles p
---     join auth.users u on u.id = p.user_id where u.email = 'demo@dispo06.fr';
+--     join auth.users u on u.id = p.user_id where u.email = 'agent.qui.part@exemple.fr';

@@ -65,7 +65,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
       {menu && <button className="sidebar-backdrop" aria-label="Fermer le menu" onClick={() => setMenu(false)} />}
       <aside className={`sidebar ${menu ? "is-open" : ""}`}>
         <div className="sidebar-brand">
-          <Brand tone="light" />
+          <Brand variant="onDark" />
           <button className="mobile-only icon-button" aria-label="Fermer le menu" onClick={() => setMenu(false)}>
             <X />
           </button>

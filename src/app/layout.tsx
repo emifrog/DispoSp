@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 };
 export const viewport: Viewport = {
   // La teinte de la barre d'état, une fois l'application installée.
-  themeColor: "#092b4e",
+  themeColor: "#08284a",
   // viewport-fit pour que le fond passe sous l'encoche plutôt que de s'arrêter
   // sur une bande blanche.
   viewportFit: "cover",

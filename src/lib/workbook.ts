@@ -49,6 +49,7 @@ export function buildWorkbook(state: AppState, campaign: Campaign): ExcelJS.Work
     { header: "Agent", key: "name", width: 26 },
     { header: "Équipe", key: "team", width: 16 },
     { header: "Grade", key: "grade", width: 16 },
+    { header: "Fonction", key: "fonction", width: 22 },
     { header: "Matricule", key: "matricule", width: 12 },
     { header: "Réponse", key: "response", width: 12 },
     ...days.map(date => ({ header: String(Number(date.slice(-2))), key: date, width: 5 })),
@@ -58,6 +59,7 @@ export function buildWorkbook(state: AppState, campaign: Campaign): ExcelJS.Work
       name: agent.name,
       team: agent.team,
       grade: gradeLabel(agent),
+      fonction: agent.fonction,
       matricule: agent.matricule,
       response: isValidated(state, campaign.id, agent.id) ? "Validée" : "À valider",
     };
@@ -124,6 +126,7 @@ export function buildWorkbook(state: AppState, campaign: Campaign): ExcelJS.Work
     { header: "Créneau", key: "shift", width: 10 },
     { header: "Agent", key: "name", width: 26 },
     { header: "Grade", key: "grade", width: 16 },
+    { header: "Fonction", key: "fonction", width: 22 },
     { header: "Équipe", key: "team", width: 16 },
     { header: "État", key: "status", width: 22 },
   ]);
@@ -139,6 +142,7 @@ export function buildWorkbook(state: AppState, campaign: Campaign): ExcelJS.Work
           shift: shiftLabel(shift),
           name: agent.name,
           grade: gradeLabel(agent),
+          fonction: agent.fonction,
           team: agent.team,
           status: published?.agents.includes(id) ? `Publié · version ${published.revision}` : "Brouillon",
         });

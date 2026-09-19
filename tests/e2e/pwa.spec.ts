@@ -14,7 +14,7 @@ test.describe("Application installable", () => {
       display: "standalone",
       start_url: "/",
       scope: "/",
-      theme_color: "#092b4e",
+      theme_color: "#08284a",
       // La matrice mensuelle se lit en paysage : verrouiller l'orientation la
       // rendrait illisible sur un téléphone.
       orientation: "any",

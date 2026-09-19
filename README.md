@@ -91,13 +91,15 @@ Le PDF passe par l'impression du navigateur, avec une feuille de style dédiée 
 
 ### Marque
 
-Le mot-symbole est fourni en deux versions dans `public/` : `logo-disposp.png` (bleu nuit, fonds clairs) et `logo-disposp-blanc.png` (barre latérale). Deux fichiers plutôt qu'un seul recoloré en CSS, parce qu'un filtre sur une image en couleurs donne un gris, pas un blanc. Le composant `Brand` choisit selon le fond et fixe les proportions d'après le fichier, 936 × 214.
+Le mot-symbole est fourni en deux versions dans `public/`, parce qu'une image ne se recolore pas : un filtre CSS sur un dessin en couleurs donne un gris, jamais un blanc. `logo-disposp.png` (1521 × 486, fond transparent) porte le bleu nuit et va sur les fonds clairs — connexion, fiche de compte, en-tête d'impression. `logo-disposp-sombre.png` (1800 × 850) arrive du studio posé sur sa propre plaque bleu nuit et va sur la barre latérale. Le composant `Brand` choisit par la surface plutôt que par la couleur — `onLight`, `onDark` — et tient les proportions de chaque fichier séparément, les deux n'ayant pas le même rapport.
 
-Le bleu nuit de la marque est `#092b4e` et son rouge `#de1525`. Le premier est devenu celui de l'interface — barre latérale, variable `--navy`, teinte de la barre d'état — pour que le logo ne se détache pas de son propre fond.
+La plaque du fichier sombre n'est pas détourée : c'est un rectangle plein. Elle passe inaperçue parce que la barre latérale porte **exactement** sa teinte. C'est la contrainte à retenir si la couleur de la barre change un jour — le rectangle réapparaîtrait aussitôt.
 
-Les icônes d'application portent le symbole — une flamme et un calendrier — en blanc sur le bleu nuit : `icon-192`, `icon-512`, une version `maskable` pour Android, `apple-touch-icon` pour iOS et `src/app/icon.png` pour l'onglet. Le symbole seul est aussi disponible en bleu nuit et en blanc, `symbole-disposp.png` et `symbole-disposp-blanc.png`.
+Le bleu nuit de la marque est `#08284a` et son rouge `#df1427`, relevés dans le fichier lui-même. Le premier est celui de l'interface — barre latérale, variable `--navy`, teinte de la barre d'état, `theme_color` du manifeste — pour que le logo ne se détache pas de son propre fond. Le `--red` de l'interface, lui, reste distinct : il sert aux erreurs, pas à la marque.
 
-**Ce symbole est une silhouette d'une seule couleur, et c'est une limite connue.** Les deux fichiers reçus du studio étaient des vectorisations automatiques d'une image compressée : le dessin s'y trouvait morcelé en soixante-quatre tracés, avec le bruit de compression transformé en trous à l'intérieur des cases du calendrier. La géométrie a été récupérée par fermeture morphologique — dilatation puis érosion du même rayon, ce qui referme les trous plus petits que le rayon et laisse intactes les gouttières entre les cases. Ce qui n'a pas pu l'être : la répartition bleu nuit / rouge, éparpillée entre les couleurs par le calque, et la coche d'une case, refermée avec le reste. Un vrai fichier vectoriel les rendrait.
+Les icônes d'application portent le symbole, une flamme et un calendrier en couleurs sur fond blanc : `icon-192` et `icon-512` tels que livrés, `apple-touch-icon` en 180 aplati sur du blanc — iOS rend opaque toute transparence, et une icône transparente y virerait au noir — et `src/app/icon.png` en 64 pour l'onglet. La version `maskable` d'Android est composée à part, le symbole ramené à 72 % de la toile : le système recadre l'icône jusqu'au cercle inscrit, et à pleine taille il couperait la flamme. Le symbole seul, fond transparent, est disponible en `symbole-disposp.png` ; il sert la barre du haut sur mobile.
+
+Les fichiers d'origine restent dans `public/logo v2/`, sous leurs noms de livraison. Les fichiers servis en sont des copies renommées par usage : l'espace dans le nom du dossier n'a pas à se retrouver dans une URL, et « v2 » aura tort à la prochaine version.
 
 ### Application installable
 
