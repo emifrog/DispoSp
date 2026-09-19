@@ -10,13 +10,10 @@ export default defineConfig({
   webServer: {
     command: "node node_modules/next/dist/bin/next start --hostname 127.0.0.1",
     url: "http://127.0.0.1:3000",
-    // These tests drive the demonstration, and the mode cannot be set here:
-    // NEXT_PUBLIC_* is inlined into every bundle at build time, server code
-    // included. The build carries the mode, so the suite needs one made in
-    // demonstration mode — which is what an unset variable gives:
-    //   NEXT_PUBLIC_DISPOSP_MODE=demo pnpm build && pnpm test:e2e
-    // Working in connected mode locally otherwise sends the whole suite to the
-    // login screen, with sixteen failures that say nothing about the code.
+    // L'application ne tourne qu'en mode connecté : les parcours qui demandent une
+    // session se sautent d'eux-mêmes sans NEXT_PUBLIC_SUPABASE_URL, ce qui est le
+    // cas de l'intégration continue. Restent le manifeste, l'agent de service et
+    // l'adaptation aux écrans, qui n'ont besoin d'aucune donnée.
     reuseExistingServer: true,
     timeout: 60000,
   },

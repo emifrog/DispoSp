@@ -24,9 +24,7 @@ C'est la partie la plus importante, et celle qu'on saute le plus volontiers.
 
 **Attendu** — Un écran de connexion. Rien d'autre.
 
-**Sinon** — Si vous voyez un tableau de bord avec des agents et un bandeau bleu « Espace de démonstration · données fictives sauvegardées dans ce navigateur », **arrêtez tout**. Le site tourne en démonstration. Un responsable pourrait planifier un mois entier sur des agents qui n'existent pas, sans jamais s'en apercevoir. C'est le pire mode de panne du projet, et il est silencieux.
-
-Corriger : sur l'hébergeur, `NEXT_PUBLIC_DISPOSP_MODE=connected`, puis **reconstruire et redéployer**. Cette variable est figée dans les fichiers au moment de la construction ; la changer sans reconstruire ne fait rien.
+**Sinon** — Si l'écran affiche une erreur, les coordonnées Supabase manquent sur l'hébergeur : `NEXT_PUBLIC_SUPABASE_URL` et `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. L'application s'arrête plutôt que de se rabattre sur quoi que ce soit — il n'existe plus de mode démonstration, donc plus de risque qu'un responsable planifie un mois entier sur des agents fictifs sans s'en apercevoir.
 
 ### 0.2 Les adresses de retour d'authentification
 

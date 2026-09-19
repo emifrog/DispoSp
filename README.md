@@ -1,6 +1,6 @@
 # DispoSP
 
-Application de disponibilités et de planification des sapeurs-pompiers, utilisable en démonstration locale ou en mode connecté à Supabase. Voir [le plan de développement](PLAN_DEVELOPPEMENT.md) pour l’avancement et les étapes restantes.
+Application de disponibilités et de planification des sapeurs-pompiers, branchée sur Supabase. Voir [le plan de développement](PLAN_DEVELOPPEMENT.md) pour l’avancement et les étapes restantes.
 
 ## Démarrer
 
@@ -13,7 +13,7 @@ pnpm dev
 
 Ouvrir http://127.0.0.1:3000. Pour vérifier une version de production : `pnpm build`, puis `pnpm start`.
 
-L'application démarre avec une **démonstration locale clairement identifiée** : douze agents fictifs et une campagne calculée à partir de la date du jour. Les réponses sont collectées pendant le mois en cours, pour le mois suivant ; une nouvelle démonstration est donc ouverte à la saisie au moment de son initialisation. Les informations sont conservées dans le navigateur, sous `disposp-demo-v1`. Le profil de démonstration est conservé dans la session du navigateur. Aucun compte réel, email, appel métier distant ou paiement n'est créé.
+L'application demande un compte. Sans session, toute adresse renvoie vers l'écran de connexion — hormis ce qu'un navigateur va chercher avant d'en avoir une : le manifeste, l'agent de service et la page hors ligne. Rien n'est conservé dans le navigateur : l'état vient du rendu serveur, relu à chaque navigation.
 
 ## Parcours livrés
 
@@ -29,7 +29,7 @@ L'application démarre avec une **démonstration locale clairement identifiée**
 - Administration des agents, fiches avec grade/matricule/téléphone, équipes, quatre rôles, qualifications, invitations et désactivation/réactivation.
 - Historique filtrable par sujet, auteur et recherche ; centre de notifications avec suivi de lecture et envoi des emails via Resend lorsqu’il est configuré.
 - Exports CSV, ICS et Excel ; impression complète de la matrice mensuelle, de la vue par journée et du planning personnel pour enregistrer un PDF.
-- Interface adaptée aux ordinateurs et téléphones ; dialogues accessibles au clavier. Le mode démonstration conserve son sélecteur de profil et ses données locales.
+- Interface adaptée aux ordinateurs et téléphones, de 320 px au grand écran ; dialogues accessibles au clavier.
 
 ## Règles retenues
 
@@ -44,10 +44,10 @@ Voir `DECISIONS_FONCTIONNELLES.md`. Jour 8 h–20 h, Nuit 20 h–8 h le lendemai
 - TanStack Table pour la synthèse, virtualisée par TanStack Virtual : à 300 agents, environ 25 lignes sont rendues au lieu de 300, et les totaux du pied de tableau portent toujours sur l'ensemble des agents filtrés.
 - React Hook Form et Zod pour les campagnes et la validation du stockage.
 - `src/lib/domain.ts` : règles métier pures, calculs de couverture et commandes testables.
-- `src/components/provider.tsx` : stockage local en démonstration, commandes serveur en mode connecté. **Les rôles du navigateur ne constituent pas un contrôle de sécurité.**
+- `src/components/provider.tsx` : l'état vient du rendu serveur, relu à chaque navigation ; les commandes partent à l'action serveur. Rien n'est conservé dans le navigateur. **Les rôles affichés ne constituent pas un contrôle de sécurité** : la base décide.
 - `src/lib/exports.ts` : exports CSV et ICS ; `/api/export` : classeur Excel généré côté serveur en mode connecté.
 - `src/app/manifest.ts`, `public/sw.js` et `src/components/pwa.tsx` : installation sur l'écran d'accueil.
-- `src/lib/supabase/` : fabriques de clients, middleware de session et détection du mode. Inactives en démonstration.
+- `src/lib/supabase/` : fabriques de clients et middleware de session. `publicPaths` liste ce que le garde ne doit jamais intercepter — déconnexion, manifeste, agent de service, page hors ligne.
 - `src/lib/session.ts` et `src/lib/session.server.ts` : types partagés d'un côté, lecture de session de l'autre. La séparation est nécessaire — un composant client qui importerait `next/headers` casse la compilation.
 - `supabase/migrations/` : 19 tables couvrant organisations, équipes, profils, droits, campagnes, participants, disponibilités, qualifications, créneaux types, besoins d'effectifs et de qualifications, plannings, affectations, invitations, disponibilités habituelles, notifications et audit. Isolation RLS, validation, invalidation et publication contrôlées en base.
 - `.github/workflows/ci.yml` : formatage, lint, types, tests unitaires et schéma, build et tests de bout en bout à chaque push et chaque pull request.
@@ -119,29 +119,20 @@ L'adresse elle-même vient de `auth.users`, que PostgREST n'expose pas. `0006` e
 
 Le rappel avant clôture est un geste, pas une horloge : personne ne fait tourner de tâche planifiée. Le bouton du tableau de bord vise les agents qui n'ont pas validé, et la base refuse d'empiler deux rappels sur la même personne. L’envoi automatique des invitations n’est pas implémenté : l’administrateur transmet encore l’adresse de l’application à l’agent. Les emails de confirmation d’inscription sont gérés séparément par Supabase Auth.
 
-### Deux modes
+### Configuration
 
-L'application fonctionne en **démonstration locale par défaut**. Le mode connecté s'active explicitement, pour que la présence de coordonnées Supabase dans l'environnement ne place jamais la démonstration ni les tests derrière un écran de connexion.
-
-Définir les trois variables suivantes dans `.env` en local et dans la configuration de l’hébergeur pour le site déployé :
+Définir les deux variables suivantes dans `.env` en local et dans la configuration de l’hébergeur pour le site déployé :
 
 ```dotenv
-NEXT_PUBLIC_DISPOSP_MODE=connected
 NEXT_PUBLIC_SUPABASE_URL=https://votre-projet.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=votre-cle-publiable
 ```
 
-Le mode connecté exige les trois valeurs. Les variables `NEXT_PUBLIC_*` sont intégrées au moment de la construction : après modification, reconstruire puis redémarrer ou redéployer l’application. Pour les emails métier, ajouter côté serveur `RESEND_API_KEY`, `RESEND_FROM` et `APP_URL` ; ne jamais préfixer la clé Resend par `NEXT_PUBLIC_`.
+**Il n'existe pas de mode de repli.** Sans ces valeurs l'application s'arrête, et c'est délibéré : un déploiement mal configuré doit se voir. Le mode démonstration, qui affichait douze agents fictifs conservés dans le navigateur, a été retiré — un site en production ne peut donc plus montrer silencieusement de fausses données à la place des vraies.
 
-|                                    | Démonstration  | Connecté                            |
-| ---------------------------------- | -------------- | ----------------------------------- |
-| Compte requis                      | non            | oui, email et mot de passe          |
-| Données affichées                  | `localStorage` | lues en base, sous RLS              |
-| Saisie                             | enregistrée    | enregistrée en base, sous RLS       |
-| Rendu des écrans                   | statique       | dynamique, session lue côté serveur |
-| Sélecteur de rôle de démonstration | visible        | masqué, le rôle vient de la base    |
+Les variables `NEXT_PUBLIC_*` sont intégrées au moment de la construction : après modification, reconstruire puis redémarrer ou redéployer l’application. Pour les emails métier, ajouter côté serveur `RESEND_API_KEY`, `RESEND_FROM` et `APP_URL` ; ne jamais préfixer la clé Resend par `NEXT_PUBLIC_`.
 
-En mode connecté, `src/lib/data.server.ts` construit depuis la base exactement la forme que les écrans consomment déjà : aucun écran n'a eu à changer. Le mapping vit à part dans `src/lib/data-mapping.ts`, pur et testé seul, parce que c'est là que se logent les erreurs — fuseau de la fenêtre de réponse, séparation brouillon/publication, révisions périmées, lignes hors de portée RLS.
+`src/lib/data.server.ts` construit depuis la base exactement la forme que les écrans consomment déjà : aucun écran n'a eu à changer. Le mapping vit à part dans `src/lib/data-mapping.ts`, pur et testé seul, parce que c'est là que se logent les erreurs — fuseau de la fenêtre de réponse, séparation brouillon/publication, révisions périmées, lignes hors de portée RLS.
 
 Les commandes métier passent par une action serveur unique, `submitCommand`. C'est un point d'entrée public : sa charge utile est parsée par Zod et l'identité vient du cookie de session, jamais de ce que le navigateur annonce. Un refus de la base est traduit en français par `src/lib/command-errors.ts` ; un message inconnu n'est jamais affiché tel quel, puisqu'il décrirait le schéma. Aucune écriture refusée n'est renvoyée en silence vers `localStorage`, ce qui donnerait l'illusion d'un enregistrement.
 
@@ -184,9 +175,11 @@ pnpm test:e2e
 
 Ces six vérifications sont celles exécutées par l'intégration continue.
 
-Les tests de `tests/e2e/connexion.spec.ts` ne s’exécutent qu’en mode connecté ; l’intégration continue sans coordonnées Supabase les ignore. Ils vérifient la protection des pages, les erreurs de connexion, la validation du formulaire et la déconnexion sans session. Ils ne constituent pas une recette du parcours complet avec inscription, invitation acceptée et écritures métier sur le projet hébergé.
+**La suite navigateur a fondu avec le mode démonstration**, et il faut le dire franchement : les trente parcours d'interface qu'elle jouait — saisie, validation, affectation, publication, exports — pilotaient douze agents fictifs qui n'existent plus. Ils n'ont pas été remplacés par des tests automatiques ; ils sont devenus les étapes manuelles de [la recette](RECETTE.md). Ce qui reste automatique et sans données : le manifeste, les icônes, l'agent de service et l'adaptation aux écrans.
 
-Pour les lancer, configurer les variables Supabase et `NEXT_PUBLIC_DISPOSP_MODE=connected`, construire l’application, puis exécuter `pnpm test:e2e tests/e2e/connexion.spec.ts`. Pour la suite navigateur de démonstration, revenir à `NEXT_PUBLIC_DISPOSP_MODE=demo` et reconstruire.
+Les parcours de `tests/e2e/connexion.spec.ts` demandent un projet Supabase joignable et se sautent sans `NEXT_PUBLIC_SUPABASE_URL` dans l'environnement du lanceur — ce qui est le cas de l'intégration continue. Pour les exécuter, exporter les variables Supabase, construire, puis `pnpm test:e2e`.
+
+Les règles métier, elles, n'ont rien perdu : elles sont vérifiées contre un vrai PostgreSQL par les 66 tests de `tests/database.test.ts`, migrations et politiques comprises.
 
 Dans un environnement Windows où `pnpm exec` ne résout pas les exécutables, utiliser `node node_modules/@playwright/test/cli.js install chromium`, puis `node node_modules/@playwright/test/cli.js test`.
 
@@ -210,7 +203,7 @@ Les neuf migrations (`0001` à `0007`, puis les deux migrations horodatées) son
 
 L’envoi Resend traite des lots de 50 notifications après certaines commandes. Il n’existe ni rappel planifié ni traitement autonome de toute la file en attente. L’envoi automatique des invitations reste à développer. Le SSO et les échanges de garde ne sont pas implémentés.
 
-Les brouillons, publications et journaux de la démonstration peuvent être modifiés ou effacés par l’utilisateur du navigateur. Ne pas y saisir de données personnelles réelles.
+Le retrait d'un compte et de ses données se fait par `supabase/provisioning/retirer-un-compte.sql`, dans l'éditeur SQL du tableau de bord. Il efface dans l'ordre des dépendances, refuse de laisser un centre sans administrateur actif, et ne touche pas au journal d'audit : c'est la suppression du compte lui-même, à la main, qui en anonymise l'auteur.
 
 ## Références de mise en œuvre
 

@@ -1,13 +1,11 @@
 import "server-only";
-import { isConnected } from "./supabase/config";
 import { createReadClient } from "./supabase/server";
 import type { Session } from "./session";
 
-// Returns null in demonstration mode and for a visitor without a session. Every
+// Returns null for a visitor without a session. Every
 // query below runs under RLS as the signed-in user: an empty result is the
 // database's answer, not a missing filter.
 export async function readSession(): Promise<Session | null> {
-  if (!isConnected) return null;
   const supabase = await createReadClient();
   const {
     data: { user },

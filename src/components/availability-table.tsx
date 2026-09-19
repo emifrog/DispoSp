@@ -19,7 +19,7 @@ import { type Agent, dateLabel, entryKey, isValidated, localDate, monthDays, mon
 // Matches the row height in globals.css; the virtualizer only needs an estimate.
 const ROW_HEIGHT = 45;
 export function AvailabilityTable() {
-  const { state, campaignId, campaign, connected } = useApp();
+  const { state, campaignId, campaign } = useApp();
   const [search, setSearch] = useState("");
   const [team, setTeam] = useState("");
   const [status, setStatus] = useState("");
@@ -136,14 +136,12 @@ export function AvailabilityTable() {
           <div className="heading-buttons">
             {/* Excel passe par une route serveur : le classeur est construit là-bas,
               et la bibliothèque ne descend dans aucun paquet du navigateur. */}
-            {connected && (
-              <Button asChild>
-                <a href={`/api/export?campagne=${campaignId}`} download>
-                  <FileSpreadsheet size={17} />
-                  Exporter en Excel
-                </a>
-              </Button>
-            )}
+            <Button asChild>
+              <a href={`/api/export?campagne=${campaignId}`} download>
+                <FileSpreadsheet size={17} />
+                Exporter en Excel
+              </a>
+            </Button>
             <Button
               variant="secondary"
               onClick={() =>

@@ -1,6 +1,6 @@
 import { PGlite } from "@electric-sql/pglite";
 import { readFileSync } from "node:fs";
-import { beforeAll, afterAll, describe, expect, it } from "vitest";
+import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it } from "vitest";
 const db = new PGlite();
 // Applied in order everywhere below, exactly as against the real project.
 const MIGRATIONS = [
@@ -1633,5 +1633,114 @@ describe("Disponibilité habituelle atomique", () => {
     await live.exec("set role anon");
     await expect(apply()).rejects.toThrow("permission denied for function apply_availability_template");
     await expect(save({ 1: "DAY" })).rejects.toThrow("permission denied for function save_availability_template");
+  });
+});
+
+// Un script qui efface ne se relit pas : il s'exécute. Celui-ci part d'un centre
+// complet et vérifie ce qui disparaît, ce qui reste, et ce qu'il refuse de faire.
+describe("Retrait d’un compte", () => {
+  const org = "10000000-0000-0000-0000-000000000070";
+  const team = "20000000-0000-0000-0000-000000000070";
+  const chief = "30000000-0000-0000-0000-000000000070";
+  const second = "30000000-0000-0000-0000-000000000071";
+  const agent = "30000000-0000-0000-0000-000000000072";
+  const campaign = "40000000-0000-0000-0000-000000000070";
+  const script = readFileSync(new URL("../supabase/provisioning/retirer-un-compte.sql", import.meta.url), "utf8");
+  const remove = (email: string) => live.exec(script.replace("'demo@dispo06.fr'", `'${email}'`));
+  let live: PGlite;
+
+  beforeEach(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const migration of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${migration}`, import.meta.url), "utf8"));
+    await live.exec(`
+      insert into auth.users(id,email) values
+        ('${chief}','chef@example.org'), ('${second}','second@example.org'), ('${agent}','agent@example.org');
+      insert into public.profiles(user_id,display_name) values
+        ('${chief}','Chef'), ('${second}','Second'), ('${agent}','Agent');
+      insert into public.organizations(id,name) values ('${org}','Centre retrait');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values
+        ('${org}','${chief}','${team}','GESTIONNAIRE',true),
+        ('${org}','${second}','${team}','GESTIONNAIRE',true),
+        ('${org}','${agent}','${team}','AGENT',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        values ('${campaign}','${org}','${team}','Octobre','2026-10-01','2026-10-31',now()-interval '1 day',now()+interval '9 days');
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values ('${org}','${campaign}','${agent}');
+      insert into public.availability_entries(campaign_id,user_id,date,availability_type)
+        values ('${campaign}','${agent}','2026-10-05','DAY');
+      insert into public.availability_templates(organization_id,user_id,weekday,availability_type)
+        values ('${org}','${agent}',1,'DAY');
+      insert into public.notifications(organization_id,user_id,kind,subject)
+        values ('${org}','${agent}','CAMPAIGN_OPENED','Campagne ouverte');
+      insert into public.invitations(organization_id,email,display_name,team_id,role,invited_by)
+        values ('${org}','futur@example.org','Futur agent','${team}','AGENT','${agent}');
+    `);
+  }, 30000);
+  afterEach(async () => {
+    await live.close();
+  });
+
+  const counts = async (who: string) =>
+    (
+      await live.query<{ total: number }>(
+        `select (
+           (select count(*) from public.availability_entries where user_id=$1)
+         + (select count(*) from public.campaign_participants where user_id=$1)
+         + (select count(*) from public.availability_templates where user_id=$1)
+         + (select count(*) from public.user_qualifications where user_id=$1)
+         + (select count(*) from public.notifications where user_id=$1)
+         + (select count(*) from public.invitations where invited_by=$1)
+         + (select count(*) from public.memberships where user_id=$1)
+         + (select count(*) from public.profiles where user_id=$1))::int as total`,
+        [who],
+      )
+    ).rows[0].total;
+
+  it("efface les données du compte, dans l’ordre des dépendances", async () => {
+    expect(await counts(agent)).toBeGreaterThan(5);
+    await remove("agent@example.org");
+    expect(await counts(agent)).toBe(0);
+    // Le centre et ce qui ne lui appartient pas restent intacts.
+    expect((await live.query("select count(*)::int as n from public.organizations")).rows).toEqual([{ n: 1 }]);
+    expect((await live.query("select count(*)::int as n from public.memberships")).rows).toEqual([{ n: 2 }]);
+  });
+
+  it("garde le journal d’audit et se contente d’anonymiser l’auteur", async () => {
+    await live.exec(
+      `insert into public.audit_logs(organization_id,actor_id,entity,entity_id,action)
+       values ('${org}','${agent}','availability_entry','${campaign}','UPDATE')`,
+    );
+    const before = (await live.query<{ n: number }>("select count(*)::int as n from public.audit_logs")).rows[0].n;
+    await remove("agent@example.org");
+    // Aucune ligne ne disparaît — le retrait en ajoute même, puisque effacer est
+    // aussi une action du centre.
+    expect(
+      (await live.query<{ n: number }>("select count(*)::int as n from public.audit_logs")).rows[0].n,
+    ).toBeGreaterThanOrEqual(before);
+    // Le script ne touche pas à auth.users : l'identité se supprime à la main,
+    // depuis le tableau de bord. C'est ce geste-là qui anonymise le journal,
+    // par le « on delete set null » de la colonne.
+    expect(
+      (await live.query("select count(*)::int as n from public.audit_logs where actor_id = $1", [agent])).rows,
+    ).toEqual([{ n: 1 }]);
+    await live.query("delete from auth.users where id = $1", [agent]);
+    expect(
+      (await live.query("select count(*)::int as n from public.audit_logs where actor_id is not null")).rows,
+    ).toEqual([{ n: 0 }]);
+  });
+
+  // La porte se refermerait de l'intérieur : sans administrateur, personne ne
+  // peut plus rattacher un agent, et le schéma interdit de se rattacher soi-même.
+  it("refuse de laisser le centre sans administrateur actif", async () => {
+    await remove("second@example.org");
+    await expect(remove("chef@example.org")).rejects.toThrow("sans administrateur actif");
+    expect(await counts(chief)).toBeGreaterThan(0);
+  });
+
+  it("refuse une adresse inconnue, et ne touche à rien", async () => {
+    await expect(remove("personne@example.org")).rejects.toThrow("Aucun compte pour");
+    expect(await counts(agent)).toBeGreaterThan(5);
   });
 });

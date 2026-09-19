@@ -47,15 +47,15 @@ const initials = (name: string) =>
     .join("")
     .toUpperCase();
 
-export function Shell({ children, session }: { children: ReactNode; session: AttachedSession | null }) {
-  const { state, actor, agent, switchRole, campaignId, setCampaignId, ready, memberRole, canAdminister } = useApp();
+export function Shell({ children, session }: { children: ReactNode; session: AttachedSession }) {
+  const { state, actor, campaignId, setCampaignId, memberRole, canAdminister } = useApp();
   const path = usePathname();
   const [menu, setMenu] = useState(false);
   const nav = actor.role === "MANAGER" ? managerNav : agentNav;
   const managerOnly = [...managerNav.map(n => n.href), "/historique", "/parametres"].includes(path);
   // §2 has four roles. A responsable manages their team but administers nothing,
   // so the two administration entries would only lead to screens refusing them.
-  const space = memberRole ? roleLabels[memberRole].toUpperCase() : actor.role === "MANAGER" ? "RESPONSABLE" : "AGENT";
+  const space = roleLabels[memberRole].toUpperCase();
   const unread = state.notifications.filter(n => !n.readAt).length;
   return (
     <div className="app-shell">
@@ -158,65 +158,27 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
               <Bell size={19} />
               {unread > 0 && <span className="bell-badge">{unread > 9 ? "9+" : unread}</span>}
             </Link>
-            {session ? (
-              <span className="demo-tag connected">
-                <span />
-                Connecté
-              </span>
-            ) : (
-              <>
-                <span className="demo-tag">
-                  <span />
-                  Démo locale
-                </span>
-                <label className="role-switch">
-                  <span className="sr-only">Espace de démonstration</span>
-                  <select
-                    aria-label="Espace de démonstration"
-                    value={actor.role}
-                    onChange={e => switchRole(e.target.value as typeof actor.role)}
-                  >
-                    <option value="MANAGER">Responsable</option>
-                    <option value="AGENT">Agent</option>
-                  </select>
-                </label>
-              </>
-            )}
+            <span className="demo-tag connected">
+              <span />
+              Connecté
+            </span>
             <span className="topbar-divider" />
-            <div className="user-avatar">{initials(session ? session.displayName : agent.name)}</div>
+            <div className="user-avatar">{initials(session.displayName)}</div>
             <div className="user-name">
-              <strong>{session ? session.displayName : agent.name}</strong>
-              <small>
-                {session
-                  ? (roleLabels[session.membership.role] ?? session.membership.role)
-                  : actor.role === "MANAGER"
-                    ? "Responsable de centre"
-                    : agent.grade}
-              </small>
+              <strong>{session.displayName}</strong>
+              <small>{roleLabels[session.membership.role] ?? session.membership.role}</small>
             </div>
-            {session && (
-              <form method="post" action="/deconnexion">
-                <button type="submit" className="button button-ghost button-sm" aria-label="Se déconnecter">
-                  <LogOut size={17} />
-                </button>
-              </form>
-            )}
+            <form method="post" action="/deconnexion">
+              <button type="submit" className="button button-ghost button-sm" aria-label="Se déconnecter">
+                <LogOut size={17} />
+              </button>
+            </form>
           </div>
         </header>
-        {session ? (
-          <div className="demo-banner">
-            {session.membership.organizationName} · {session.membership.teamName} — vos saisies sont enregistrées en
-            base, sous les droits de votre rôle.
-          </div>
-        ) : (
-          <div className="demo-banner">
-            Espace de démonstration · données fictives sauvegardées dans ce navigateur.
-            <Link href={actor.role === "MANAGER" ? "/mes-disponibilites" : "/profil"}>
-              {actor.role === "MANAGER" ? "Tester ma saisie agent" : "Changer d’agent"}
-              <ArrowUpRight size={14} />
-            </Link>
-          </div>
-        )}
+        <div className="context-banner">
+          {session.membership.organizationName} · {session.membership.teamName} — vos saisies sont enregistrées en base,
+          sous les droits de votre rôle.
+        </div>
         <div className="print-header" aria-hidden="true">
           <Brand width={132} />
           <span>{state.organization.name}</span>
@@ -239,9 +201,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
               </select>
             </label>
           </div>
-          {!ready ? (
-            <div className="loading-state">Chargement de votre espace…</div>
-          ) : actor.role === "AGENT" && managerOnly ? (
+          {actor.role === "AGENT" && managerOnly ? (
             <div className="empty-state">
               <ShieldCheck />
               <h1>Espace responsable</h1>

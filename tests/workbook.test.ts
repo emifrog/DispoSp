@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { buildWorkbook } from "../src/lib/workbook";
-import { createDemoState } from "../src/lib/seed";
+import { sampleState } from "./fixtures/centre";
 import { entryKey, isValidated, labels, monthDays, shiftKey } from "../src/lib/domain";
 
 const now = new Date("2026-09-18T10:00:00Z");
-const state = createDemoState(now);
+const state = sampleState(now);
 const campaign = state.campaigns[0];
 const book = buildWorkbook(state, campaign);
 const days = monthDays(campaign.month);

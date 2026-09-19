@@ -6,11 +6,11 @@ Ce document complète le cahier des charges V1.0 du 17 septembre 2026 et `DECISI
 
 ## 1. Où en est le projet
 
-L’application fonctionne en **démonstration locale** ou en **mode connecté** : authentification, lecture et écriture des données Supabase selon les droits du compte. La présence des coordonnées Supabase ne suffit pas à activer ce second mode : `NEXT_PUBLIC_DISPOSP_MODE=connected` est également nécessaire lors de la construction.
+L’application ne tourne plus que **branchée sur Supabase** : authentification, lecture et écriture selon les droits du compte. Le mode démonstration a été retiré, avec ses données d’exemple et sa sauvegarde dans le navigateur — il n’existe donc plus de déploiement capable d’afficher de fausses données à la place des vraies.
 
 Le parcours agent → validation → affectation → publication → consultation a déjà été consigné comme observé sur le centre de test. L’administration, les notifications, les exports et les disponibilités habituelles sont désormais implémentés. Cette mise à jour documentaire ne constitue pas une nouvelle recette du projet hébergé.
 
-Le dernier état documenté du déploiement Vercel était une démonstration. Son mode actuel, les redirections d’authentification et la configuration Resend restent à confirmer avant la mise en service.
+Les redirections d’authentification et la configuration Resend restent à confirmer sur l’hébergement avant la mise en service.
 
 ### Avancement par domaine
 
@@ -194,7 +194,7 @@ pnpm build
 pnpm test:e2e
 ```
 
-Ces six contrôles sont exécutés par l’intégration continue ; leurs résultats sont visibles dans l’onglet Actions du dépôt. La suite navigateur habituelle utilise un build en mode démonstration.
+Ces six contrôles sont exécutés par l’intégration continue ; leurs résultats sont visibles dans l’onglet Actions du dépôt. Les parcours navigateur qui demandent une session ne s’exécutent qu’avec un projet Supabase joignable, que l’intégration continue n’a pas : elle vérifie le manifeste, l’agent de service et l’adaptation aux écrans.
 
 Les tests de `tests/e2e/connexion.spec.ts` nécessitent un build et un environnement en mode connecté. Ils vérifient les protections et erreurs d’authentification, pas le parcours complet d’un agent invité. Voir le README pour les commandes et prérequis.
 

@@ -1,15 +1,9 @@
 import { test, expect } from "@playwright/test";
 
-// These drive a real Supabase project, so they are skipped unless the build and
-// the run are both in connected mode:
-//   NEXT_PUBLIC_DISPOSP_MODE=connected pnpm build
-//   NEXT_PUBLIC_DISPOSP_MODE=connected pnpm test:e2e
-// Continuous integration has no credentials and therefore skips them.
-test.describe("Mode connecté", () => {
-  test.skip(
-    process.env.NEXT_PUBLIC_DISPOSP_MODE !== "connected",
-    "Demande une construction en mode connecté et un projet Supabase joignable.",
-  );
+// L'application ne tourne plus qu'en mode connecté : ces parcours demandent donc
+// un projet Supabase joignable. L'intégration continue n'en a pas et les saute.
+test.describe("Connexion", () => {
+  test.skip(!process.env.NEXT_PUBLIC_SUPABASE_URL, "Demande un projet Supabase joignable.");
 
   test("un visiteur non authentifié est renvoyé vers la connexion", async ({ page }) => {
     await page.goto("/tableau-de-bord");

@@ -302,7 +302,7 @@ label {
   font-size: 10px;
   color: var(--muted);
 }
-.demo-banner {
+.context-banner {
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -312,7 +312,7 @@ label {
   font-size: 10px;
   color: #657fa6;
 }
-.demo-banner a {
+.context-banner a {
   display: flex;
   align-items: center;
   min-height: 26px;
@@ -2355,7 +2355,7 @@ fieldset.field legend {
   .topbar {
     padding: 0 25px;
   }
-  .demo-banner {
+  .context-banner {
     padding: 7px 25px;
   }
   .breadcrumb {
@@ -2525,11 +2525,11 @@ fieldset.field legend {
     height: 30px;
     font-size: 10px;
   }
-  .demo-banner {
+  .context-banner {
     padding: 8px 18px;
     font-size: 9px;
   }
-  .demo-banner a {
+  .context-banner a {
     display: none;
   }
   .main-shell main {
@@ -2952,7 +2952,7 @@ fieldset.field legend {
 @media print {
   .sidebar,
   .topbar,
-  .demo-banner,
+  .context-banner,
   .skip-link,
   .campaign-context,
   .table-filters,

@@ -31,7 +31,7 @@ import {
   type Shift,
 } from "@/lib/domain";
 export function Dashboard() {
-  const { state, campaignId, campaign, run, connected } = useApp();
+  const { state, campaignId, campaign, run } = useApp();
   const [mode, setMode] = useState<"potential" | "planned">("potential");
   const days = monthDays(campaign.month);
   const respondents = state.agents.filter(a => isValidated(state, campaignId, a.id));
@@ -304,7 +304,7 @@ export function Dashboard() {
               </Link>
               {/* Nobody runs a clock, so the reminder is an act. The database
                   picks the targets and refuses to pile two on the same person. */}
-              {connected && pending.length > 0 && (
+              {pending.length > 0 && (
                 <Button variant="secondary" onClick={() => run({ type: "remind", campaignId })}>
                   <Send size={15} />
                   Relancer {pending.length} {plural(pending.length, "agent")}

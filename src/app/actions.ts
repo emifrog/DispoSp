@@ -2,7 +2,6 @@
 import { runCommand } from "@/lib/commands.server";
 import { commandLabels, commandSchema } from "@/lib/domain";
 import { readSession } from "@/lib/session.server";
-import { isConnected } from "@/lib/supabase/config";
 
 export type CommandResult = { ok: true; label: string } | { ok: false; message: string };
 
@@ -10,7 +9,6 @@ export type CommandResult = { ok: true; label: string } | { ok: false; message: 
 // application: the payload is parsed here, and the identity is read from the
 // session cookie rather than taken from what the browser claims.
 export async function submitCommand(payload: unknown): Promise<CommandResult> {
-  if (!isConnected) return { ok: false, message: "L’application tourne en mode démonstration." };
   const parsed = commandSchema.safeParse(payload);
   if (!parsed.success) return { ok: false, message: "La demande est incomplète ou mal formée." };
   const session = await readSession();

@@ -49,7 +49,7 @@ import { InstallApp } from "./pwa";
 import { roleLabels } from "@/lib/session";
 
 export function Campaigns() {
-  const { state, run, setCampaignId, connected } = useApp();
+  const { state, run, setCampaignId } = useApp();
   const [open, setOpen] = useState(false);
   // Propose the first month no campaign covers yet, and collect responses during
   // the month before it, so the dialog never opens on a window already past.
@@ -132,8 +132,8 @@ export function Campaigns() {
       <div className="info-card horizontal">
         <Megaphone size={24} />
         <p>
-          La création ouvre la campagne à tous les agents {connected ? "de votre centre" : "de cette démonstration"}.
-          Les emails et rappels automatiques seront raccordés avec le service de notifications.
+          La création ouvre la campagne à tous les agents de votre centre. Les emails et rappels automatiques seront
+          raccordés avec le service de notifications.
         </p>
       </div>
       <Modal
@@ -182,14 +182,14 @@ export function Campaigns() {
 }
 
 export function Agents() {
-  const { state, run, connected, canAdminister } = useApp();
+  const { state, run, canAdminister } = useApp();
   const [search, setSearch] = useState("");
   const [edited, setEdited] = useState<Agent | null>(null);
   const [inviting, setInviting] = useState(false);
   const [team, setTeam] = useState<{ id?: string; name: string } | null>(null);
   // The database decides; this only keeps the screen from offering what it would
   // refuse — and the demonstration models none of these tables.
-  const administering = connected && canAdminister;
+  const administering = canAdminister;
   const matches = (a: Agent) =>
     `${a.name} ${a.team} ${a.grade} ${a.matricule}`.toLowerCase().includes(search.toLowerCase());
   const teams = [...new Set(state.agents.map(a => a.team))];
@@ -580,13 +580,13 @@ function AdministrationOnly({ title }: { title: string }) {
 }
 
 export function Audit() {
-  const { state, connected, canAdminister } = useApp();
+  const { state, canAdminister } = useApp();
   const [family, setFamily] = useState("");
   const [author, setAuthor] = useState("");
   const [search, setSearch] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  if (connected && !canAdminister) return <AdministrationOnly title="Historique des actions" />;
+  if (!canAdminister) return <AdministrationOnly title="Historique des actions" />;
   const authors = [...new Set(state.audit.map(e => e.actor))].sort((a, b) => a.localeCompare(b, "fr"));
   const entities = auditFamilies.find(f => f.key === family)?.entities as readonly string[] | undefined;
   // La période se lit sur la date affichée, pas sur l'instant UTC : une action de
@@ -611,7 +611,7 @@ export function Audit() {
     <>
       <PageTitle
         title="Historique des actions"
-        description={`Saisies, validations et publications ${connected ? "du centre" : "de cette démonstration"}, les plus récentes d’abord.`}
+        description="Saisies, validations et publications du centre, les plus récentes d’abord."
         action={
           <Button
             variant="secondary"
@@ -731,10 +731,10 @@ export function Audit() {
 }
 
 export function Settings() {
-  const { state, run, connected, canAdminister } = useApp();
+  const { state, run, canAdminister } = useApp();
   const [dayStart, setDayStart] = useState(state.organization.dayStart);
   const [nightStart, setNightStart] = useState(state.organization.nightStart);
-  if (connected && !canAdminister) return <AdministrationOnly title="Paramètres du centre" />;
+  if (!canAdminister) return <AdministrationOnly title="Paramètres du centre" />;
   return (
     <>
       <PageTitle title="Paramètres du centre" description="Horaires par défaut appliqués aux nouvelles campagnes." />
@@ -856,7 +856,7 @@ export function PersonalPlanning() {
 }
 
 export function Profile() {
-  const { state, actor, agent, selectAgent, connected } = useApp();
+  const { agent } = useApp();
   return (
     <>
       <PageTitle title="Mon profil" description="Fiche, rattachement et qualifications." />
@@ -882,25 +882,6 @@ export function Profile() {
           </dl>
         </Panel>
         <InstallApp />
-        {/* Simulation control. On real data it would present someone else's
-            record as fictional, so it never renders in connected mode. */}
-        {!connected && (
-          <Panel title="Tester un autre agent" subtitle="Contrôle réservé à cet espace de démonstration.">
-            <label className="field">
-              Agent de démonstration
-              <select value={actor.id} onChange={e => selectAgent(e.target.value)}>
-                {state.agents.map(a => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="muted small">
-              Ce choix ne constitue pas une connexion à un compte. Les données restent fictives et locales.
-            </p>
-          </Panel>
-        )}
       </div>
     </>
   );

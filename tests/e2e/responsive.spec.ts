@@ -1,29 +1,14 @@
 import { test, expect } from "@playwright/test";
 
-const ROUTES = [
-  "/tableau-de-bord",
-  "/disponibilites",
-  "/planning",
-  "/campagnes",
-  "/agents",
-  "/historique",
-  "/parametres",
-  "/mes-disponibilites",
-  "/mon-planning",
-  "/notifications",
-  "/profil",
-];
+// Les écrans de travail demandent une session, donc un projet Supabase joignable.
+// Sans lui, seule la page de connexion est atteignable : c'est elle qu'on mesure.
+const ROUTES = ["/connexion", "/hors-ligne"];
 
-// Ces tests posent leur propre largeur : les rejouer sur les deux profils du
-// projet ne dirait rien de plus et doublerait la durée de la suite.
 test.describe("Adaptation aux écrans", () => {
   test.skip(({ isMobile }) => !isMobile, "Exécutés une fois, sur le profil mobile.");
-  test.beforeEach(async ({ page }) => {
-    await page.clock.setFixedTime(new Date("2026-09-18T10:00:00Z"));
-  });
 
-  // 320 px reste la largeur des plus petits téléphones en service. Ce qui
-  // déborde là déborde d'abord là : un champ de date en a fait la démonstration.
+  // 320 px reste la largeur des plus petits téléphones en service. Ce qui déborde
+  // là déborde d'abord là : un champ de date en a fait la démonstration.
   test("aucun écran ne dépasse la largeur de l’appareil", async ({ page }) => {
     for (const width of [320, 768]) {
       await page.setViewportSize({ width, height: 800 });
@@ -39,7 +24,7 @@ test.describe("Adaptation aux écrans", () => {
 
   test("les commandes restent assez grandes pour le doigt", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 800 });
-    for (const route of ["/tableau-de-bord", "/disponibilites", "/historique"]) {
+    for (const route of ROUTES) {
       await page.goto(route);
       const small = await page.evaluate(() =>
         [...document.querySelectorAll("button, a, input, select, [role=button]")]

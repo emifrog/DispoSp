@@ -11,15 +11,15 @@ import {
   localMonth,
   shiftMonth,
   suggestedRequirement,
-} from "./domain";
+} from "../../src/lib/domain";
 
 function campaignName(month: string) {
   return `Disponibilités ${elide(new Date(`${month}-01T12:00:00`).toLocaleDateString("fr-FR", { month: "long" }))}`;
 }
 
-// The demonstration has to stay usable whichever day it is opened: responses are
-// collected during the current month, for the month that follows.
-export function createDemoState(now = new Date()): AppState {
+// Un centre d'exemple complet, utilisable quelle que soit la date : les réponses se
+// collectent pendant le mois courant, pour le mois qui suit.
+export function sampleState(now = new Date()): AppState {
   const responseMonth = localMonth(now);
   const month = shiftMonth(responseMonth, 1);
   const opensOn = `${responseMonth}-01`;
@@ -238,5 +238,44 @@ export function createDemoState(now = new Date()): AppState {
     detail: `${campaign.name} · ${state.agents.length} agents invités`,
     entity: "availability_campaign",
   });
+  return state;
+}
+
+// ---------------------------------------------------------------------------
+// De quoi composer un état à la main
+//
+// L'application n'écrit plus rien localement : les commandes partent au serveur
+// et c'est PostgreSQL qui applique les règles, vérifié par database.test.ts. Ces
+// quelques fonctions ne sont donc pas une seconde implémentation de ces règles,
+// mais de simples constructeurs : elles posent un état, pour que les fonctions
+// de lecture du domaine — couverture, charge, exports — aient quelque chose à lire.
+// ---------------------------------------------------------------------------
+
+export function fillMonth(state: AppState, campaignId: string, userId: string, value: Availability) {
+  for (const date of monthDays(campaignId.replace("campaign-", "")))
+    state.entries[entryKey(campaignId, userId, date)] = { type: value, comment: "" };
+  return state;
+}
+
+export function validate(state: AppState, campaignId: string, userId: string, at = new Date()) {
+  state.responses[responseKey(campaignId, userId)] = at.toISOString();
+  return state;
+}
+
+export function assign(state: AppState, campaignId: string, date: string, shift: "DAY" | "NIGHT", ids: string[]) {
+  state.assignments[shiftKey(campaignId, date, shift)] = ids;
+  return state;
+}
+
+export function publish(
+  state: AppState,
+  campaignId: string,
+  date: string,
+  shift: "DAY" | "NIGHT",
+  ids: string[],
+  revision = 1,
+  at = new Date(),
+) {
+  state.publications[shiftKey(campaignId, date, shift)] = { agents: ids, revision, publishedAt: at.toISOString() };
   return state;
 }
