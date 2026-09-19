@@ -1,6 +1,6 @@
 # Plan de développement — DispoSP
 
-État au 18 septembre 2026. Les neuf migrations (`0001` à `0007`, puis la création atomique des campagnes et les écritures atomiques de la disponibilité habituelle) sont appliquées sur le projet de développement. Les statuts ci-dessous distinguent les fonctionnalités implémentées des vérifications restant à effectuer sur le site hébergé.
+État au 19 septembre 2026. Les onze migrations (`0001` à `0007`, la création atomique des campagnes, les écritures atomiques de la disponibilité habituelle, le resserrement des rôles avec la séparation grade/fonction, et les désistements) sont appliquées sur le projet de développement. Les statuts ci-dessous distinguent les fonctionnalités implémentées des vérifications restant à effectuer sur le site hébergé.
 
 Ce document complète le cahier des charges V1.0 du 17 septembre 2026 et `DECISIONS_FONCTIONNELLES.md`, qui restent la référence fonctionnelle. La configuration et les commandes sont détaillées dans le [README](README.md).
 
@@ -14,21 +14,23 @@ Les redirections d’authentification et la configuration Resend restent à conf
 
 ### Avancement par domaine
 
-| Domaine                     | État                     | Détail                                                                                                   |
-| --------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------- |
-| Socle technique             | ✅ implémenté            | Versionnement, formatage, lint, types et intégration continue                                            |
-| Base de données             | ✅ migrations appliquées | 19 tables, huit migrations appliquées, isolation RLS et règles métier                                    |
-| Authentification            | ✅ implémentée           | Inscription, confirmation d’adresse, connexion, session et déconnexion                                   |
-| Lecture et écriture         | ✅ implémentées          | Données et commandes métier raccordées à Supabase                                                        |
-| Administration              | ✅ implémentée           | Fiches agents, invitations, équipes, quatre rôles et qualifications                                      |
-| Disponibilités habituelles  | ✅ implémentées          | Modèle personnel par jour de semaine ; enregistrement et application atomiques                           |
-| Synthèse et couverture      | ✅ implémentées          | Matrice virtualisée, vue nominative par journée, niveaux de couverture et distinction potentiel/planifié |
-| Planning et équité          | ✅ implémentés           | Brouillon, publication contrôlée, répartition Jour/Nuit/24 h                                             |
-| Historique et audit         | ✅ implémentés           | Journal, filtres sujet/auteur/période/recherche et export du journal                                     |
-| Notifications               | 🟡 recette à compléter   | Centre interne, lecture, rappels manuels et envoi Resend implémentés ; réception à vérifier              |
-| Exports                     | ✅ implémentés           | CSV, ICS, Excel, journal d’audit et impression PDF, matrice mensuelle comprise                           |
-| Application installable     | ✅ implémentée           | Interface adaptée au mobile, manifeste, icônes et installation sur l’écran d’accueil                     |
-| Hébergement et exploitation | 🟡 à confirmer           | Configuration connectée, emails, sauvegardes et recette à plusieurs comptes                              |
+| Domaine                     | État                     | Détail                                                                                                                               |
+| --------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Socle technique             | ✅ implémenté            | Versionnement, formatage, lint, types et intégration continue                                                                        |
+| Base de données             | ✅ migrations appliquées | 20 tables, onze migrations appliquées, isolation RLS et règles métier                                                                |
+| Authentification            | 🟡 SSO à configurer      | Inscription, confirmation d’adresse, connexion, mot de passe oublié, session et déconnexion ; SSO SAML écrit, fournisseur à déclarer |
+| Lecture et écriture         | ✅ implémentées          | Données et commandes métier raccordées à Supabase                                                                                    |
+| Administration              | ✅ implémentée           | Fiches agents avec grade et fonction, invitations, équipes, trois rôles et qualifications                                            |
+| Besoins et statistiques     | ✅ implémentés           | Besoins du mois en lot ; statistiques par mois, par jour de semaine et par agent                                                     |
+| Désistements                | ✅ implémentés           | L’agent signale, l’encadrement tranche ; la réaffectation reste au planning                                                          |
+| Disponibilités habituelles  | ✅ implémentées          | Modèle personnel par jour de semaine ; enregistrement et application atomiques                                                       |
+| Synthèse et couverture      | ✅ implémentées          | Matrice virtualisée, vue nominative par journée, niveaux de couverture et distinction potentiel/planifié                             |
+| Planning et équité          | ✅ implémentés           | Brouillon, publication contrôlée, répartition Jour/Nuit/24 h                                                                         |
+| Historique et audit         | ✅ implémentés           | Journal, filtres sujet/auteur/période/recherche et export du journal                                                                 |
+| Notifications               | 🟡 recette à compléter   | Centre interne, lecture, rappels manuels et envoi Resend implémentés ; réception à vérifier                                          |
+| Exports                     | ✅ implémentés           | CSV, ICS, Excel, journal d’audit et impression PDF, matrice mensuelle comprise                                                       |
+| Application installable     | ✅ implémentée           | Interface adaptée au mobile, manifeste, icônes et installation sur l’écran d’accueil                                                 |
+| Hébergement et exploitation | 🟡 à confirmer           | Configuration connectée, emails, sauvegardes et recette à plusieurs comptes                                                          |
 
 ### Garanties métier
 
@@ -64,7 +66,7 @@ Le développement des lots 3 et 5 a avancé : la priorité porte désormais sur 
 
 ### Lot 0 — Socle ✅ implémenté
 
-Versionnement et outillage, authentification, lecture des données, intégration continue et virtualisation de la synthèse. Les migrations `0001_foundation.sql` à `0007_availability_templates.sql`, puis `20260918151529_atomic_campaign_creation.sql`, sont appliquées ; le schéma compte 19 tables.
+Versionnement et outillage, authentification, lecture des données, intégration continue et virtualisation de la synthèse. Les onze migrations sont appliquées ; le schéma compte 20 tables.
 
 ### Lot 1 — Écriture des données ✅ implémentée, déploiement à confirmer
 
@@ -82,9 +84,9 @@ Sont raccordés : saisie et validation, affectation/retrait, besoins, publicatio
 
 ### Lot 2 — Agents et administration ✅ implémentés, recette d’invitation restante
 
-- Fiche agent : nom, grade, matricule, téléphone et statut actif/inactif ; adresse email liée au compte d’authentification.
-- Invitations, modification des fiches, changement d’équipe et de rôle selon les droits, désactivation/réactivation et attribution de qualifications.
-- Création et modification des équipes ; quatre rôles pris en compte par l’interface et la base.
+- Fiche agent : nom, grade, fonction, matricule, téléphone et statut actif/inactif ; adresse email liée au compte d’authentification. Le grade et la fonction sont deux champs distincts, choisis dans des listes tenues côté interface — la base accepte le texte, de sorte qu’allonger une liste ne demande pas de migration.
+- Invitations, modification des fiches, changement d’équipe et de rôle selon les droits, désactivation/réactivation et attribution de qualifications. **L’invitation ne demande plus l’équipe** : l’invité rejoint celle de l’invitant, et sa fiche permet ensuite de le déplacer.
+- Création et modification des équipes ; trois rôles pris en compte par l’interface et la base — `AGENT`, `GESTIONNAIRE`, `ADMIN`. `RESPONSABLE` a été retiré : un gestionnaire gère tout son centre, et seul un administrateur change un rôle.
 - Historique filtrable par sujet, auteur et recherche libre.
 
 La migration `0004_agent_administration.sql` permet ces opérations. Le premier centre et son administrateur nécessitent toujours les scripts de provisionnement ; les agents suivants passent par une invitation enregistrée dans l’application, puis leur inscription et la confirmation de leur adresse.
@@ -134,17 +136,23 @@ Manifeste, icônes et agent de service : l’application s’ajoute à l’écra
 
 La consultation hors ligne reste une extension à cadrer ; les notifications poussées relèvent de la V2. **À confirmer :** installation réelle depuis l’URL publique, sur Android et sur iOS — un manifeste servi en HTTPS est nécessaire, et l’environnement de développement ne le fournit pas.
 
+### Lot 7 — Besoins, statistiques et désistements ✅ implémentés
+
+- **Besoins du mois** : un écran qui pose la règle du mois d’un geste — effectif et minima par qualification, sur tout le mois ou sur certains jours de semaine. Le planning continue de régler une garde à la fois, pour les exceptions ; les deux écrivent la même table.
+- **Statistiques** : mois par mois sur l’ensemble des campagnes, par jour de semaine pour repérer les trous réguliers, et par agent. Les taux se calculent sur l’effectif actuel, ce que l’écran affiche en tête : un agent parti ne compte plus dans les mois où il répondait.
+- **Désistements** : un agent signale qu’il ne peut plus tenir une garde publiée ; l’encadrement accepte ou refuse. **Accepter ne réaffecte pas** — la base refuse de republier un créneau non couvert, et il n’existe qu’une façon de modifier un planning : l’écran de planning. L’écran des demandes rappelle le remplacement tant qu’il n’est pas fait.
+
 ### Hors périmètre V1
 
-Notifications poussées, échanges de garde entre agents, proposition automatique de planning, règles de repos, connexion par compte d’entreprise et intégrations externes.
+Notifications poussées, **échanges nommés** entre agents — « je te donne ma garde, tu prends la mienne » —, proposition automatique de planning, règles de repos et intégrations externes. La connexion par compte d’entreprise est écrite mais attend la déclaration d’un fournisseur SAML côté Supabase.
 
 ## 4. Couverture du cahier des charges V1
 
 | Exigence (§)                                   | État | Commentaire                                                                 |
 | ---------------------------------------------- | ---- | --------------------------------------------------------------------------- |
-| Authentification (§18)                         | ✅   | Email, mot de passe, inscription et confirmation                            |
-| Rôles et droits (§2)                           | ✅   | Quatre rôles en base et dans l’interface                                    |
-| Fiche agent (§3)                               | ✅   | Fiche complète et invitation ; acceptation hébergée à vérifier              |
+| Authentification (§18)                         | ✅   | Email, mot de passe, réinitialisation, inscription et confirmation          |
+| Rôles et droits (§2)                           | ✅   | Trois rôles en base et dans l’interface                                     |
+| Fiche agent (§3)                               | ✅   | Fiche complète, grade et fonction séparés ; acceptation hébergée à vérifier |
 | Calendrier cinq états (§4)                     | ✅   | Saisie persistée, validation explicite et invalidation                      |
 | Saisie multiple et règles répétitives (§4)     | ✅   | Périodes et jours de semaine                                                |
 | Disponibilités habituelles (§4)                | ✅   | Modèles personnels ; enregistrement et application atomiques                |
@@ -158,7 +166,7 @@ Notifications poussées, échanges de garde entre agents, proposition automatiqu
 | Notifications (§10)                            | 🟡   | Centre interne et Resend implémentés ; réception à vérifier, rappel manuel  |
 | Exports (§11)                                  | ✅   | CSV, ICS, Excel et journal ; PDF par impression, matrice comprise           |
 | Historique et audit (§12)                      | ✅   | Journal, filtres sujet/auteur/période/recherche et export CSV               |
-| Modèle de données (§14)                        | ✅   | 19 tables, huit migrations appliquées                                       |
+| Modèle de données (§14)                        | ✅   | 20 tables, onze migrations appliquées                                       |
 | Sécurité et RGPD (§16)                         | 🟡   | Contrôles techniques présents ; dispositions d’exploitation à compléter     |
 | Responsive et installable (§17)                | ✅   | De 320 px au grand écran, sans débordement ; manifeste, icônes et agent     |
 | Interface à plusieurs centaines d’agents (§21) | 🟡   | Scénario de virtualisation à 300 agents ; charge hébergée à mesurer         |

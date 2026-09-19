@@ -499,6 +499,12 @@ label {
   color: #b47b2e;
   background: #fff4e4;
 }
+/* Ce qui manque et qui a une échéance, pas ce qui est cassé : la maquette la
+   réserve aux jours qui restent à renseigner. */
+.pill-red {
+  color: #c0392f;
+  background: #fdeceb;
+}
 .campaign-ribbon {
   display: flex;
   align-items: center;
@@ -565,6 +571,120 @@ label {
   background: white;
   color: #245bc0;
   box-shadow: 0 1px 5px #1a35521a;
+}
+.segmented button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+/* La variante d'en-tête de la maquette : pleine largeur, plus haute, et c'est
+   l'onglet retenu qui porte le bleu plein — l'inverse de la petite, où le
+   retenu est blanc sur un rail gris. */
+.segmented-lg {
+  display: flex;
+  width: 100%;
+  padding: 5px;
+  border-radius: 10px;
+  gap: 4px;
+  margin-bottom: 20px;
+}
+.segmented-lg button {
+  flex: 1;
+  justify-content: center;
+  padding: 12px 14px;
+  font-size: 13px;
+  border-radius: 7px;
+}
+.segmented-lg button.selected {
+  background: var(--blue);
+  color: white;
+  box-shadow: 0 2px 8px #1c53b533;
+}
+
+/* L'anneau de progression. La part se règle par --ring-share, posée en style
+   par le composant ; la teinte par la classe, pour qu'aucune couleur ne soit
+   écrite en dur dans le JSX. */
+.ring {
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(var(--ring-color) var(--ring-share, 0%), #edf1f7 0);
+}
+.ring-blue {
+  --ring-color: var(--blue);
+}
+.ring-green {
+  --ring-color: #45b599;
+}
+.ring > div {
+  background: white;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.ring strong {
+  font-weight: 650;
+  line-height: 1.25;
+  color: var(--text);
+}
+.ring span {
+  color: #8a99ac;
+  line-height: 1.3;
+}
+.ring-lg {
+  width: 137px;
+  height: 137px;
+}
+.ring-lg > div {
+  width: 113px;
+  height: 113px;
+}
+.ring-lg strong {
+  font-size: 28px;
+}
+.ring-lg strong small {
+  font-size: 18px;
+}
+.ring-lg span {
+  font-size: 10px;
+}
+.ring-md {
+  width: 96px;
+  height: 96px;
+}
+.ring-md > div {
+  width: 78px;
+  height: 78px;
+}
+.ring-md strong {
+  font-size: 20px;
+}
+.ring-md strong small {
+  font-size: 13px;
+}
+.ring-md span {
+  font-size: 9px;
+}
+.ring-sm {
+  width: 62px;
+  height: 62px;
+}
+.ring-sm > div {
+  width: 50px;
+  height: 50px;
+}
+.ring-sm strong {
+  font-size: 14px;
+}
+.ring-sm strong small {
+  font-size: 10px;
+}
+.ring-sm span {
+  font-size: 8px;
 }
 .stats-grid {
   display: grid;
@@ -675,6 +795,11 @@ label {
 }
 .dot.blue {
   background: var(--blue);
+}
+/* Référencée de longue date par le tableau de bord, mais jamais définie : le
+   point restait invisible faute de fond. */
+.dot.gray {
+  background: #c3cddc;
 }
 .panel {
   background: white;
@@ -933,43 +1058,67 @@ label {
   display: grid;
   grid-template-columns: 1.2fr 1fr;
   gap: 22px;
+  align-items: start;
+}
+/* Les échéances : une date, ce qu'elle engage, et dans combien de temps. Le ton
+   de la pastille vient du délai, pas du type — c'est l'imminence qui compte. */
+.deadline-list {
+  padding: 4px 22px 18px;
+}
+.deadline-list > div {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 11px 0;
+  border-bottom: 1px solid #eef2f7;
+}
+.deadline-list > div:last-child {
+  border-bottom: 0;
+}
+.deadline-date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 9px;
+  background: #eef3fb;
+  color: #3b5f95;
+  flex-shrink: 0;
+}
+.deadline-date strong {
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.1;
+}
+.deadline-date small {
+  font-size: 9px;
+  text-transform: uppercase;
+}
+.deadline-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.deadline-body strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.deadline-body small {
+  font-size: 11px;
+  color: #8a99af;
+}
+.deadline-list .pill {
+  flex-shrink: 0;
+  font-size: 10px;
 }
 .response-overview {
   display: flex;
   align-items: center;
   gap: 35px;
   padding: 12px 30px 24px;
-}
-.donut {
-  width: 137px;
-  height: 137px;
-  border-radius: 50%;
-  padding: 12px;
-  flex-shrink: 0;
-  transform: rotate(-90deg);
-}
-.donut > div {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  background: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  transform: rotate(90deg);
-}
-.donut strong {
-  font-size: 28px;
-  font-weight: 650;
-  line-height: 1.3;
-}
-.donut strong small {
-  font-size: 18px;
-}
-.donut span {
-  font-size: 10px;
-  color: #8a99ac;
 }
 .response-counts {
   flex: 1;
@@ -1133,20 +1282,34 @@ label {
   background: #edf8f3;
   border-color: #d5eee2;
 }
-.response-banner-icon {
-  color: var(--blue);
-  display: flex;
+.response-banner-body {
+  flex: 1;
+  min-width: 0;
 }
 .response-banner strong {
   font-size: 15px;
 }
+.response-banner .mini-progress {
+  margin: 8px 0 6px;
+  background: #ffffffb3;
+}
+/* Le bandeau validé passe au vert en entier : une barre restée bleue sur un
+   fond vert donnait deux états à lire au lieu d'un. */
+.response-banner.validated .mini-progress > i {
+  background: #45b599;
+}
+/* Le fond des pastilles vertes est trop proche de celui du bandeau validé pour
+   s'en détacher : ici c'est le blanc qui dessine la pastille. */
+.response-banner.validated .pill-green {
+  background: white;
+}
 .response-banner p {
   color: #7186a1;
   font-size: 12px;
-  margin-top: 4px;
 }
 .response-banner .pill {
   margin-left: auto;
+  flex-shrink: 0;
 }
 .availability-layout {
   display: grid;
@@ -1252,19 +1415,6 @@ label {
   width: 9px;
   height: 9px;
   border-radius: 3px;
-}
-.completion-number {
-  font-size: 43px;
-  font-weight: 650;
-  letter-spacing: -2px;
-  color: var(--blue);
-  padding: 0 22px 10px;
-}
-.completion-number span {
-  font-size: 23px;
-}
-.availability-side .mini-progress {
-  margin: 0 22px;
 }
 .availability-side .panel > .muted {
   margin: 17px 22px;
@@ -1448,6 +1598,35 @@ label {
 }
 .availability-choices span {
   font-size: 10px;
+}
+.availability-choices small {
+  font-size: 9px;
+  opacity: 0.75;
+}
+/* Ce que la saisie rapide va réellement toucher, dit avant le bouton plutôt
+   qu'après coup. */
+.quick-summary {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: 14px 0 2px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #eef4ff;
+  color: #2c6ad6;
+}
+.quick-summary > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.quick-summary strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.quick-summary small {
+  font-size: 11px;
+  color: #6c86ab;
 }
 .availability-choices svg {
   position: absolute;
@@ -1870,7 +2049,8 @@ label {
 .availability-table tbody tr:hover td {
   background: #fafcff;
 }
-.availability-table .table-agent {
+/* Non restreinte à la matrice : la même vignette sert aussi aux statistiques. */
+.table-agent {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -1889,6 +2069,26 @@ label {
 .availability-table tbody td:nth-child(2) {
   min-width: 85px;
   padding: 10px;
+}
+/* Vue compacte : lignes à 32 px au lieu de 45. Ces hauteurs sont reprises telles
+   quelles par le virtualiseur (ROW_HEIGHT / ROW_HEIGHT_COMPACT) — les changer
+   ici sans les changer là-bas décalerait le défilement. */
+.table-panel.compact .availability-table td {
+  padding: 3px 4px;
+}
+.table-panel.compact .availability-table tbody td:nth-child(2) {
+  padding: 3px 10px;
+}
+.table-panel.compact .availability-table td:first-child {
+  padding: 3px 15px;
+}
+.table-panel.compact .table-agent small {
+  display: none;
+}
+.table-panel.compact .table-agent .avatar {
+  width: 24px;
+  height: 24px;
+  font-size: 9px;
 }
 .column-date small {
   display: block;
@@ -2317,6 +2517,635 @@ fieldset.field legend {
 .personal-shifts .pill {
   margin-left: auto;
 }
+/* Les puces de grade du vivier : un filtre et un effectif dans le même geste. */
+.grade-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 12px 22px 4px;
+}
+.grade-chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border-radius: 20px;
+  background: #f1f4f9;
+  color: #6d7f99;
+  font-size: 11px;
+  font-weight: 600;
+}
+.grade-chips button b {
+  font-weight: 650;
+  color: #93a3ba;
+}
+.grade-chips button.selected {
+  background: var(--blue);
+  color: white;
+}
+.grade-chips button.selected b {
+  color: #c7dbff;
+}
+
+/* --- Désistements ---------------------------------------------------------- */
+
+.withdrawal-list {
+  padding: 0 22px 20px;
+}
+.withdrawal-list article {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid #edf1f7;
+}
+.withdrawal-list article:last-child {
+  border-bottom: 0;
+}
+.withdrawal-list.settled article {
+  opacity: 0.72;
+}
+.withdrawal-body {
+  flex: 1;
+  min-width: 0;
+}
+.withdrawal-who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.withdrawal-who strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+}
+.withdrawal-who small {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #7f92ad;
+}
+.withdrawal-reason {
+  margin: 9px 0 0;
+  font-size: 12px;
+  color: #5f7590;
+  font-style: italic;
+}
+/* Accepté ne veut pas dire remplacé : tant que l'agent figure au planning
+   publié, il reste un geste à faire, et il se dit ici. */
+.withdrawal-todo {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 9px 12px;
+  border-radius: 7px;
+  background: #fff6ec;
+  color: #a4651f;
+  font-size: 11px;
+}
+.withdrawal-todo a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--blue);
+  font-weight: 600;
+}
+.withdrawal-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.withdrawal-pending {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.nav-badge {
+  margin-left: auto;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: #df1427;
+  color: white;
+  font-size: 10px;
+  font-weight: 650;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+@media (max-width: 760px) {
+  .withdrawal-list article {
+    flex-wrap: wrap;
+  }
+  .withdrawal-actions,
+  .withdrawal-pending {
+    width: 100%;
+  }
+}
+
+/* --- Statistiques ---------------------------------------------------------- */
+
+.stats-highlight {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 22px;
+  margin-bottom: 22px;
+}
+/* Nommé, pas « > div » : l'anneau est un div lui aussi, et un flex: 1 posé sur
+   lui l'étirerait en ellipse. La même erreur qu'ailleurs, le même remède. */
+.stats-highlight-body {
+  flex: 1;
+  min-width: 0;
+}
+.stats-highlight strong {
+  font-size: 16px;
+  font-weight: 650;
+  display: block;
+  margin-bottom: 5px;
+}
+.stats-table tbody th {
+  width: 26%;
+}
+.stats-table tbody th small {
+  display: block;
+  font-weight: 400;
+  font-size: 10px;
+  color: #98a8bf;
+}
+.stats-table tbody td {
+  width: auto;
+}
+.stat-bar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.stat-bar-track {
+  flex: 1;
+  min-width: 48px;
+  max-width: 190px;
+  height: 7px;
+  border-radius: 5px;
+  background: #edf1f7;
+  overflow: hidden;
+}
+.stat-bar-track > i {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+}
+.stat-bar-track.blue > i {
+  background: var(--blue);
+}
+.stat-bar-track.green > i {
+  background: #45b599;
+}
+.stat-bar small {
+  color: #7a8ba3;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.weekday-stats {
+  padding: 4px 22px 18px;
+}
+.weekday-stats > div {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 11px 0;
+  border-bottom: 1px solid #eef2f7;
+}
+.weekday-stats > div:last-child {
+  border-bottom: 0;
+}
+.weekday-stats-name {
+  width: 92px;
+  flex-shrink: 0;
+}
+.weekday-stats-name strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.weekday-stats-name small {
+  font-size: 10px;
+  color: #98a8bf;
+}
+/* La barre empilée reprend les teintes de la légende des disponibilités : le
+   même vert veut dire « jour » ici comme dans la matrice. */
+.stacked-bar {
+  flex: 1;
+  display: flex;
+  height: 16px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #f1f4f9;
+}
+.stacked-bar > i {
+  display: block;
+  height: 100%;
+}
+.stacked-bar > i.day {
+  background: #8ed3ae;
+}
+.stacked-bar > i.night {
+  background: #93b6ee;
+}
+.stacked-bar > i.full {
+  background: #c1aeea;
+}
+.stacked-bar > i.unavailable {
+  background: #f0a7a4;
+}
+.stacked-bar > i.unknown {
+  background: #d8e0ea;
+}
+.weekday-stats-coverage {
+  width: 78px;
+  flex-shrink: 0;
+  text-align: right;
+}
+.weekday-stats-coverage {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.weekday-stats-coverage strong {
+  font-size: 14px;
+  font-weight: 650;
+}
+.weekday-stats-coverage small {
+  font-size: 10px;
+  color: #98a8bf;
+}
+
+/* --- Besoins du mois ------------------------------------------------------- */
+
+.needs-table-scroll {
+  max-height: 62vh;
+  overflow: auto;
+  margin: 0 22px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.needs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.needs-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f9fbfe;
+  color: #7d91af;
+  font-weight: 500;
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.needs-table thead th small {
+  display: block;
+  font-size: 10px;
+  color: #9dadc4;
+  font-weight: 400;
+}
+.needs-table thead th svg {
+  vertical-align: -2px;
+  margin-right: 6px;
+}
+.needs-table tbody th {
+  text-align: left;
+  font-weight: 500;
+  padding: 6px 12px;
+  white-space: nowrap;
+  border-bottom: 1px solid #eef2f7;
+  color: #5f7590;
+}
+.needs-table tbody td {
+  padding: 6px 12px;
+  border-bottom: 1px solid #eef2f7;
+  width: 38%;
+}
+.needs-table tbody tr:last-child th,
+.needs-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.need-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: #eef4ff;
+  color: #2c6ad6;
+}
+.need-cell strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+.need-cell small {
+  font-size: 10px;
+  color: #6c86ab;
+}
+/* Un créneau sans besoin n'est pas « zéro » : il n'a pas été réglé. Le gris et
+   le tiret disent l'absence, pas une valeur. */
+.need-cell.empty {
+  background: #f4f6fa;
+  color: #a4b2c6;
+  align-items: center;
+}
+.minima-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.minima-grid label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #f6f8fc;
+  border-radius: 7px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+.minima-grid input {
+  width: 62px;
+  text-align: center;
+}
+
+/* --- Mon planning ---------------------------------------------------------- */
+
+/* La prochaine garde, sortie des listes : elle est la réponse à la question que
+   l'agent se pose en ouvrant l'écran. */
+.next-shift {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 18px 22px;
+  border-radius: 10px;
+  margin-bottom: 22px;
+  border: 1px solid #d9e6fb;
+  background: #eef5ff;
+}
+.next-shift.night {
+  border-color: #dedaf3;
+  background: #f2f0fc;
+}
+.next-shift-icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  background: white;
+  color: var(--blue);
+  flex-shrink: 0;
+}
+.next-shift.night .next-shift-icon {
+  color: #6f5fc4;
+}
+.next-shift > div {
+  flex: 1;
+  min-width: 0;
+}
+.next-shift strong {
+  font-size: 15px;
+}
+.next-shift p {
+  color: #6c82a1;
+  font-size: 12px;
+  margin-top: 3px;
+}
+.next-shift-place {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.next-shift-place small {
+  font-weight: 400;
+  font-size: 11px;
+  color: #7f92ad;
+}
+.my-month {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 22px 22px;
+}
+.my-day {
+  min-height: 58px;
+  border-radius: 8px;
+  background: #f4f7fb;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: #93a3ba;
+}
+.my-day b {
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748d;
+}
+.my-day span {
+  font-size: 12px;
+  font-weight: 650;
+}
+.my-day.day {
+  background: #e7f6ed;
+  color: #1c8354;
+}
+.my-day.night {
+  background: #e8f0fd;
+  color: #2a5fc0;
+}
+.my-day.full {
+  background: #f1ecfb;
+  color: #6d4fb8;
+}
+.my-day.day b,
+.my-day.night b,
+.my-day.full b {
+  color: inherit;
+}
+/* Le jour courant se repère au trait, pas à la couleur : celle-ci dit déjà quel
+   type de garde porte la journée. */
+.my-day.is-today {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+.planning-exports {
+  margin-top: 22px;
+}
+.planning-exports .shortcut {
+  width: 100%;
+  text-align: left;
+}
+
+/* --- Accueil de l'agent --------------------------------------------------- */
+
+/* Le « Voir tout » d'un en-tête de panneau. */
+.panel-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.home-campaign .mini-progress {
+  margin: 9px 0 7px;
+}
+.home-progress {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 4px 22px 20px;
+}
+/* Nommé plutôt que « > div » : l'anneau est un div lui aussi, et un flex: 1
+   posé sur lui l'étirerait en ellipse. */
+.home-progress-body {
+  flex: 1;
+  min-width: 0;
+}
+.home-progress strong {
+  font-size: 16px;
+  font-weight: 650;
+}
+.home-campaign > .button {
+  width: calc(100% - 44px);
+  margin: 0 22px 22px;
+}
+.home-shifts {
+  padding: 0 22px 22px;
+}
+.home-shifts > a {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 13px 0;
+  border-bottom: 1px solid #edf1f7;
+}
+.home-shifts > a:last-child {
+  border-bottom: 0;
+}
+.home-shift-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.home-shift-body strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.home-shift-body small {
+  font-size: 12px;
+  color: #7187a5;
+}
+.home-shift-hours {
+  font-size: 12px;
+  color: #5c718f;
+  white-space: nowrap;
+}
+.home-section {
+  font-size: 17px;
+  font-weight: 650;
+  margin: 26px 0 2px;
+}
+.home-section-caption {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0 0 14px;
+}
+.home-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+}
+.shortcut {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 15px 17px;
+  color: var(--text);
+}
+.shortcut > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.shortcut strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.shortcut small {
+  font-size: 12px;
+  color: #7187a5;
+}
+.shortcut-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  background: #eef3fc;
+  color: var(--blue);
+  flex-shrink: 0;
+}
+/* Le raccourci principal reprend le bleu plein du bouton : sur la maquette,
+   c'est lui qui porte le geste le plus fréquent. */
+.shortcut-primary {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: white;
+}
+.shortcut-primary small {
+  color: #d2e2ff;
+}
+.shortcut-primary .shortcut-icon {
+  background: #ffffff2e;
+  color: white;
+}
+@media (max-width: 760px) {
+  .home-shortcuts {
+    grid-template-columns: 1fr;
+  }
+  .home-progress {
+    padding: 4px 16px 16px;
+    gap: 16px;
+  }
+  .home-campaign > .button {
+    width: calc(100% - 32px);
+    margin: 0 16px 16px;
+  }
+  .home-shifts {
+    padding: 0 16px 16px;
+  }
+}
+
 .loading-state {
   padding: 80px 30px;
   text-align: center;
@@ -2907,29 +3736,66 @@ fieldset.field legend {
 }
 .sign-in {
   min-height: 100dvh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 32px 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   background: var(--background);
+}
+/* Le panneau de marque. Pas de photographie : aucune ne nous a été fournie, et
+   une image d'illustration trouvée ailleurs n'aurait rien à faire sur l'écran
+   d'entrée d'un centre de secours.
+
+   Un aplat, et exactement --navy : le logo posé ici arrive du studio sur une
+   plaque bleu nuit non détourée. La moindre nuance d'écart — un dégradé, par
+   exemple — fait réapparaître son rectangle. */
+.sign-in-hero {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 18px;
+  padding: 56px;
+  color: #dbe6f6;
+  background: var(--navy);
+}
+.sign-in-hero h2 {
+  font-size: 40px;
+  line-height: 1.12;
+  font-weight: 650;
+  letter-spacing: -1px;
+  color: white;
+  margin: 12px 0 0;
+}
+.sign-in-hero h2::before {
+  content: "";
+  display: block;
+  width: 52px;
+  height: 4px;
+  border-radius: 3px;
+  background: #df1427;
+  margin-bottom: 26px;
+}
+.sign-in-hero p {
+  font-size: 15px;
+  color: #a9c0de;
+  max-width: 30ch;
 }
 .sign-in-card {
   width: 100%;
-  max-width: 420px;
-  background: white;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 32px 28px;
+  max-width: 430px;
+  justify-self: center;
+  align-self: center;
+  padding: 40px 30px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  box-shadow: 0 12px 36px rgb(20 43 80 / 7%);
+  gap: 13px;
+}
+.sign-in-brand {
+  margin-bottom: 14px;
 }
 .sign-in-card h1 {
-  font-size: 22px;
-  font-weight: 600;
+  font-size: 24px;
+  font-weight: 650;
   letter-spacing: -0.5px;
-  margin: 10px 0 0;
+  margin: 0;
 }
 .sign-in-card > p {
   margin: 0;
@@ -2944,7 +3810,116 @@ fieldset.field legend {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 4px 0 0;
+  margin: 2px 0 0;
+}
+/* Un champ à icône : l'icône est décorative et posée derrière la saisie, qui
+   garde tout le reste de la largeur. */
+.input-affix {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.input-affix > svg:first-child {
+  position: absolute;
+  left: 13px;
+  color: #94a6bf;
+  pointer-events: none;
+}
+.input-affix input {
+  width: 100%;
+  padding-left: 40px;
+}
+.input-reveal {
+  position: absolute;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  color: #7d90ab;
+  background: none;
+}
+.input-reveal:hover {
+  background: #f0f4fa;
+}
+.sign-in-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 2px 0;
+}
+.checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #5d7290;
+}
+/* 24 px : la taille minimale qu'un doigt atteint sans viser, et que le test
+   d'adaptation aux écrans fait respecter. Une case de navigateur en fait 13. */
+.checkbox-inline input {
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--blue);
+}
+.sign-in-separator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #9aabc2;
+  font-size: 12px;
+  margin: 4px 0;
+}
+.sign-in-separator::before,
+.sign-in-separator::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.sign-in-back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.sign-in-footer {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: #8b9bb2;
+}
+.sign-in-footer small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: #a0aec4;
+}
+/* Sous 900 px le panneau de marque passerait en bandeau écrasé : il disparaît,
+   et le mot-symbole en tête de carte porte seul l'identité. */
+@media (max-width: 900px) {
+  .sign-in {
+    grid-template-columns: 1fr;
+    align-items: center;
+    padding: 24px 16px;
+  }
+  .sign-in-hero {
+    display: none;
+  }
+  .sign-in-card {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 12px 36px rgb(20 43 80 / 7%);
+    padding: 30px 24px;
+  }
 }
 
 /* ---------------------------------------------------------------------------

@@ -14,7 +14,9 @@ test.describe("Connexion", () => {
   test("les identifiants invalides remontent un message en français", async ({ page }) => {
     await page.goto("/connexion");
     await page.getByLabel("Adresse électronique").fill("inconnu@example.org");
-    await page.getByLabel("Mot de passe").fill("mauvais-mot-de-passe");
+    // Exact : le bouton d'affichage du mot de passe s'appelle « Afficher le mot
+    // de passe », et une correspondance par sous-chaîne attraperait les deux.
+    await page.getByLabel("Mot de passe", { exact: true }).fill("mauvais-mot-de-passe");
     await page.getByRole("button", { name: "Se connecter" }).click();
     await expect(page.locator("form p[role=alert]")).toHaveText("Adresse ou mot de passe incorrect.");
   });
@@ -22,7 +24,7 @@ test.describe("Connexion", () => {
   test("la validation du formulaire précède tout appel réseau", async ({ page }) => {
     await page.goto("/connexion");
     await page.getByLabel("Adresse électronique").fill("pas-une-adresse");
-    await page.getByLabel("Mot de passe").fill("x");
+    await page.getByLabel("Mot de passe", { exact: true }).fill("x");
     await page.getByRole("button", { name: "Se connecter" }).click();
     // Without noValidate the browser would block the submit and show its own
     // message, in its own language, never this one.

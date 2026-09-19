@@ -99,4 +99,7 @@ Ces choix ont été annoncés au démarrage du développement. Ils sont modifiab
 - Les horaires modifiés s'appliquent aux nouvelles campagnes ; les campagnes existantes conservent leurs horaires.
 - Le fuseau de référence est Europe/Paris ; une nuit peut avoir une durée réelle différente lors du changement d'heure.
 
-Le stockage local de démonstration n'est pas une authentification ni une base multi-utilisateur. Le schéma Supabase constitue un socle séparé, non raccordé à l'interface à ce stade.
+> **Mise à jour du 19 septembre 2026.** Le mode démonstration et son stockage local ont été retirés : l'application ne tourne plus que branchée sur Supabase, et le schéma n'est plus un socle séparé mais la source de toutes les données affichées. Deux décisions prises depuis complètent celles ci-dessus, sans les contredire :
+>
+> - **Trois rôles au lieu de quatre.** `RESPONSABLE` est retiré. Un gestionnaire n'est plus tenu à son équipe, il gère tout son centre ; seul un administrateur change un rôle, et personne ne change le sien. Les comptes concernés sont passés gestionnaires.
+> - **Le grade et la fonction sont deux choses.** Le grade se gagne à l'ancienneté et suit la personne ; la fonction se tient sur un engin. Ils étaient confondus dans un champ unique, ce qui obligeait à renoncer à l'un des deux.

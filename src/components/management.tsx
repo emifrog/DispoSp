@@ -6,7 +6,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { type z } from "zod";
 import {
   CalendarDays,
-  CalendarCheck2,
   CheckCheck,
   Download,
   LockKeyhole,
@@ -20,7 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { useApp } from "./provider";
-import { Avatar, PageTitle, Panel } from "./common";
+import { AdministrationOnly, Avatar, PageTitle, Panel } from "./common";
 import { Button } from "./ui/button";
 import { Modal } from "./ui/dialog";
 import {
@@ -32,7 +31,6 @@ import {
   lastDayOfMonth,
   localDate,
   localMonth,
-  monthDays,
   auditFamilies,
   fonctions,
   gradeLabel,
@@ -40,13 +38,12 @@ import {
   memberRoles,
   monthLabel,
   plural,
-  shiftKey,
   shiftMonth,
   type Agent,
   type AppState,
   type MemberRole,
 } from "@/lib/domain";
-import { auditCsv, download, personalCalendar } from "@/lib/exports";
+import { auditCsv, download } from "@/lib/exports";
 import { InstallApp } from "./pwa";
 import { roleLabels } from "@/lib/session";
 
@@ -597,23 +594,6 @@ function TeamDialog({ initial, onClose }: { initial: { id?: string; name: string
   );
 }
 
-// A screen an administrator alone may read. The database says so too — the audit
-// policy returns nothing to anyone else — but an empty page explains nothing.
-function AdministrationOnly({ title }: { title: string }) {
-  return (
-    <>
-      <PageTitle title={title} description="Cet écran est réservé à l’administration du centre." />
-      <div className="info-card horizontal">
-        <ShieldCheck size={24} />
-        <p>
-          Seuls les profils gestionnaire et administrateur y ont accès. Rapprochez-vous de l’administrateur de votre
-          centre si vous pensez devoir en faire partie.
-        </p>
-      </div>
-    </>
-  );
-}
-
 export function Audit() {
   const { state, canAdminister } = useApp();
   const [family, setFamily] = useState("");
@@ -818,74 +798,6 @@ export function Settings() {
           </p>
         </div>
       </div>
-    </>
-  );
-}
-
-export function PersonalPlanning() {
-  const { state, actor, campaignId, campaign } = useApp();
-  const shifts = monthDays(campaign.month).flatMap(date =>
-    (["DAY", "NIGHT"] as const).flatMap(shift => {
-      const published = state.publications[shiftKey(campaignId, date, shift)];
-      return published?.agents.includes(actor.id) ? [{ date, shift, published }] : [];
-    }),
-  );
-  return (
-    <>
-      <PageTitle
-        title="Mon planning"
-        description={`${monthLabel(campaign.month)} · vos gardes telles qu’elles ont été publiées.`}
-        action={
-          <Button
-            variant="secondary"
-            disabled={!shifts.length}
-            onClick={() =>
-              download(
-                personalCalendar(state, campaign, actor.id),
-                `planning-${campaign.month}.ics`,
-                "text/calendar;charset=utf-8",
-              )
-            }
-          >
-            <Download size={17} />
-            Exporter mon calendrier
-          </Button>
-        }
-      />
-      <Panel title="Mes affectations publiées" subtitle="Les brouillons du responsable ne sont pas affichés ici.">
-        {!shifts.length ? (
-          <div className="empty-state">
-            <CalendarCheck2 size={40} />
-            <h2>Aucune garde publiée pour ce mois</h2>
-            <p>Vos affectations apparaîtront ici après publication par le responsable.</p>
-            <Button variant="secondary" asChild>
-              <Link href="/mes-disponibilites">Vérifier mes disponibilités</Link>
-            </Button>
-          </div>
-        ) : (
-          <div className="personal-shifts">
-            {shifts.map(s => (
-              <article key={`${s.date}-${s.shift}`}>
-                <div className={`shift-date ${s.shift === "DAY" ? "day" : "night"}`}>
-                  <small>{dateLabel(s.date, { weekday: "short" })}</small>
-                  <strong>{Number(s.date.slice(-2))}</strong>
-                  <small>{dateLabel(s.date, { month: "short" })}</small>
-                </div>
-                <div>
-                  <h3>Garde {s.shift === "DAY" ? "de jour" : "de nuit"}</h3>
-                  <p>
-                    {state.organization.name} · {hours(campaign, s.shift)}
-                  </p>
-                  <small>
-                    Version {s.published.revision} · publiée le {dateLabel(s.published.publishedAt.slice(0, 10))}
-                  </small>
-                </div>
-                <span className="pill pill-green">Publiée</span>
-              </article>
-            ))}
-          </div>
-        )}
-      </Panel>
     </>
   );
 }

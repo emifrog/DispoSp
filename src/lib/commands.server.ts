@@ -28,6 +28,8 @@ export async function runCommand(session: AttachedSession, command: Command): Pr
       return publishShift(client, session.membership.organizationId, command);
     case "requirement":
       return writeRequirement(client, session, command);
+    case "requirements":
+      return writeRequirements(client, session, command);
     case "campaign":
       return openCampaign(client, session, command);
     case "close":
@@ -42,6 +44,12 @@ export async function runCommand(session: AttachedSession, command: Command): Pr
       return revokeInvitation(client, command);
     case "team":
       return writeTeam(client, session, command);
+    case "withdraw":
+      return writeWithdrawal(client, session, command);
+    case "cancelWithdrawal":
+      return cancelWithdrawal(client, session, command);
+    case "decideWithdrawal":
+      return decideWithdrawal(client, command);
     case "readNotifications":
       return markNotificationsRead(client, command);
     case "remind":
@@ -220,7 +228,61 @@ async function publishShift(client: Client, organizationId: string, command: Of<
 }
 
 async function writeRequirement(client: Client, session: AttachedSession, command: Of<"requirement">) {
+  await writeOneRequirement(client, session.membership.organizationId, command);
+}
+
+/**
+ * Le même besoin posé sur plusieurs créneaux.
+ *
+ * Une boucle et non une seule requête : chaque créneau passe par le même
+ * chemin, donc par les mêmes policies et le même déclencheur de vérification du
+ * minimum. Grouper l'écriture ferait gagner des allers-retours et perdre cette
+ * garantie. Ce n'est pas atomique, et c'est acceptable ici — un besoin posé est
+ * un besoin posé, et l'écran redit l'état réel après coup.
+ */
+async function writeRequirements(client: Client, session: AttachedSession, command: Of<"requirements">) {
   const organizationId = session.membership.organizationId;
+  // Le catalogue est le même pour tous les créneaux du lot : le résoudre une
+  // fois épargne une requête par créneau, soit soixante-deux sur un mois.
+  const wanted = Object.entries(command.qualifications).filter(([, minimum]) => minimum > 0);
+  const ids = wanted.length
+    ? await qualificationIds(
+        client,
+        organizationId,
+        wanted.map(([name]) => name),
+      )
+    : new Map<string, string>();
+  for (const date of command.dates)
+    for (const shift of command.shifts)
+      await writeOneRequirement(
+        client,
+        organizationId,
+        {
+          campaignId: command.campaignId,
+          date,
+          shift,
+          total: command.total,
+          qualifications: command.qualifications,
+        },
+        ids,
+      );
+}
+
+type RequirementWrite = {
+  campaignId: string;
+  date: string;
+  shift: Of<"requirement">["shift"];
+  total: number;
+  qualifications: Record<string, number>;
+};
+
+async function writeOneRequirement(
+  client: Client,
+  organizationId: string,
+  command: RequirementWrite,
+  /** Catalogue déjà résolu, quand l'appelant écrit plusieurs créneaux d'affilée. */
+  resolved?: Map<string, string>,
+) {
   const { data: existing, error: readFailure } = await client
     .from("staffing_requirements")
     .select("id")
@@ -264,11 +326,13 @@ async function writeRequirement(client: Client, session: AttachedSession, comman
   const wanted = Object.entries(command.qualifications).filter(([, minimum]) => minimum > 0);
   if (!wanted.length) return;
 
-  const ids = await qualificationIds(
-    client,
-    organizationId,
-    wanted.map(([name]) => name),
-  );
+  const ids =
+    resolved ??
+    (await qualificationIds(
+      client,
+      organizationId,
+      wanted.map(([name]) => name),
+    ));
   const { error } = await client.from("staffing_requirement_qualifications").insert(
     wanted.map(([name, minimum]) => ({
       organization_id: organizationId,
@@ -328,6 +392,52 @@ async function lockCampaign(client: Client, command: Of<"close">) {
     .select("id");
   if (error) fail(error);
   if (!data?.length) throw new Error("Vous n’avez pas le droit de verrouiller cette campagne.");
+}
+
+// ---------------------------------------------------------------------------
+// Désistements
+// ---------------------------------------------------------------------------
+
+/**
+ * Se désister d'une garde publiée.
+ *
+ * Rien n'est vérifié ici sur le droit de le faire : c'est la policy d'insertion
+ * qui exige que l'agent figure dans la révision publiée du créneau. Refaire ce
+ * contrôle en TypeScript donnerait deux règles à maintenir, dont une seule
+ * compte.
+ */
+async function writeWithdrawal(client: Client, session: AttachedSession, command: Of<"withdraw">) {
+  const shiftId = await shiftIdFor(client, command.campaignId, command.date, command.shift);
+  const { error } = await client.from("shift_withdrawals").insert({
+    organization_id: session.membership.organizationId,
+    schedule_shift_id: shiftId,
+    user_id: session.userId,
+    reason: command.reason,
+  });
+  if (error) fail(error);
+}
+
+async function cancelWithdrawal(client: Client, session: AttachedSession, command: Of<"cancelWithdrawal">) {
+  const { data, error } = await client
+    .from("shift_withdrawals")
+    .update({ state: "CANCELLED" })
+    .eq("id", command.withdrawalId)
+    .eq("user_id", session.userId)
+    .select("id");
+  if (error) fail(error);
+  if (!data?.length) throw new Error("Ce désistement n’est plus en attente, ou n’est pas le vôtre.");
+}
+
+async function decideWithdrawal(client: Client, command: Of<"decideWithdrawal">) {
+  // decided_by et decided_at sont posés par le déclencheur : les envoyer d'ici
+  // laisserait croire qu'un client peut choisir qui a décidé.
+  const { data, error } = await client
+    .from("shift_withdrawals")
+    .update({ state: command.accepted ? "ACCEPTED" : "REFUSED" })
+    .eq("id", command.withdrawalId)
+    .select("id");
+  if (error) fail(error);
+  if (!data?.length) throw new Error("Ce désistement a déjà été tranché, ou vous n’en avez pas le droit.");
 }
 
 // ---------------------------------------------------------------------------

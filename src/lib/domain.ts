@@ -131,6 +131,23 @@ export const stateSchema = z.object({
       }),
     )
     .default([]),
+  /** Les désistements du centre. Un agent ne voit que les siens : ce sont les
+      policies qui filtrent, pas l'écran. */
+  withdrawals: z
+    .array(
+      z.object({
+        id: z.string(),
+        shiftId: z.string(),
+        campaignId: z.string(),
+        date: isoDate,
+        shift: z.enum(["DAY", "NIGHT"]),
+        userId: z.string(),
+        reason: z.string().default(""),
+        state: z.enum(["PENDING", "ACCEPTED", "REFUSED", "CANCELLED"]),
+        createdAt: z.string(),
+      }),
+    )
+    .default([]),
   campaigns: z.array(
     z.object({
       id: z.string(),
@@ -357,6 +374,16 @@ export const commandSchema = z.discriminatedUnion("type", [
     total: z.number().int().min(1).max(100),
     qualifications: z.record(z.string().max(60), z.number().int().min(0).max(100)),
   }),
+  // Le même besoin posé d'un coup sur plusieurs journées. 62 est le plafond
+  // atteignable : un mois de 31 jours, jour et nuit.
+  z.object({
+    type: z.literal("requirements"),
+    campaignId: id,
+    dates: z.array(isoDate).min(1).max(31),
+    shifts: z.array(shiftSchema).min(1).max(2),
+    total: z.number().int().min(1).max(100),
+    qualifications: z.record(z.string().max(60), z.number().int().min(0).max(100)),
+  }),
   z.object({
     type: z.literal("campaign"),
     name: z.string().trim().min(3),
@@ -391,6 +418,17 @@ export const commandSchema = z.discriminatedUnion("type", [
     role: memberRoleSchema,
   }),
   z.object({ type: z.literal("revokeInvitation"), invitationId: id }),
+  // Un désistement porte sur le créneau, pas sur la campagne : c'est la garde
+  // publiée qu'on ne peut plus tenir.
+  z.object({
+    type: z.literal("withdraw"),
+    campaignId: id,
+    date: isoDate,
+    shift: shiftSchema,
+    reason: z.string().trim().max(500),
+  }),
+  z.object({ type: z.literal("cancelWithdrawal"), withdrawalId: id }),
+  z.object({ type: z.literal("decideWithdrawal"), withdrawalId: id, accepted: z.boolean() }),
   z.object({ type: z.literal("readNotifications"), ids: z.array(id).min(1).max(100) }),
   z.object({ type: z.literal("remind"), campaignId: id }),
   z.object({
@@ -430,6 +468,8 @@ export const notificationLabels: Record<string, string> = {
   CAMPAIGN_OPENED: "Campagne ouverte",
   CAMPAIGN_REMINDER: "Rappel avant clôture",
   SCHEDULE_PUBLISHED: "Planning publié",
+  WITHDRAWAL_REQUESTED: "Désistement signalé",
+  WITHDRAWAL_DECIDED: "Réponse à votre désistement",
 };
 export const commandLabels: Record<Command["type"], string> = {
   availability: "Disponibilités modifiées",
@@ -437,6 +477,10 @@ export const commandLabels: Record<Command["type"], string> = {
   assign: "Brouillon du planning modifié",
   publish: "Créneau publié",
   requirement: "Besoins modifiés",
+  requirements: "Besoins appliqués aux journées choisies",
+  withdraw: "Désistement signalé",
+  cancelWithdrawal: "Désistement retiré",
+  decideWithdrawal: "Désistement tranché",
   campaign: "Campagne ouverte",
   close: "Verrouillage de la campagne modifié",
   settings: "Horaires par défaut modifiés",

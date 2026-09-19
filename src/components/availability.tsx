@@ -1,8 +1,21 @@
 "use client";
 import { useState } from "react";
-import { CalendarDays, Check, CheckCheck, CircleAlert, Clock3, Moon, Repeat, Sun, X, Zap } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import {
+  CalendarDays,
+  CalendarRange,
+  Check,
+  CheckCheck,
+  CircleAlert,
+  Clock3,
+  Moon,
+  Repeat,
+  Sun,
+  X,
+  Zap,
+} from "lucide-react";
 import { useApp } from "./provider";
-import { PageTitle, Panel, Legend } from "./common";
+import { PageTitle, Panel, Legend, ProgressRing, SegmentedTabs } from "./common";
 import { Button } from "./ui/button";
 import { Modal } from "./ui/dialog";
 import {
@@ -20,6 +33,7 @@ import {
   weekdayNames,
   type Availability,
   type AppState,
+  type Shift,
 } from "@/lib/domain";
 
 // Un jour de semaine sans choix ne fait pas partie du modèle : on le retire,
@@ -28,6 +42,7 @@ const clean = (days: Record<string, Availability | undefined>): AppState["templa
   Object.fromEntries(Object.entries(days).filter(([, value]) => value)) as AppState["template"];
 export function Availability() {
   const { state, actor, campaignId, campaign, run } = useApp();
+  const params = useSearchParams();
   const days = monthDays(campaign.month);
   const filled = filledDays(state, campaign, actor.id);
   const validated = isValidated(state, campaignId, actor.id);
@@ -35,7 +50,11 @@ export function Availability() {
   const [selected, setSelected] = useState<string[]>([]);
   const [multiple, setMultiple] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [quick, setQuick] = useState(false);
+  // L'accueil pointe ici avec ?saisie=rapide. L'initialiseur d'état suffit : il
+  // ne s'exécute qu'au montage, donc refermer la boîte ne la rouvre pas, et
+  // aucun effet n'a à courir après le rendu pour la faire apparaître.
+  const [quick, setQuick] = useState(() => params.get("saisie") === "rapide");
+  const [quickMode, setQuickMode] = useState<"period" | "weekdays">("period");
   // Le modèle se compose avant d’être enregistré : tant qu’il diffère de ce que
   // la base porte, l’appliquer n’aurait pas le sens que l’écran montre.
   const [draft, setDraft] = useState<Record<string, Availability | undefined>>(() => ({ ...state.template }));
@@ -95,18 +114,39 @@ export function Availability() {
         }
       />
       <div className={`response-banner ${validated ? "validated" : ""}`}>
-        <span className="response-banner-icon">{validated ? <CheckCheck /> : <CalendarDays />}</span>
-        <div>
-          <strong>{validated ? "Votre réponse est validée" : `${filled} / ${days.length} jours renseignés`}</strong>
+        <ProgressRing
+          percent={days.length ? (filled / days.length) * 100 : 0}
+          size="sm"
+          tone={validated ? "green" : "blue"}
+        />
+        <div className="response-banner-body">
+          <strong>
+            {validated
+              ? "Votre réponse est validée"
+              : `${filled} / ${days.length} ${plural(days.length, "jour")} ${plural(days.length, "renseigné")}`}
+          </strong>
+          <div className="mini-progress">
+            <i style={{ width: `${days.length ? (filled / days.length) * 100 : 0}%` }} />
+          </div>
           <p>
             {validated
               ? "Toute modification nécessitera une nouvelle validation."
               : `Renseignez votre mois, puis validez explicitement votre réponse avant le ${dateLabel(campaign.closesOn)}.`}
           </p>
         </div>
-        <span className={`pill ${validated ? "pill-green" : "pill-orange"}`}>
-          {validated ? "Validée" : "À valider"}
-        </span>
+        {/* Ce qui reste à faire prime sur l'état : tant qu'il manque des jours,
+            c'est le nombre qui manque que l'agent doit lire, pas « à valider ». */}
+        {!validated && open && days.length - filled > 0 ? (
+          <span className="pill pill-red">
+            <CircleAlert size={14} />
+            {days.length - filled} {plural(days.length - filled, "jour")}{" "}
+            {plural(days.length - filled, "reste", "restent")} à renseigner
+          </span>
+        ) : (
+          <span className={`pill ${validated ? "pill-green" : "pill-orange"}`}>
+            {validated ? "Validée" : "À valider"}
+          </span>
+        )}
       </div>
       {!open && (
         <div className="warning">
@@ -181,14 +221,10 @@ export function Availability() {
           )}
         </Panel>
         <div className="availability-side">
+          {/* Le compte et la barre vivent dans le bandeau du haut depuis qu'il
+              porte l'anneau : les répéter ici disait trois fois le même nombre.
+              Ce panneau ne garde que ce qui lui appartient — la validation. */}
           <Panel title="Validation de la réponse" subtitle="La saisie ne vaut pas validation.">
-            <div className="completion-number">
-              {Math.round((filled / days.length) * 100)}
-              <span>%</span>
-            </div>
-            <div className="mini-progress">
-              <i style={{ width: `${(filled / days.length) * 100}%` }} />
-            </div>
             <p className="muted">
               {days.length - filled > 0
                 ? `${days.length - filled} jours restent à renseigner. Pensez à indiquer vos indisponibilités.`
@@ -204,6 +240,7 @@ export function Availability() {
             </Button>
           </Panel>
           <Panel
+            id="modele"
             title="Ma disponibilité habituelle"
             subtitle="Un modèle par jour de semaine, réutilisable d’une campagne à l’autre."
           >
@@ -295,6 +332,24 @@ export function Availability() {
       >
         {quick && (
           <>
+            {/* Les deux onglets de la maquette. Le second est un sur-ensemble du
+                premier — il garde la période et y ajoute le filtre — pour ne pas
+                retirer « tous les lundis du 5 au 19 », qui n'a rien d'exotique.
+                Revenir sur « Période » efface le filtre, sinon l'onglet
+                mentirait sur ce qu'il applique. */}
+            <SegmentedTabs
+              size="lg"
+              label="Portée de la saisie rapide"
+              value={quickMode}
+              onChange={next => {
+                setQuickMode(next);
+                if (next === "period") setWeekdays([]);
+              }}
+              options={[
+                { value: "period", label: "Période", icon: CalendarRange },
+                { value: "weekdays", label: "Jours de la semaine", icon: CalendarDays },
+              ]}
+            />
             <div className="form-grid">
               <label>
                 Du
@@ -317,25 +372,39 @@ export function Availability() {
                 />
               </label>
             </div>
-            <span className="field-label">Filtrer par jour de semaine (facultatif)</span>
-            <div className="weekday-picker">
-              {[1, 2, 3, 4, 5, 6, 0].map((day, i) => (
-                <button
-                  key={day}
-                  aria-pressed={weekdays.includes(day)}
-                  className={weekdays.includes(day) ? "selected" : ""}
-                  onClick={() => setWeekdays(w => (w.includes(day) ? w.filter(d => d !== day) : [...w, day]))}
-                >
-                  {["L", "M", "M", "J", "V", "S", "D"][i]}
-                  <span className="sr-only">
-                    {["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"][i]}
-                  </span>
-                </button>
-              ))}
+            {quickMode === "weekdays" && (
+              <>
+                <span className="field-label">Jours de la semaine retenus</span>
+                <div className="weekday-picker">
+                  {[1, 2, 3, 4, 5, 6, 0].map((day, i) => (
+                    <button
+                      key={day}
+                      aria-pressed={weekdays.includes(day)}
+                      className={weekdays.includes(day) ? "selected" : ""}
+                      onClick={() => setWeekdays(w => (w.includes(day) ? w.filter(d => d !== day) : [...w, day]))}
+                    >
+                      {["L", "M", "M", "J", "V", "S", "D"][i]}
+                      <span className="sr-only">
+                        {["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"][i]}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            <div className="quick-summary">
+              <CalendarDays size={17} />
+              <span>
+                <strong>
+                  {chosen.length} {plural(chosen.length, "jour")} {plural(chosen.length, "sélectionné")}
+                </strong>
+                <small>
+                  {chosen.length
+                    ? `Du ${dateLabel(chosen[0], { weekday: "long", day: "numeric", month: "long" })} au ${dateLabel(chosen[chosen.length - 1], { weekday: "long", day: "numeric", month: "long" })}`
+                    : "Aucun jour ne correspond à cette sélection."}
+                </small>
+              </span>
             </div>
-            <p className="muted">
-              {chosen.length} {plural(chosen.length, "jour")} {plural(chosen.length, "concerné")}
-            </p>
           </>
         )}
         <div className="availability-choices">
@@ -348,6 +417,9 @@ export function Availability() {
             >
               <strong>{label.short}</strong>
               <span>{label.label}</span>
+              {/* Les horaires viennent de la campagne, jamais d'un libellé écrit
+                  en dur : chaque campagne fige les siens à sa création. */}
+              {key !== "UNAVAILABLE" && <small>{hours(campaign, key as Shift | "FULL_24H")}</small>}
               {value === key && <Check size={14} />}
             </button>
           ))}

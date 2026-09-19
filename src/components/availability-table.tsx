@@ -10,14 +10,27 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
-import { ArrowDownUp, ArrowLeft, ArrowRight, Download, FileSpreadsheet, Printer, Search } from "lucide-react";
+import {
+  ArrowDownUp,
+  ArrowLeft,
+  ArrowRight,
+  CircleAlert,
+  Download,
+  FileSpreadsheet,
+  Printer,
+  Search,
+} from "lucide-react";
 import { useApp } from "./provider";
-import { Avatar, Legend, PageTitle, StatusBadge } from "./common";
+import { Avatar, Legend, PageTitle, ProgressRing, SegmentedTabs, StatusBadge } from "./common";
 import { Button } from "./ui/button";
 import { availabilityCsv, download } from "@/lib/exports";
 import { type Agent, dateLabel, entryKey, isValidated, localDate, monthDays, monthLabel, plural } from "@/lib/domain";
-// Matches the row height in globals.css; the virtualizer only needs an estimate.
+// Deux hauteurs parce qu'il y a deux densités. Le virtualiseur ne mesure pas les
+// lignes, il les estime : une valeur fausse décalerait les cales de défilement
+// et ferait sauter la matrice. Ces deux nombres doivent donc suivre le CSS de
+// `.availability-table td` et de sa variante compacte.
 const ROW_HEIGHT = 45;
+const ROW_HEIGHT_COMPACT = 32;
 export function AvailabilityTable() {
   const { state, campaignId, campaign } = useApp();
   const [search, setSearch] = useState("");
@@ -26,6 +39,9 @@ export function AvailabilityTable() {
   const [sorting, setSorting] = useState<SortingState>([]);
   // §6 demande les deux : la matrice pour comparer, la journée pour appeler.
   const [view, setView] = useState<"matrix" | "day">("matrix");
+  // La vue compacte resserre les lignes et retire les totaux : on y cherche un
+  // agent dans une longue liste, pas un chiffre par journée.
+  const [density, setDensity] = useState<"detailed" | "compact">("detailed");
   const days = useMemo(() => monthDays(campaign.month), [campaign.month]);
   const data = useMemo(
     () =>
@@ -37,6 +53,13 @@ export function AvailabilityTable() {
       ),
     [state, campaignId, search, team, status],
   );
+  // L'avancement du centre : une case par agent affiché et par jour du mois.
+  const cells = data.length * days.length;
+  const entered = data.reduce(
+    (total, a) => total + days.filter(d => state.entries[entryKey(campaignId, a.id, d)]).length,
+    0,
+  );
+  const incomplete = data.filter(a => days.some(d => !state.entries[entryKey(campaignId, a.id, d)])).length;
   const columns = useMemo<ColumnDef<Agent>[]>(
     () => [
       {
@@ -100,9 +123,12 @@ export function AvailabilityTable() {
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => (density === "compact" ? ROW_HEIGHT_COMPACT : ROW_HEIGHT),
     overscan: 10,
   });
+  // Changer de densité change la hauteur des lignes : sans nouvelle mesure, le
+  // virtualiseur garderait l'ancienne estimation et placerait les cales à côté.
+  useEffect(() => virtualizer.measure(), [density, virtualizer]);
   const virtualRows = virtualizer.getVirtualItems();
   // Imprimer une matrice virtualisée ne sortait que les lignes à l'écran. Le
   // temps de l'impression, toutes les lignes sont rendues : flushSync parce que
@@ -185,32 +211,64 @@ export function AvailabilityTable() {
           <option value="validated">Réponses validées</option>
           <option value="pending">À valider</option>
         </select>
-        <div className="segmented" aria-label="Forme de la synthèse">
-          <button
-            aria-pressed={view === "matrix"}
-            className={view === "matrix" ? "selected" : ""}
-            onClick={() => setView("matrix")}
-          >
-            Matrice
-          </button>
-          <button
-            aria-pressed={view === "day"}
-            className={view === "day" ? "selected" : ""}
-            onClick={() => setView("day")}
-          >
-            Par journée
-          </button>
-        </div>
+        <SegmentedTabs
+          label="Forme de la synthèse"
+          value={view}
+          onChange={setView}
+          options={[
+            { value: "matrix", label: "Matrice" },
+            { value: "day", label: "Par journée" },
+          ]}
+        />
+        {view === "matrix" && (
+          <SegmentedTabs
+            label="Densité de la matrice"
+            value={density}
+            onChange={setDensity}
+            options={[
+              { value: "detailed", label: "Vue détaillée" },
+              { value: "compact", label: "Vue compacte" },
+            ]}
+          />
+        )}
         <span className="muted small">
           {data.length} {plural(data.length, "agent")}
         </span>
+      </div>
+      {/* Ce que la maquette met en tête d'écran : l'avancement du centre, pas
+          celui d'un agent. Il suit les filtres — restreindre à une équipe
+          restreint le taux. */}
+      <div className="response-banner">
+        <ProgressRing percent={cells ? (entered / cells) * 100 : 0} size="sm" />
+        <div className="response-banner-body">
+          <strong>
+            {entered} / {cells} {plural(cells, "journée")} {plural(cells, "renseignée")}
+          </strong>
+          <div className="mini-progress">
+            <i style={{ width: `${cells ? (entered / cells) * 100 : 0}%` }} />
+          </div>
+          <p>
+            Sur {data.length} {plural(data.length, "agent")} {plural(data.length, "affiché")} et {days.length} jours du
+            mois.
+          </p>
+        </div>
+        {incomplete > 0 ? (
+          <span className="pill pill-red">
+            <CircleAlert size={14} />
+            {incomplete} {plural(incomplete, "agent")} {plural(incomplete, "n’a", "n’ont")} pas fini
+          </span>
+        ) : (
+          <span className="pill pill-green">Tous les mois sont complets</span>
+        )}
       </div>
       {view === "day" && <DayView agents={data} days={days} campaignId={campaignId} />}
       {view === "matrix" && printing && (
         <style dangerouslySetInnerHTML={{ __html: "@page { size: A4 landscape; margin: 8mm }" }} />
       )}
       {view === "matrix" && (
-        <section className={`panel table-panel${printing ? " printing" : ""}`}>
+        <section
+          className={`panel table-panel${printing ? " printing" : ""}${density === "compact" ? " compact" : ""}`}
+        >
           <div
             ref={scrollRef}
             className="table-scroll"
@@ -255,7 +313,9 @@ export function AvailabilityTable() {
                   <tr aria-hidden="true" className="virtual-spacer" style={{ height: padding.bottom }} />
                 )}
               </tbody>
-              <tfoot>
+              {/* Les totaux par journée sont l'objet même de la vue détaillée.
+                  En compact on cherche une ligne, pas une colonne. */}
+              <tfoot hidden={density === "compact"}>
                 {(["DAY", "NIGHT", "FULL_24H", "UNAVAILABLE", "UNKNOWN"] as const).map(type => (
                   <tr key={type}>
                     <th colSpan={2}>
@@ -284,10 +344,12 @@ export function AvailabilityTable() {
             {!data.length && <div className="empty-small">Aucun agent ne correspond aux filtres.</div>}
           </div>
           <Legend />
-          <div className="panel-footnote">
-            Totaux des agents affichés, réponses validées et brouillons inclus. Les 24 h sont comptées dans leur propre
-            catégorie.
-          </div>
+          {density === "detailed" && (
+            <div className="panel-footnote">
+              Totaux des agents affichés, réponses validées et brouillons inclus. Les 24 h sont comptées dans leur
+              propre catégorie.
+            </div>
+          )}
         </section>
       )}
     </>

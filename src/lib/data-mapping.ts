@@ -76,6 +76,14 @@ export type Raw = {
     staffing_requirement_qualifications: { minimum: number; qualifications: { name: string } | null }[] | null;
   }[];
   schedules: { id: string; campaign_id: string }[];
+  withdrawals: {
+    id: string;
+    schedule_shift_id: string;
+    user_id: string;
+    reason: string | null;
+    state: string;
+    created_at: string;
+  }[];
   shifts: {
     id: string;
     schedule_id: string;
@@ -289,6 +297,7 @@ export function buildState(raw: Raw, fallbackOrganizationName: string): AppState
     requirements: {},
     assignments: {},
     publications: {},
+    withdrawals: [],
     audit: [],
   };
 
@@ -316,12 +325,25 @@ export function buildState(raw: Raw, fallbackOrganizationName: string): AppState
   // A shift only knows its schedule, and a schedule its campaign: walk back so
   // draft and published assignments land on the keys the screens expect.
   const campaignBySchedule = new Map(raw.schedules.map(s => [s.id, s.campaign_id]));
-  const shiftById = new Map<string, { key: string; publishedRevision: number; publishedAt: string | null }>();
+  const shiftById = new Map<
+    string,
+    {
+      key: string;
+      campaignId: string;
+      date: string;
+      shift: Shift;
+      publishedRevision: number;
+      publishedAt: string | null;
+    }
+  >();
   for (const row of raw.shifts) {
     const campaignId = campaignBySchedule.get(row.schedule_id);
     if (!campaignId) continue;
     shiftById.set(row.id, {
       key: shiftKey(campaignId, row.date, row.shift_code as Shift),
+      campaignId,
+      date: row.date,
+      shift: row.shift_code as Shift,
       publishedRevision: row.published_revision,
       publishedAt: row.published_at,
     });
@@ -339,6 +361,26 @@ export function buildState(raw: Raw, fallbackOrganizationName: string): AppState
       state.publications[shift.key] = { ...current, agents: [...current.agents, row.user_id] };
     }
   }
+
+  // Un désistement ne vaut que pour une garde connue : une ligne dont le
+  // créneau n'a pas été chargé n'a rien à dire à l'écran.
+  state.withdrawals = raw.withdrawals.flatMap(row => {
+    const shift = shiftById.get(row.schedule_shift_id);
+    if (!shift) return [];
+    return [
+      {
+        id: row.id,
+        shiftId: row.schedule_shift_id,
+        campaignId: shift.campaignId,
+        date: shift.date,
+        shift: shift.shift,
+        userId: row.user_id,
+        reason: row.reason ?? "",
+        state: row.state as AppState["withdrawals"][number]["state"],
+        createdAt: row.created_at,
+      },
+    ];
+  });
 
   state.audit = raw.audit.map(row => {
     const before = values(row.old_value);

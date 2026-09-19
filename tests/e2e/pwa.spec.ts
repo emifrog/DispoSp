@@ -57,7 +57,17 @@ test.describe("Application installable", () => {
   });
 
   test("le profil propose l’installation et donne le chemin iOS", async ({ page }) => {
-    test.skip(!process.env.NEXT_PUBLIC_SUPABASE_URL, "L’écran de profil demande une session.");
+    // L'écran de profil demande une session, pas seulement un projet joignable :
+    // la condition portait sur l'URL Supabase, et le test échouait dès qu'elle
+    // était présente. Il lui faut un compte d'essai, sinon il se saute.
+    const email = process.env.E2E_EMAIL;
+    const password = process.env.E2E_PASSWORD;
+    test.skip(!email || !password, "Demande E2E_EMAIL et E2E_PASSWORD, un compte rattaché à un centre.");
+    await page.goto("/connexion");
+    await page.getByLabel("Adresse électronique").fill(email!);
+    await page.getByLabel("Mot de passe", { exact: true }).fill(password!);
+    await page.getByRole("button", { name: "Se connecter" }).click();
+    await page.waitForURL(url => !url.pathname.startsWith("/connexion"));
     await page.goto("/profil");
     await expect(page.getByRole("heading", { name: "Installer l’application" })).toBeVisible();
     // Safari n'annonce jamais la possibilité d'installer : le chemin se dit.

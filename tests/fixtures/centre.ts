@@ -213,6 +213,7 @@ export function sampleState(now = new Date()): AppState {
     requirements: {},
     assignments: {},
     publications: {},
+    withdrawals: [],
     audit: [],
   };
   const campaign = state.campaigns[0];

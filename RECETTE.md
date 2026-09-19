@@ -52,7 +52,9 @@ Si cette partie échoue, rien d'autre ne sert : personne n'entre.
 
 ### 1.1 Enregistrer une invitation
 
-**Faire** — Connecté en administrateur, écran **Agents & équipes**, bouton **Inviter un agent**. Saisir l'adresse du second compte, choisir l'équipe et le rôle _Agent_.
+**Faire** — Connecté en administrateur, écran **Agents & équipes**, bouton **Inviter un agent**. Saisir l'adresse du second compte, son grade, sa fonction et le rôle _Agent_.
+
+**L'équipe ne se demande plus** : l'invité rejoint celle de l'invitant, et la boîte le dit. Pour l'affecter ailleurs, ouvrir sa fiche une fois le compte créé.
 
 **Attendu** — L'invitation apparaît dans « Invitations en attente ».
 
@@ -80,11 +82,21 @@ Si cette partie échoue, rien d'autre ne sert : personne n'entre.
 
 **Faire** — L'invité ouvre l'application.
 
-**Attendu** — Il voit son centre, son équipe, et **l'espace agent seulement** : Mes disponibilités, Mon planning, Notifications, Mon profil. Ni Planning, ni Campagnes, ni Agents & équipes, ni Historique, ni Paramètres.
+**Attendu** — Il arrive sur son **Accueil** — campagne en cours, avancement, prochaines gardes — et voit **l'espace agent seulement** : Accueil, Disponibilités, Mon planning, Mon profil, Notifications. Ni Planning, ni Besoins, ni Campagnes, ni Agents & équipes, ni Demandes, ni Statistiques, ni Historique, ni Paramètres.
 
 **Sinon** — S'il voit encore « Compte en attente de rattachement », le déclencheur n'a pas trouvé l'invitation : l'adresse saisie ne correspond pas exactement à l'adresse invitée. S'il voit les écrans d'administration, arrêtez et signalez-le — ce serait un défaut de droits, pas de confort.
 
-**Côté administrateur** — L'invitation doit avoir quitté « en attente », et l'agent apparaître dans la liste avec son grade, son matricule et son téléphone modifiables.
+**Côté administrateur** — L'invitation doit avoir quitté « en attente », et l'agent apparaître dans la liste avec son grade, sa fonction, son matricule et son téléphone modifiables.
+
+### 1.5 Le mot de passe oublié
+
+**Faire** — Se déconnecter, choisir **Mot de passe oublié**, saisir l'adresse de l'agent. Ouvrir le lien reçu, choisir un nouveau mot de passe, puis se reconnecter avec.
+
+**Attendu** — La réponse à l'écran est la même que l'adresse existe ou non : c'est voulu, sinon l'écran deviendrait un annuaire des comptes du centre. Le lien mène à un écran de choix, et le nouveau mot de passe ouvre la session.
+
+**À vérifier aussi** — **Ouvrir le lien sur un autre appareil** que celui qui a fait la demande. S'il échoue, le gabarit d'e-mail n'est pas réglé : mettre « Reset password » sur `{{ .SiteURL }}/auth/recuperation?token_hash={{ .TokenHash }}&type=recovery`. Sans ce réglage le parcours ne marche que sur l'appareil demandeur, ce qui est précisément le cas le moins fréquent — on demande sur l'ordinateur et on relève ses messages sur le téléphone.
+
+**Sinon** — Un lien déjà utilisé ou périmé doit afficher « Lien expiré » et proposer d'en redemander un. Ils ne servent qu'une fois et durent une heure.
 
 ---
 
@@ -146,11 +158,11 @@ Rien n'est perdu : la file garde le message et le renverra à la prochaine actio
 
 ### 4.1 Les besoins d'un créneau
 
-**Faire** — Côté administrateur, **Planning**, choisir une date et un créneau. **Modifier les besoins** : un effectif et quelques minima de qualification.
+**Faire** — Côté administrateur, **Besoins**, bouton **Appliquer à plusieurs journées** : un effectif et quelques minima de qualification, sur tout le mois. Puis ouvrir **Planning** sur une date et modifier les besoins de ce seul créneau.
 
-**Attendu** — Les besoins s'enregistrent. Sur le tableau de bord, le créneau quitte l'état « besoins non définis ».
+**Attendu** — L'écran Besoins montre le mois rempli, et le bandeau « créneaux sans besoin défini » disparaît. Le réglage individuel depuis le planning écrase celui du lot pour cette garde seule.
 
-**Note** — Tant que les besoins ne sont pas définis, un créneau n'est **ni couvert ni en déficit**. L'application ne devine pas un effectif ; elle dit qu'elle ne sait pas.
+**Note** — Tant que les besoins ne sont pas définis, un créneau n'est **ni couvert ni en déficit**. L'application ne devine pas un effectif ; elle dit qu'elle ne sait pas, et l'écran Besoins affiche un tiret gris plutôt qu'un zéro.
 
 ### 4.2 Affecter, puis publier
 
@@ -164,13 +176,27 @@ Rien n'est perdu : la file garde le message et le renverra à la prochaine actio
 
 **Faire** — Côté agent, **Mon planning**.
 
-**Attendu** — Les gardes publiées uniquement. Les brouillons du responsable ne doivent pas apparaître.
+**Attendu** — Les gardes publiées uniquement. Les brouillons du gestionnaire ne doivent pas apparaître.
 
 **Sinon** — Si un agent voit un brouillon, il pourrait s'organiser sur une affectation qui n'existe pas encore.
 
 ### 4.4 L'email de publication
 
 **Attendu** — L'agent affecté reçoit un message de publication, avec un lien vers son planning.
+
+### 4.5 Un désistement
+
+**Faire** — Côté agent, **Mon planning**, sur la garde publiée : **Je ne peux plus**. Indiquer un motif, envoyer.
+
+**Attendu** — La garde porte « Désistement en attente », et l'agent peut encore le retirer. Côté administrateur, une pastille rouge apparaît sur **Demandes**, et la demande y figure avec le motif. Une notification est arrivée à tous ceux qui encadrent le centre.
+
+**Sinon** — Si le bouton refuse, vérifier que la garde est bien **publiée** : on ne se désiste pas d'un brouillon, et la base l'exige.
+
+**Faire ensuite** — Côté administrateur, **Accepter**.
+
+**Attendu** — L'agent reçoit une réponse, et la demande affiche **« Toujours au planning publié — le remplacement reste à faire »** avec un lien vers la garde. C'est voulu : accepter répond à l'agent, **ça ne réaffecte pas**. Suivre le lien, remplacer l'agent, republier — le rappel disparaît alors.
+
+**Sinon** — Si accepter suffisait à retirer l'agent du planning publié, le créneau se retrouverait publié en déficit. La base refuse précisément cela.
 
 ---
 
@@ -211,9 +237,11 @@ Rien n'est perdu : la file garde le message et le renverra à la prochaine actio
 
 Ces vérifications ne sont pas du confort. Elles portent sur des données personnelles.
 
-**Faire, côté agent** — Tenter d'ouvrir directement `/agents`, `/historique`, `/parametres`, `/planning` en tapant l'adresse.
+**Faire, côté agent** — Tenter d'ouvrir directement `/agents`, `/besoins`, `/demandes`, `/statistiques`, `/historique`, `/parametres`, `/planning` et `/tableau-de-bord` en tapant l'adresse.
 
-**Attendu** — Un écran « Accès réservé », et **aucune donnée**.
+**Attendu** — Un écran « Accès réservé », et **aucune donnée**. `/tableau-de-bord` fait exception : il renvoie l'agent vers son accueil, parce qu'un agent n'y verrait qu'une synthèse du centre calculée sur une seule personne — la sienne.
+
+**Faire, côté agent** — Ouvrir **Demandes** d'un autre centre n'est pas possible ; vérifier plutôt qu'un agent ne voit que **ses propres** désistements, jamais ceux d'un collègue.
 
 **Faire, côté administrateur** — Chercher la disponibilité habituelle d'un agent.
 
@@ -279,6 +307,7 @@ Prévoir où regarder quand quelque chose ne va pas : les logs de l'hébergeur, 
 | 1.2   |      |     |          |          |
 | 1.3   |      |     |          |          |
 | 1.4   |      |     |          |          |
+| 1.5   |      |     |          |          |
 | 2.1   |      |     |          |          |
 | 2.2   |      |     |          |          |
 | 3.1   |      |     |          |          |
@@ -288,6 +317,7 @@ Prévoir où regarder quand quelque chose ne va pas : les logs de l'hébergeur, 
 | 4.2   |      |     |          |          |
 | 4.3   |      |     |          |          |
 | 4.4   |      |     |          |          |
+| 4.5   |      |     |          |          |
 | 5.1   |      |     |          |          |
 | 5.2   |      |     |          |          |
 | 6     |      |     |          |          |

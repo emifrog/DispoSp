@@ -6,16 +6,18 @@ import {
   CalendarCheck2,
   Check,
   CircleAlert,
+  Moon,
   Plus,
   Search,
   Send,
+  Sun,
   Settings2,
   ShieldCheck,
   Trash2,
   Users,
 } from "lucide-react";
 import { useApp } from "./provider";
-import { PageTitle, Panel, Avatar } from "./common";
+import { PageTitle, Panel, Avatar, SegmentedTabs } from "./common";
 import { Button } from "./ui/button";
 import { Modal } from "./ui/dialog";
 import {
@@ -23,6 +25,7 @@ import {
   coverage,
   dateLabel,
   gradeLabel,
+  grades,
   hours,
   monthDays,
   plural,
@@ -46,6 +49,7 @@ export function Planning() {
       : "DAY",
   );
   const [search, setSearch] = useState("");
+  const [gradeFilter, setGradeFilter] = useState("");
   const [needsOpen, setNeedsOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const date = days.includes(selectedDate) ? selectedDate : days[0];
@@ -60,9 +64,20 @@ export function Planning() {
   const pool = availableAgents(state, campaignId, date, shift);
   const assignedIds = state.assignments[key] ?? [];
   const assigned = state.agents.filter(a => assignedIds.includes(a.id));
+  // Les grades réellement présents dans le vivier, dans l'ordre hiérarchique de
+  // la liste de saisie, suivis de ce qui n'y figure pas — une fiche ancienne
+  // peut porter un grade hors catalogue, et elle ne doit pas disparaître.
+  const gradeCounts = (() => {
+    const counts = new Map<string, number>();
+    for (const a of pool) if (a.grade) counts.set(a.grade, 1 + (counts.get(a.grade) ?? 0));
+    const known = grades.filter(g => counts.has(g));
+    const rest = [...counts.keys()].filter(g => !(grades as readonly string[]).includes(g)).sort();
+    return [...known, ...rest].map(g => [g, counts.get(g) ?? 0] as const);
+  })();
   const candidates = pool.filter(
     a =>
       !assignedIds.includes(a.id) &&
+      (!gradeFilter || a.grade === gradeFilter) &&
       `${a.name} ${a.grade} ${a.fonction} ${a.qualifications.join(" ")}`
         .toLocaleLowerCase("fr")
         .includes(search.toLocaleLowerCase("fr")),
@@ -151,22 +166,15 @@ export function Planning() {
             <ArrowRight size={17} />
           </Button>
         </div>
-        <div className="segmented">
-          <button
-            className={shift === "DAY" ? "selected" : ""}
-            aria-pressed={shift === "DAY"}
-            onClick={() => setShift("DAY")}
-          >
-            Jour
-          </button>
-          <button
-            className={shift === "NIGHT" ? "selected" : ""}
-            aria-pressed={shift === "NIGHT"}
-            onClick={() => setShift("NIGHT")}
-          >
-            Nuit
-          </button>
-        </div>
+        <SegmentedTabs
+          label="Créneau de la garde"
+          value={shift}
+          onChange={setShift}
+          options={[
+            { value: "DAY", label: "Jour", icon: Sun },
+            { value: "NIGHT", label: "Nuit", icon: Moon },
+          ]}
+        />
         <span className="muted">{hours(campaign, shift)}</span>
       </div>
       {changed && (
@@ -191,6 +199,30 @@ export function Planning() {
               aria-label="Rechercher un agent disponible"
             />
           </label>
+          {/* Les puces de la maquette. Elles ne listent que les grades présents
+              dans le vivier du jour, avec leur effectif : une puce « Lieutenant
+              0 » ne rendrait service à personne. */}
+          <div className="grade-chips" role="group" aria-label="Filtrer par grade">
+            <button
+              type="button"
+              aria-pressed={!gradeFilter}
+              className={!gradeFilter ? "selected" : ""}
+              onClick={() => setGradeFilter("")}
+            >
+              Tous <b>{pool.length}</b>
+            </button>
+            {gradeCounts.map(([grade, count]) => (
+              <button
+                key={grade}
+                type="button"
+                aria-pressed={gradeFilter === grade}
+                className={gradeFilter === grade ? "selected" : ""}
+                onClick={() => setGradeFilter(g => (g === grade ? "" : grade))}
+              >
+                {grade} <b>{count}</b>
+              </button>
+            ))}
+          </div>
           <div className="agent-card-list">
             {candidates.map(a => agentCard(a, false))}
             {!candidates.length && (

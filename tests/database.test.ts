@@ -14,6 +14,7 @@ const MIGRATIONS = [
   "20260918151529_atomic_campaign_creation.sql",
   "20260918180846_atomic_availability_templates.sql",
   "20260919120000_grades_fonctions_roles.sql",
+  "20260919200000_desistements.sql",
 ];
 const baseAuthSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
 const orgA = "10000000-0000-0000-0000-000000000001";
@@ -1757,5 +1758,193 @@ describe("Retrait d’un compte", () => {
   it("refuse une adresse inconnue, et ne touche à rien", async () => {
     await expect(remove("personne@example.org")).rejects.toThrow("Aucun compte pour");
     expect(await counts(agent)).toBeGreaterThan(5);
+  });
+});
+
+// Désistements : la demande et sa réponse, rien d'autre. La table ne touche pas
+// au planning — c'est publish_schedule_shift() qui le fait, et il refuserait un
+// créneau dont l'effectif n'est plus couvert.
+describe("Désistements sur une garde publiée", () => {
+  const org = "10000000-0000-0000-0000-000000000070";
+  const team = "20000000-0000-0000-0000-000000000070";
+  const manager = "30000000-0000-0000-0000-000000000070";
+  const held = "30000000-0000-0000-0000-000000000071";
+  const other = "30000000-0000-0000-0000-000000000072";
+  const foreign = "30000000-0000-0000-0000-000000000073";
+  const foreignOrg = "10000000-0000-0000-0000-000000000071";
+  const foreignTeam = "20000000-0000-0000-0000-000000000071";
+  const campaign = "40000000-0000-0000-0000-000000000070";
+  const schedule = "60000000-0000-0000-0000-000000000070";
+  const shift = "70000000-0000-0000-0000-000000000070";
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+  // Lu hors rôle, délibérément : c'est l'état réel de la table qu'on veut, pas
+  // ce que la session en cours a le droit d'en voir. Sous un rôle, « aucune
+  // ligne » confondrait « rien n'a été écrit » et « je n'y ai pas accès ».
+  const open = async () => {
+    await live.exec("reset role");
+    return (await live.query<{ id: string }>("select id from public.shift_withdrawals where state='PENDING'")).rows;
+  };
+
+  beforeAll(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const m of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    await live.exec(`
+      insert into auth.users(id) values ('${manager}'), ('${held}'), ('${other}'), ('${foreign}');
+      insert into public.profiles(user_id,display_name) values
+        ('${manager}','Chef'), ('${held}','Titulaire'), ('${other}','Autre'), ('${foreign}','Etranger');
+      insert into public.organizations(id,name) values ('${org}','Centre 70'), ('${foreignOrg}','Centre 71');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha'), ('${foreignTeam}','${foreignOrg}','Beta');
+      insert into public.memberships values
+        ('${org}','${manager}','${team}','GESTIONNAIRE',true),
+        ('${org}','${held}','${team}','AGENT',true),
+        ('${org}','${other}','${team}','AGENT',true),
+        ('${foreignOrg}','${foreign}','${foreignTeam}','GESTIONNAIRE',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        values ('${campaign}','${org}','${team}','Novembre','2026-11-01','2026-11-01',now()-interval '1 day',now()+interval '1 day');
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values
+        ('${org}','${campaign}','${held}'), ('${org}','${campaign}','${other}');
+      insert into public.schedules(id,organization_id,campaign_id,team_id) values ('${schedule}','${org}','${campaign}','${team}');
+      insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code)
+        values ('${shift}','${org}','${schedule}','2026-11-01','DAY');
+      insert into public.staffing_requirements(organization_id,campaign_id,date,shift_code,headcount)
+        values ('${org}','${campaign}','2026-11-01','DAY',1);`);
+    // Les deux agents se déclarent disponibles et valident : sans cela la
+    // publication refuse, et il n'y aurait aucune garde dont se désister.
+    for (const agent of [held, other]) {
+      await be(agent);
+      await live.query(
+        "insert into public.availability_entries(campaign_id,user_id,date,availability_type) values ($1,$2,'2026-11-01','FULL_24H')",
+        [campaign, agent],
+      );
+      await live.query(
+        "update public.campaign_participants set validated_at=now() where campaign_id=$1 and user_id=$2",
+        [campaign, agent],
+      );
+    }
+    await be(manager);
+    await live.query(
+      "insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,assigned_by) values ($1,$2,$3,$4)",
+      [org, shift, held, manager],
+    );
+    await live.query("select private.publish_schedule_shift($1)", [shift]);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("refuse le désistement de qui ne tient pas la garde", async () => {
+    await be(other);
+    await expect(
+      live.query("insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id) values ($1,$2,$3)", [
+        org,
+        shift,
+        other,
+      ]),
+    ).rejects.toThrow();
+    expect(await open()).toHaveLength(0);
+  });
+
+  it("refuse le désistement au nom d’un autre", async () => {
+    await be(other);
+    await expect(
+      live.query("insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id) values ($1,$2,$3)", [
+        org,
+        shift,
+        held,
+      ]),
+    ).rejects.toThrow();
+    expect(await open()).toHaveLength(0);
+  });
+
+  it("accepte celui du titulaire, et prévient ceux qui encadrent", async () => {
+    await be(held);
+    await live.query(
+      "insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id,reason) values ($1,$2,$3,'Convocation')",
+      [org, shift, held],
+    );
+    expect(await open()).toHaveLength(1);
+    await live.exec("reset role");
+    expect(
+      (await live.query("select user_id from public.notifications where kind='WITHDRAWAL_REQUESTED'")).rows,
+    ).toEqual([{ user_id: manager }]);
+  });
+
+  it("n’en accepte pas deux en même temps pour la même garde", async () => {
+    await be(held);
+    await expect(
+      live.query("insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id) values ($1,$2,$3)", [
+        org,
+        shift,
+        held,
+      ]),
+    ).rejects.toThrow();
+  });
+
+  it("ne montre rien à un autre agent, ni à un autre centre", async () => {
+    await be(other);
+    expect((await live.query("select id from public.shift_withdrawals")).rows).toHaveLength(0);
+    await be(foreign);
+    expect((await live.query("select id from public.shift_withdrawals")).rows).toHaveLength(0);
+  });
+
+  it("interdit à l’agent de trancher sa propre demande", async () => {
+    const [{ id }] = await open();
+    await be(held);
+    // La ligne est bien la sienne, donc le « using » de sa policy la laisse
+    // passer ; c'est le « with check » qui refuse l'état d'arrivée. Le refus est
+    // donc explicite, pas un silence : la demande n'est pas filtrée, elle est
+    // rejetée.
+    await expect(live.query("update public.shift_withdrawals set state='ACCEPTED' where id=$1", [id])).rejects.toThrow(
+      "row-level security",
+    );
+    await live.exec("reset role");
+    expect((await live.query("select state from public.shift_withdrawals where id=$1", [id])).rows).toEqual([
+      { state: "PENDING" },
+    ]);
+  });
+
+  it("laisse le gestionnaire trancher, estampille l’auteur et prévient l’agent", async () => {
+    const [{ id }] = await open();
+    await be(manager);
+    await live.query("update public.shift_withdrawals set state='ACCEPTED' where id=$1", [id]);
+    await live.exec("reset role");
+    expect(
+      (
+        await live.query("select state, decided_by is not null as signed from public.shift_withdrawals where id=$1", [
+          id,
+        ])
+      ).rows,
+    ).toEqual([{ state: "ACCEPTED", signed: true }]);
+    expect((await live.query("select user_id from public.notifications where kind='WITHDRAWAL_DECIDED'")).rows).toEqual(
+      [{ user_id: held }],
+    );
+  });
+
+  it("laisse le planning publié intact : accepter n’est pas réaffecter", async () => {
+    await live.exec("reset role");
+    const rows = (
+      await live.query(
+        `select a.user_id from public.schedule_assignments a
+         join public.schedule_shifts s on s.id = a.schedule_shift_id and a.revision = s.published_revision
+         where s.id = $1`,
+        [shift],
+      )
+    ).rows;
+    expect(rows).toEqual([{ user_id: held }]);
+  });
+
+  it("garde une trace au journal d’audit", async () => {
+    await live.exec("reset role");
+    const rows = (
+      await live.query("select action from public.audit_logs where entity='shift_withdrawal' order by occurred_at")
+    ).rows;
+    expect(rows).toEqual([{ action: "CREATE" }, { action: "ACCEPTED" }]);
   });
 });

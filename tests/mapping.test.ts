@@ -114,6 +114,25 @@ function raw(overrides: Partial<Raw> = {}): Raw {
       { schedule_shift_id: SHIFT_DAY, user_id: "u2", revision: 1, status: "CONFIRMED" },
       { schedule_shift_id: "s-orphelin", user_id: "u1", revision: 0, status: "PROPOSED" },
     ],
+    withdrawals: [
+      {
+        id: "w1",
+        schedule_shift_id: SHIFT_DAY,
+        user_id: "u1",
+        reason: "Convocation",
+        state: "PENDING",
+        created_at: "2026-10-05T08:00:00Z",
+      },
+      // Créneau inconnu : la ligne se jette plutôt que de porter une date vide.
+      {
+        id: "w2",
+        schedule_shift_id: "s-orphelin",
+        user_id: "u2",
+        reason: null,
+        state: "PENDING",
+        created_at: "2026-10-05T09:00:00Z",
+      },
+    ],
     audit: [
       {
         id: 7,
@@ -173,6 +192,25 @@ describe("Construction de l’état depuis la base", () => {
     expect(gradeLabel(state.agents[1])).toBe("Agent");
     expect(state.agents[1].matricule).toBe("");
     expect(state.agents[1].phone).toBe("");
+  });
+
+  it("rattache un désistement à sa garde, et jette celui dont le créneau manque", () => {
+    const state = buildState(raw(), "Secours");
+    // Le créneau ne connaît que son planning, et le planning sa campagne : la
+    // projection remonte la chaîne pour donner une date et un créneau lisibles.
+    expect(state.withdrawals).toEqual([
+      {
+        id: "w1",
+        shiftId: SHIFT_DAY,
+        campaignId: "c1",
+        date: "2026-10-01",
+        shift: "DAY",
+        userId: "u1",
+        reason: "Convocation",
+        state: "PENDING",
+        createdAt: "2026-10-05T08:00:00Z",
+      },
+    ]);
   });
 
   it("sort les agents désactivés de l’effectif, sans les perdre", () => {

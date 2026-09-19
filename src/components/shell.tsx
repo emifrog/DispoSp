@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  BarChart3,
   Bell,
   LayoutDashboard,
   CalendarDays,
@@ -15,8 +16,11 @@ import {
   ShieldCheck,
   UserRound,
   Flame,
+  Home,
+  Inbox,
   LogOut,
   Menu,
+  TrendingUp,
   X,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -29,14 +33,19 @@ const managerNav = [
   { href: "/tableau-de-bord", label: "Tableau de bord", icon: LayoutDashboard },
   { href: "/disponibilites", label: "Disponibilités", icon: CalendarDays },
   { href: "/planning", label: "Planning", icon: CalendarCheck2 },
+  { href: "/besoins", label: "Besoins", icon: BarChart3 },
   { href: "/campagnes", label: "Campagnes", icon: Megaphone },
   { href: "/agents", label: "Agents & équipes", icon: Users },
 ];
+// L'ordre compte deux fois : la barre latérale montre tout, la barre du bas sur
+// mobile ne garde que les quatre premiers. Notifications vient donc en dernier —
+// la cloche de la barre du haut y mène déjà, sur téléphone comme ailleurs.
 const agentNav = [
+  { href: "/accueil", label: "Accueil", icon: Home },
   { href: "/mes-disponibilites", label: "Disponibilités", icon: CalendarDays },
   { href: "/mon-planning", label: "Mon planning", icon: CalendarCheck2 },
-  { href: "/notifications", label: "Notifications", icon: Bell },
   { href: "/profil", label: "Mon profil", icon: UserRound },
+  { href: "/notifications", label: "Notifications", icon: Bell },
 ];
 const initials = (name: string) =>
   name
@@ -57,6 +66,9 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
   // so the two administration entries would only lead to screens refusing them.
   const space = roleLabels[memberRole].toUpperCase();
   const unread = state.notifications.filter(n => !n.readAt).length;
+  // Une demande en attente bloque quelqu'un : elle se compte dans la barre,
+  // pas seulement sur son écran.
+  const pendingWithdrawals = state.withdrawals.filter(w => w.state === "PENDING").length;
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main">
@@ -101,6 +113,23 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
             <span className="nav-caption nav-caption-second">ADMINISTRATION</span>
             <nav aria-label="Administration">
               <Link
+                className={`nav-item ${path === "/demandes" ? "active" : ""}`}
+                href="/demandes"
+                onClick={() => setMenu(false)}
+              >
+                <Inbox size={19} />
+                Demandes
+                {pendingWithdrawals > 0 && <span className="nav-badge">{pendingWithdrawals}</span>}
+              </Link>
+              <Link
+                className={`nav-item ${path === "/statistiques" ? "active" : ""}`}
+                href="/statistiques"
+                onClick={() => setMenu(false)}
+              >
+                <TrendingUp size={19} />
+                Statistiques
+              </Link>
+              <Link
                 className={`nav-item ${path === "/historique" ? "active" : ""}`}
                 href="/historique"
                 onClick={() => setMenu(false)}
@@ -142,6 +171,8 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
               {[
                 ...managerNav,
                 ...agentNav,
+                { href: "/demandes", label: "Demandes" },
+                { href: "/statistiques", label: "Statistiques" },
                 { href: "/historique", label: "Historique" },
                 { href: "/parametres", label: "Paramètres" },
               ].find(n => n.href === path)?.label ?? "DispoSP"}

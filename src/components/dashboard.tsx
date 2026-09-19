@@ -14,7 +14,7 @@ import {
   Users,
 } from "lucide-react";
 import { useApp } from "./provider";
-import { PageTitle, Panel, Avatar } from "./common";
+import { PageTitle, Panel, Avatar, ProgressRing, SegmentedTabs } from "./common";
 import { Button } from "./ui/button";
 import {
   coverage,
@@ -24,6 +24,7 @@ import {
   filledDays,
   isOpen,
   isValidated,
+  localDate,
   monthDays,
   monthLabel,
   ofMonth,
@@ -47,6 +48,23 @@ export function Dashboard() {
   const covered = measured.filter(c => c.covered).length;
   const unset = data.length - measured.length;
   const percent = Math.round((respondents.length / state.agents.length) * 100);
+  // Les échéances ne sortent pas de la campagne affichée mais de toutes celles
+  // que la base porte : c'est en octobre qu'on doit voir arriver la clôture de
+  // novembre. Rien n'est inventé — chaque ligne est une date déjà enregistrée.
+  const today = localDate();
+  const deadlines = state.campaigns
+    .flatMap(c => [
+      { date: c.opensOn, label: "Ouverture des réponses", campaign: c.name },
+      { date: c.closesOn, label: "Clôture des réponses", campaign: c.name },
+      { date: `${c.month}-01`, label: "Début du mois couvert", campaign: c.name },
+    ])
+    .filter(d => d.date >= today)
+    .map(d => ({
+      ...d,
+      days: Math.round((Date.parse(`${d.date}T12:00:00`) - Date.parse(`${today}T12:00:00`)) / 86400000),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, 4);
   return (
     <>
       <PageTitle
@@ -83,22 +101,15 @@ export function Dashboard() {
         </Link>
       </div>
       <div className="section-toolbar">
-        <div className="segmented" aria-label="Mesure de couverture">
-          <button
-            aria-pressed={mode === "potential"}
-            className={mode === "potential" ? "selected" : ""}
-            onClick={() => setMode("potential")}
-          >
-            Couverture potentielle
-          </button>
-          <button
-            aria-pressed={mode === "planned"}
-            className={mode === "planned" ? "selected" : ""}
-            onClick={() => setMode("planned")}
-          >
-            Couverture planifiée
-          </button>
-        </div>
+        <SegmentedTabs
+          label="Mesure de couverture"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: "potential", label: "Couverture potentielle" },
+            { value: "planned", label: "Couverture planifiée" },
+          ]}
+        />
         <span className="muted small">
           {mode === "potential" ? "Disponibilités validées" : "Affectations du brouillon"} · effectifs et qualifications
         </span>
@@ -274,15 +285,7 @@ export function Dashboard() {
           }
         >
           <div className="response-overview">
-            <div className="donut" style={{ background: `conic-gradient(var(--blue) ${percent}%, #edf1f7 0)` }}>
-              <div>
-                <strong>
-                  {percent}
-                  <small>%</small>
-                </strong>
-                <span>ont validé</span>
-              </div>
-            </div>
+            <ProgressRing percent={percent} caption="ont validé" />
             <div className="response-counts">
               <div>
                 <span>
@@ -327,6 +330,80 @@ export function Dashboard() {
               </div>
             ))}
           </div>
+        </Panel>
+        <Panel
+          title="Couverture des besoins"
+          subtitle={
+            mode === "potential"
+              ? "Sur les disponibilités validées, créneau par créneau."
+              : "Sur les affectations du brouillon, créneau par créneau."
+          }
+          action={
+            <span className="pill pill-gray">
+              {measured.length} {plural(measured.length, "créneau", "créneaux")} {plural(measured.length, "mesuré")}
+            </span>
+          }
+        >
+          <div className="response-overview">
+            <ProgressRing
+              percent={measured.length ? (covered / measured.length) * 100 : 0}
+              tone="green"
+              caption="couverts"
+            />
+            <div className="response-counts">
+              <div>
+                <span>
+                  <i className="dot green" />
+                  Créneaux couverts
+                </span>
+                <strong>{covered}</strong>
+              </div>
+              <div>
+                <span>
+                  <i className="dot orange" />
+                  En déficit
+                </span>
+                <strong>{measured.length - covered}</strong>
+              </div>
+              {/* Un créneau sans besoin enregistré n'est ni couvert ni en
+                  déficit : il est hors mesure, et le dire évite de lire un
+                  pourcentage comme s'il portait sur tout le mois. */}
+              <div>
+                <span>
+                  <i className="dot gray" />
+                  Besoins non définis
+                </span>
+                <strong>{unset}</strong>
+              </div>
+              <Link href="/planning">
+                Compléter les affectations
+                <ArrowRight size={15} />
+              </Link>
+            </div>
+          </div>
+        </Panel>
+        <Panel title="Prochaines échéances" subtitle="Les dates qui engagent, tous mois confondus.">
+          {!deadlines.length ? (
+            <div className="empty-small">Aucune échéance à venir sur les campagnes enregistrées.</div>
+          ) : (
+            <div className="deadline-list">
+              {deadlines.map(d => (
+                <div key={`${d.date}-${d.label}`}>
+                  <span className="deadline-date">
+                    <strong>{Number(d.date.slice(-2))}</strong>
+                    <small>{dateLabel(d.date, { month: "short" })}</small>
+                  </span>
+                  <span className="deadline-body">
+                    <strong>{d.label}</strong>
+                    <small>{d.campaign}</small>
+                  </span>
+                  <span className={`pill ${d.days <= 2 ? "pill-red" : d.days <= 7 ? "pill-orange" : "pill-gray"}`}>
+                    {d.days === 0 ? "aujourd’hui" : d.days === 1 ? "demain" : `dans ${d.days} jours`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </Panel>
         <Panel title="Étapes suivantes" subtitle="Du recueil des disponibilités au planning publié.">
           <div className="next-step">

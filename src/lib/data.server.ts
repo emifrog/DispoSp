@@ -56,7 +56,7 @@ export async function loadState(session: AttachedSession): Promise<AppState> {
   ]);
 
   const campaignIds = ((campaigns.data ?? []) as { id: string }[]).map(c => c.id);
-  const [participants, entries, requirements, schedules, shifts, assignments, audit] = await Promise.all([
+  const [participants, entries, requirements, schedules, shifts, assignments, withdrawals, audit] = await Promise.all([
     supabase.from("campaign_participants").select("campaign_id, user_id, validated_at").in("campaign_id", campaignIds),
     supabase
       .from("availability_entries")
@@ -71,6 +71,13 @@ export async function loadState(session: AttachedSession): Promise<AppState> {
     supabase.from("schedules").select("id, campaign_id").in("campaign_id", campaignIds),
     supabase.from("schedule_shifts").select("id, schedule_id, date, shift_code, published_revision, published_at"),
     supabase.from("schedule_assignments").select("schedule_shift_id, user_id, revision, status"),
+    // RLS décide qui voit quoi : un agent n'obtient que les siens, qui encadre
+    // obtient ceux du centre. L'écran n'a rien à filtrer.
+    supabase
+      .from("shift_withdrawals")
+      .select("id, schedule_shift_id, user_id, reason, state, created_at")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false }),
     supabase
       .from("audit_logs")
       .select("id, occurred_at, action, entity, actor_id, old_value, new_value")
@@ -95,6 +102,7 @@ export async function loadState(session: AttachedSession): Promise<AppState> {
     schedules: rows<"schedules">(schedules),
     shifts: rows<"shifts">(shifts),
     assignments: rows<"assignments">(assignments),
+    withdrawals: rows<"withdrawals">(withdrawals),
     audit: rows<"audit">(audit),
   };
   return buildState(raw, session.membership.organizationName);

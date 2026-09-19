@@ -17,7 +17,8 @@ L'application demande un compte. Sans session, toute adresse renvoie vers l'écr
 
 ## Parcours livrés
 
-- Connexion, inscription avec confirmation d’adresse et déconnexion ; lecture et écriture des données Supabase selon les droits du compte.
+- Connexion par mot de passe, réinitialisation en cas d’oubli, authentification unique SAML par domaine, inscription avec confirmation d’adresse et déconnexion ; lecture et écriture des données Supabase selon les droits du compte.
+- Accueil agent : campagne en cours, avancement de la saisie, prochaines gardes publiées et accès rapides. La racine aiguille selon le rôle — accueil pour un agent, tableau de bord pour qui encadre.
 - Tableau de bord distinguant la couverture potentielle (disponibilités validées) de la couverture planifiée (affectations du brouillon). Indicateurs déficit, limite et couvert, plus un état « Besoins non définis ».
 - Calendrier agent : cinq états, sélection multiple, saisie par période ou jours de semaine, commentaire, remise à non renseigné.
 - Disponibilités habituelles enregistrées par agent et réutilisables dans une campagne. Leur application remplit le calendrier ; elle ne valide pas la réponse et ne crée aucune affectation.
@@ -26,7 +27,10 @@ L'application demande un compte. Sans session, toute adresse renvoie vers l'écr
 - Construction du planning par date et créneau : affectation/retrait, besoins d’effectifs et de qualifications, répartition Jour/Nuit/24 h.
 - Publication par créneau avec contrôle de couverture et version indépendante du brouillon ; planning personnel limité aux affectations publiées.
 - Campagnes : création, sélection, verrouillage ; paramètres horaires appliqués aux nouvelles campagnes.
-- Administration des agents, fiches avec grade/matricule/téléphone, équipes, quatre rôles, qualifications, invitations et désactivation/réactivation.
+- Besoins du mois sur un écran : effectifs et minima par qualification, journée par journée, avec application en lot à une sélection de jours de semaine.
+- Statistiques sous trois angles : mois par mois sur l’ensemble des campagnes, par jour de semaine pour repérer les trous réguliers, et par agent.
+- Désistements : un agent signale qu’il ne peut plus tenir une garde publiée, l’encadrement tranche. Accepter ne réaffecte pas — le remplacement se fait au planning, et l’écran le rappelle tant qu’il n’est pas fait.
+- Administration des agents, fiches avec grade, fonction, matricule et téléphone, équipes, trois rôles, qualifications, invitations et désactivation/réactivation.
 - Historique filtrable par sujet, auteur et recherche ; centre de notifications avec suivi de lecture et envoi des emails via Resend lorsqu’il est configuré.
 - Exports CSV, ICS et Excel ; impression complète de la matrice mensuelle, de la vue par journée et du planning personnel pour enregistrer un PDF.
 - Interface adaptée aux ordinateurs et téléphones, de 320 px au grand écran ; dialogues accessibles au clavier.
@@ -47,9 +51,9 @@ Voir `DECISIONS_FONCTIONNELLES.md`. Jour 8 h–20 h, Nuit 20 h–8 h le lendemai
 - `src/components/provider.tsx` : l'état vient du rendu serveur, relu à chaque navigation ; les commandes partent à l'action serveur. Rien n'est conservé dans le navigateur. **Les rôles affichés ne constituent pas un contrôle de sécurité** : la base décide.
 - `src/lib/exports.ts` : exports CSV et ICS ; `/api/export` : classeur Excel généré côté serveur en mode connecté.
 - `src/app/manifest.ts`, `public/sw.js` et `src/components/pwa.tsx` : installation sur l'écran d'accueil.
-- `src/lib/supabase/` : fabriques de clients et middleware de session. `publicPaths` liste ce que le garde ne doit jamais intercepter — déconnexion, manifeste, agent de service, page hors ligne.
+- `src/lib/supabase/` : fabriques de clients et middleware de session. `publicPaths` liste ce que le garde ne doit jamais intercepter — déconnexion, choix d'un nouveau mot de passe et vérification du lien qui y mène, manifeste, agent de service, page hors ligne. Les deux écrans de mot de passe en font partie parce qu'on y arrive précisément sans session.
 - `src/lib/session.ts` et `src/lib/session.server.ts` : types partagés d'un côté, lecture de session de l'autre. La séparation est nécessaire — un composant client qui importerait `next/headers` casse la compilation.
-- `supabase/migrations/` : 19 tables couvrant organisations, équipes, profils, droits, campagnes, participants, disponibilités, qualifications, créneaux types, besoins d'effectifs et de qualifications, plannings, affectations, invitations, disponibilités habituelles, notifications et audit. Isolation RLS, validation, invalidation et publication contrôlées en base.
+- `supabase/migrations/` : 20 tables couvrant organisations, équipes, profils, droits, campagnes, participants, disponibilités, qualifications, créneaux types, besoins d'effectifs et de qualifications, plannings, affectations, désistements, invitations, disponibilités habituelles, notifications et audit. Isolation RLS, validation, invalidation et publication contrôlées en base.
 - `.github/workflows/ci.yml` : formatage, lint, types, tests unitaires et schéma, build et tests de bout en bout à chaque push et chaque pull request.
 
 ## Configuration et fonctionnement Supabase
@@ -72,7 +76,16 @@ Le schéma est découpé en migrations successives, à appliquer dans l'ordre et
 | `supabase/migrations/20260918151529_atomic_campaign_creation.sql`      | Création atomique des campagnes, plannings, créneaux et participants                                     | Appliquée — confirmation du porteur du projet |
 | `supabase/migrations/20260918180846_atomic_availability_templates.sql` | Enregistrement et application atomiques de la disponibilité habituelle                                   | Appliquée — confirmation du porteur du projet |
 
-Les deux migrations horodatées, générées par la CLI Supabase, n’ajoutent que des fonctions : `public.create_campaign()` pour la première, `public.save_availability_template()` et `public.apply_availability_template()` pour la seconde. Elles ne modifient aucune donnée existante. Leur application est confirmée par le porteur du projet ; le déploiement de l’application et la vérification du parcours hébergé restent à confirmer.
+| `supabase/migrations/20260919120000_grades_fonctions_roles.sql` | Trois rôles au lieu de quatre, séparation du grade et de la fonction | Appliquée — confirmation du porteur du projet |
+| `supabase/migrations/20260919200000_desistements.sql` | Désistements sur une garde publiée, leurs notifications et leur audit | Appliquée — confirmation du porteur du projet |
+
+Les deux migrations du 18 septembre n’ajoutent que des fonctions : `public.create_campaign()` pour la première, `public.save_availability_template()` et `public.apply_availability_template()` pour la seconde. Elles ne modifient aucune donnée existante.
+
+Celles du 19 septembre vont plus loin. `20260919120000` **modifie des données** : `RESPONSABLE` disparaît et les comptes qui le portaient passent `GESTIONNAIRE`. C’est une extension de droits — d’une seule équipe au centre entier, plus le droit d’inviter — tracée au journal d’audit. Elle ajoute `profiles.fonction` et `invitations.fonction`, et `private.can_manage()` perd sa branche par équipe : un gestionnaire gère désormais tout son centre, et le filtre par équipe n’a plus d’objet.
+
+`20260919200000` ajoute `public.shift_withdrawals`. Un agent ne peut s’y inscrire que pour lui-même et que sur une garde qu’il tient réellement : `private.holds_published_shift()` exige de figurer dans la révision publiée. Le décideur est estampillé par un déclencheur, jamais par le client, et la table ne touche pas au planning.
+
+Le déploiement de l’application et la vérification du parcours hébergé restent à confirmer.
 
 Chaque fichier est une transaction : la moindre erreur annule la migration entière, sans état partiel. Aucun n'est rejouable — ce sont des `create`, pas des `create if not exists`, pour qu'un second passage échoue au lieu d'écraser silencieusement une base déjà en service. `0002` commence par vérifier que `0001` est présente et qu'elle-même ne l'est pas, et s'arrête sur un message explicite plutôt que sur un « relation already exists ».
 
@@ -103,7 +116,7 @@ Les fichiers d'origine restent dans `public/logo v2/`, sous leurs noms de livrai
 
 ### Application installable
 
-`src/app/manifest.ts` décrit l'application, ses icônes et deux raccourcis ; `src/components/pwa.tsx` enregistre l'agent de service et propose l'installation depuis l'écran de profil. Les icônes de `public/` sont engendrées à partir de `src/app/icon.svg` — la même flamme que la marque, sur le bleu nuit de la barre latérale — en trois formes : deux tailles ordinaires et une version « maskable » qui laisse Android découper le contour sans rogner le dessin. iOS ignore le manifeste et prend `apple-touch-icon.png`.
+`src/app/manifest.ts` décrit l'application, ses icônes et deux raccourcis ; `src/components/pwa.tsx` enregistre l'agent de service et propose l'installation depuis l'écran de profil. Les icônes servies viennent du dossier de marque, comme décrit plus haut ; iOS ignore le manifeste et prend `apple-touch-icon.png`.
 
 **L'agent de service ne met aucune donnée en cache.** C'est une décision, pas un raccourci : une disponibilité, une affectation ou un planning servis depuis un cache seraient une information périmée présentée comme à jour, ce qui dans ce métier est pire que pas d'information du tout. Il n'existe que parce qu'un navigateur ne propose l'installation qu'à une application dotée d'un gestionnaire `fetch`, et celui-ci laisse tout passer au réseau. Une seule ressource est conservée, `/hors-ligne`, qui ne contient rien et ne peut donc pas dater. La consultation hors ligne reste une extension à cadrer, et les notifications poussées relèvent de la V2.
 
@@ -160,7 +173,7 @@ Quelques garanties tenues par la base, et non par l'interface :
 
 - Une révision publiée est écrite par `private.publish_schedule_shift()` seule, qui revérifie l'effectif, les qualifications et l'éligibilité de chaque agent avant de figer la version. Aucune session cliente ne peut écrire une révision publiée ni forcer l'état de publication.
 - Le brouillon est la révision 0 ; modifier le brouillon ne touche pas la version que les agents consultent.
-- Un agent ne lit que ses propres gardes publiées, jamais le brouillon du responsable.
+- Un agent ne lit que ses propres gardes publiées, jamais le brouillon du gestionnaire.
 - Le journal d'audit conserve l'ancienne et la nouvelle valeur, et n'est lisible que par les profils gestionnaire et administrateur.
 
 ## Vérification
@@ -181,7 +194,7 @@ Ces six vérifications sont celles exécutées par l'intégration continue.
 
 Les parcours de `tests/e2e/connexion.spec.ts` demandent un projet Supabase joignable et se sautent sans `NEXT_PUBLIC_SUPABASE_URL` dans l'environnement du lanceur — ce qui est le cas de l'intégration continue. Pour les exécuter, exporter les variables Supabase, construire, puis `pnpm test:e2e`.
 
-Les règles métier, elles, n'ont rien perdu : elles sont vérifiées contre un vrai PostgreSQL par les 66 tests de `tests/database.test.ts`, migrations et politiques comprises.
+Les règles métier, elles, n'ont rien perdu : elles sont vérifiées contre un vrai PostgreSQL par les 87 tests de `tests/database.test.ts`, migrations et politiques comprises — 135 tests unitaires au total.
 
 Dans un environnement Windows où `pnpm exec` ne résout pas les exécutables, utiliser `node node_modules/@playwright/test/cli.js install chromium`, puis `node node_modules/@playwright/test/cli.js test`.
 
@@ -197,13 +210,19 @@ Les tests couvrent notamment les validations explicites, la clôture, les dispon
 
 ## Limites et prochaines étapes
 
-Les neuf migrations (`0001` à `0007`, puis les deux migrations horodatées) sont appliquées sur le projet de développement ; l’application lit et écrit les données en mode connecté. Les étapes restantes sont suivies dans [le plan de développement](PLAN_DEVELOPPEMENT.md), et la vérification avant mise en service dans [la recette](RECETTE.md) :
+Les onze migrations (`0001` à `0007`, puis les quatre migrations horodatées) sont appliquées sur le projet de développement ; l’application lit et écrit les données en mode connecté. Les étapes restantes sont suivies dans [le plan de développement](PLAN_DEVELOPPEMENT.md), et la vérification avant mise en service dans [la recette](RECETTE.md) :
 
 - Confirmer la configuration du site hébergé et effectuer une recette avec plusieurs comptes : invitation, confirmation d’adresse, disponibilités habituelles, validation, publication et réception des emails.
 - Déployer la version qui appelle `public.create_campaign()`, `public.save_availability_template()` et `public.apply_availability_template()`, puis vérifier ces parcours en mode connecté : les migrations sont appliquées, le comportement hébergé reste à observer.
 - Finaliser la mise en service : configuration de l’expéditeur, suivi des échecs d’envoi, sauvegardes/restauration et règles de conservation des données.
 
-L’envoi Resend traite des lots de 50 notifications après certaines commandes. Il n’existe ni rappel planifié ni traitement autonome de toute la file en attente. L’envoi automatique des invitations reste à développer. Le SSO et les échanges de garde ne sont pas implémentés.
+L’envoi Resend traite des lots de 50 notifications après certaines commandes. Il n’existe ni rappel planifié ni traitement autonome de toute la file en attente. L’envoi automatique des invitations reste à développer.
+
+**L’authentification unique est écrite mais pas joignable.** `signInWithSSO()` route sur le domaine de l’adresse saisie ; tant qu’aucun fournisseur SAML n’est déclaré côté Supabase — ce qui suppose un plan payant et la CLI — l’écran affiche l’explication et renvoie au mot de passe.
+
+**La réinitialisation du mot de passe fonctionne sur les deux chemins**, mais l’un demande un réglage. Le gabarit d’e-mail par défaut renvoie un code lié au navigateur qui a fait la demande : ouvrir le message sur un autre appareil échoue. Pour couvrir ce cas, régler le gabarit « Reset password » de Supabase sur `{{ .SiteURL }}/auth/recuperation?token_hash={{ .TokenHash }}&type=recovery`, ce que la route serveur du même nom sait vérifier quel que soit l’appareil.
+
+Les désistements sont implémentés ; les **échanges nommés** entre agents — « je te donne ma garde, tu prends la mienne » — ne le sont pas : un agent signale qu’il ne peut plus tenir une garde, l’encadrement réaffecte.
 
 Le retrait d'un compte et de ses données se fait par `supabase/provisioning/retirer-un-compte.sql`, dans l'éditeur SQL du tableau de bord. Il efface dans l'ordre des dépendances, refuse de laisser un centre sans administrateur actif, et ne touche pas au journal d'audit : c'est la suppression du compte lui-même, à la main, qui en anonymise l'auteur.
 

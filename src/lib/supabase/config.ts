@@ -11,7 +11,9 @@ export function credentials() {
 
 export const SIGN_IN_PATH = "/connexion";
 export const SIGN_OUT_PATH = "/deconnexion";
-export const HOME_PATH = "/tableau-de-bord";
+// La racine, pas un écran : c'est elle qui aiguille selon le rôle — accueil
+// pour un agent, tableau de bord pour qui encadre.
+export const HOME_PATH = "/";
 // Ce que le garde ne doit jamais intercepter.
 //
 // La déconnexion, sans quoi elle ne pourrait jamais s'exécuter. Et ce qu'un
@@ -19,4 +21,16 @@ export const HOME_PATH = "/tableau-de-bord";
 // service — une application dont le manifeste répond une redirection ne
 // s'installe pas — plus la page hors ligne, que l'agent de service met en cache
 // à l'installation.
-export const publicPaths = [SIGN_IN_PATH, SIGN_OUT_PATH, "/manifest.webmanifest", "/sw.js", "/hors-ligne"];
+// Le choix d'un nouveau mot de passe et la vérification du lien qui y mène
+// doivent passer le garde : on y arrive précisément sans session, et les y
+// soumettre renverrait l'agent vers la connexion — l'écran même qu'il ne peut
+// pas franchir.
+export const publicPaths = [
+  SIGN_IN_PATH,
+  SIGN_OUT_PATH,
+  "/nouveau-mot-de-passe",
+  "/auth/recuperation",
+  "/manifest.webmanifest",
+  "/sw.js",
+  "/hors-ligne",
+];
