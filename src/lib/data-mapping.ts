@@ -87,6 +87,7 @@ export type Raw = {
   campaigns: {
     id: string;
     name: string;
+    team_id: string;
     starts_on: string;
     opens_at: string;
     closes_at: string;
@@ -319,6 +320,9 @@ export function buildState(raw: Raw, fallbackOrganizationName: string): AppState
       closed: Boolean(c.locked),
       dayStart: c.day_start,
       nightStart: c.night_start,
+      teamId: c.team_id,
+      // Rempli plus bas, une fois les participants regroupés.
+      participants: [] as string[],
     })),
     entries: {},
     responses: {},
@@ -337,8 +341,16 @@ export function buildState(raw: Raw, fallbackOrganizationName: string): AppState
       comment: row.comment ?? "",
     };
   }
-  for (const row of raw.participants)
+  // Deux informations distinctes dans la même table, et on n'en gardait qu'une.
+  // `responses` dit qui a validé ; `participants` dit qui était concerné. Sans
+  // la seconde, le périmètre de la campagne disparaissait et les taux se
+  // calculaient sur l'effectif entier du centre.
+  const invitedBy = new Map<string, string[]>();
+  for (const row of raw.participants) {
+    invitedBy.set(row.campaign_id, [...(invitedBy.get(row.campaign_id) ?? []), row.user_id]);
     if (row.validated_at) state.responses[responseKey(row.campaign_id, row.user_id)] = row.validated_at;
+  }
+  for (const campaign of state.campaigns) campaign.participants = invitedBy.get(campaign.id) ?? [];
 
   for (const row of raw.requirements) {
     const minima: Record<string, number> = {};

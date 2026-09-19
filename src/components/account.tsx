@@ -32,24 +32,32 @@ export function UnattachedAccount({ session }: { session: Session }) {
   );
 }
 
-// A freshly provisioned organization has no campaign, and every screen is built
-// around one. Say so rather than render a workspace with nothing in it.
-export function NoCampaign({ session }: { session: AttachedSession }) {
+/**
+ * Aucune campagne à afficher, et tous les écrans en dépendent.
+ *
+ * Deux situations sans rapport, qu'il serait malhonnête de confondre : le
+ * centre n'en a ouvert aucune, ou l'agent n'est convié à aucune de celles qui
+ * existent. Dire « aucune campagne ouverte » à quelqu'un dont l'équipe vient
+ * d'en ouvrir une l'enverrait chercher un problème là où il n'y en a pas.
+ */
+export function NoCampaign({ session, manages }: { session: AttachedSession; manages: boolean }) {
   return (
     <main className="sign-in" id="main">
       <section className="sign-in-card">
         <Brand />
-        <h1>Aucune campagne ouverte</h1>
+        <h1>{manages ? "Aucune campagne ouverte" : "Aucune campagne ne vous concerne"}</h1>
         <p className="muted">
-          {session.membership.organizationName} n’a pas encore de campagne de disponibilités. Tous les écrans en
-          dépendent.
+          {manages
+            ? `${session.membership.organizationName} n’a pas encore de campagne de disponibilités. Tous les écrans en dépendent.`
+            : `Aucune campagne ouverte à ${session.membership.organizationName} ne vous a été adressée. Vous y aurez accès dès que votre équipe sera concernée.`}
         </p>
         <div className="info-card">
           <CalendarPlus size={22} />
-          <h3>Ouvrir la première campagne</h3>
+          <h3>{manages ? "Ouvrir la première campagne" : "Que faire en attendant"}</h3>
           <p>
-            La création depuis l’interface arrivera avec l’enregistrement en base. En attendant, exécutez
-            <code> supabase/provisioning/premiere-campagne.sql</code> dans l’éditeur SQL du tableau de bord Supabase.
+            {manages
+              ? "Depuis l’écran Campagnes, « Nouvelle campagne » ouvre le mois, prépare les créneaux Jour et Nuit et invite les membres actifs de l’équipe."
+              : "Rien de votre côté. Rapprochez-vous de votre encadrement si vous pensez devoir figurer dans une campagne en cours."}
           </p>
         </div>
         <form method="post" action="/deconnexion">

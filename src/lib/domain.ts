@@ -158,6 +158,13 @@ export const stateSchema = z.object({
       closed: z.boolean(),
       dayStart: z.number(),
       nightStart: z.number(),
+      /** L'équipe à qui la campagne a été ouverte. */
+      teamId: z.string().default(""),
+      /** Qui elle concerne, validés ou non. Sans cette liste, le seul
+          dénominateur disponible était l'effectif entier du centre — un agent
+          d'une autre équipe comptait comme non-répondant à une campagne où il
+          n'avait jamais été invité. */
+      participants: z.array(z.string()).default([]),
     }),
   ),
   entries: z.record(z.string(), z.object({ type: availabilitySchema, comment: z.string() })),
@@ -295,6 +302,26 @@ export function workload(state: AppState, campaignId: string, userId: string) {
   }
   return { day, night, full, total: day + night + full * 2 };
 }
+
+/**
+ * Les agents qu'une campagne concerne.
+ *
+ * Ses participants, moins ceux qui ont quitté l'effectif actif depuis — un
+ * agent désactivé ne doit reparaître ni dans un taux ni dans une relance.
+ *
+ * C'est le dénominateur de tout ce qui se compte « sur la campagne ». L'écran
+ * prenait l'effectif du centre, ce qui faisait passer pour non-répondant
+ * quelqu'un qui n'avait jamais été invité.
+ */
+export function campaignAgents(state: AppState, campaignId: string) {
+  const campaign = state.campaigns.find(c => c.id === campaignId);
+  if (!campaign) return [];
+  const invited = new Set(campaign.participants);
+  return state.agents.filter(a => invited.has(a.id));
+}
+/** Les campagnes qu'un agent peut ouvrir. Qui encadre les voit toutes. */
+export const visibleCampaigns = (state: AppState, userId: string, manages: boolean) =>
+  manages ? state.campaigns : state.campaigns.filter(c => c.participants.includes(userId));
 
 export function availableAgents(state: AppState, campaignId: string, date: string, shift: Shift) {
   return state.agents.filter(

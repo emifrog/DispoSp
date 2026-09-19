@@ -19,6 +19,7 @@ import { Button } from "./ui/button";
 import {
   coverage,
   coverageLevel,
+  campaignAgents,
   coverageLevelLabels,
   dateLabel,
   filledDays,
@@ -35,8 +36,11 @@ export function Dashboard() {
   const { state, campaignId, campaign, run } = useApp();
   const [mode, setMode] = useState<"potential" | "planned">("potential");
   const days = monthDays(campaign.month);
-  const respondents = state.agents.filter(a => isValidated(state, campaignId, a.id));
-  const pending = state.agents.filter(a => !isValidated(state, campaignId, a.id));
+  // Les participants de la campagne, pas l'effectif du centre : un agent d'une
+  // autre équipe n'a jamais été invité, et n'est donc pas un non-répondant.
+  const concerned = campaignAgents(state, campaignId);
+  const respondents = concerned.filter(a => isValidated(state, campaignId, a.id));
+  const pending = concerned.filter(a => !isValidated(state, campaignId, a.id));
   const data = days.flatMap(date =>
     (["DAY", "NIGHT"] as Shift[]).map(shift => ({ date, shift, ...coverage(state, campaignId, date, shift, mode) })),
   );
@@ -47,7 +51,9 @@ export function Dashboard() {
   const nightDeficits = measured.filter(c => c.shift === "NIGHT" && !c.covered).length;
   const covered = measured.filter(c => c.covered).length;
   const unset = data.length - measured.length;
-  const percent = Math.round((respondents.length / state.agents.length) * 100);
+  // Une campagne sans participant donnerait NaN, et l'anneau afficherait
+  // « NaN % » : sans personne à interroger, le taux est de zéro, pas d'erreur.
+  const percent = concerned.length ? Math.round((respondents.length / concerned.length) * 100) : 0;
   // Les échéances ne sortent pas de la campagne affichée mais de toutes celles
   // que la base porte : c'est en octobre qu'on doit voir arriver la clôture de
   // novembre. Rien n'est inventé — chaque ligne est une date déjà enregistrée.
@@ -124,7 +130,7 @@ export function Dashboard() {
           </div>
           <div className="stat-number">
             {respondents.length}
-            <span>/ {state.agents.length}</span>
+            <span>/ {concerned.length}</span>
             <span className="stat-badge">{percent} %</span>
           </div>
           <div className="mini-progress">
@@ -280,7 +286,7 @@ export function Dashboard() {
           subtitle="Seules les réponses explicitement validées sont comptabilisées."
           action={
             <span className="pill pill-blue">
-              {state.agents.length} {plural(state.agents.length, "agent")}
+              {concerned.length} {plural(concerned.length, "agent")} {plural(concerned.length, "concerné")}
             </span>
           }
         >

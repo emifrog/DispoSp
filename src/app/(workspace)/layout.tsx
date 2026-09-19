@@ -6,7 +6,7 @@ import { loadState } from "@/lib/data.server";
 import { SIGN_IN_PATH } from "@/lib/supabase/config";
 import { redirect } from "next/navigation";
 import type { AttachedSession } from "@/lib/session";
-import { memberRoles, type Actor, type MemberRole } from "@/lib/domain";
+import { memberRoles, visibleCampaigns, type Actor, type MemberRole } from "@/lib/domain";
 
 // Only AGENT is limited to the personal screens; every other role manages.
 const actorFor = (session: AttachedSession): Actor => ({
@@ -25,12 +25,19 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
   if (!session) redirect(SIGN_IN_PATH);
   if (!session.membership) return <UnattachedAccount session={session} />;
   const attached: AttachedSession = { ...session, membership: session.membership };
-  const state = await loadState(attached);
+  const loaded = await loadState(attached);
+  const actor = actorFor(attached);
+  // Les policies laissent un agent lire les campagnes de son centre, ce qui est
+  // juste : il doit pouvoir voir que le mois existe. Mais les lui proposer dans
+  // le sélecteur le menait sur un calendrier où la base refuse toute écriture,
+  // sans qu'aucun écran ne sache lui dire pourquoi. On ne lui montre donc que
+  // celles auxquelles il est convié ; qui encadre les voit toutes.
+  const state = { ...loaded, campaigns: visibleCampaigns(loaded, attached.userId, actor.role === "MANAGER") };
   // Every screen is built around a selected campaign; the provider would have
   // none to select. Guard here so no screen has to handle the empty case.
-  if (!state.campaigns.length) return <NoCampaign session={attached} />;
+  if (!state.campaigns.length) return <NoCampaign session={attached} manages={actor.role === "MANAGER"} />;
   return (
-    <AppProvider state={state} actor={actorFor(attached)} memberRole={memberRoleOf(attached)}>
+    <AppProvider state={state} actor={actor} memberRole={memberRoleOf(attached)}>
       <Shell session={attached}>{children}</Shell>
     </AppProvider>
   );

@@ -38,7 +38,7 @@ export async function loadState(session: AttachedSession): Promise<AppState> {
     supabase.from("user_qualifications").select("user_id, qualifications(name)").eq("organization_id", organizationId),
     supabase
       .from("availability_campaigns")
-      .select("id, name, starts_on, opens_at, closes_at, locked, day_start, night_start")
+      .select("id, name, team_id, starts_on, opens_at, closes_at, locked, day_start, night_start")
       .eq("organization_id", organizationId)
       .order("starts_on", { ascending: true }),
     supabase.from("teams").select("id, name").eq("organization_id", organizationId).order("name"),

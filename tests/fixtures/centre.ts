@@ -206,6 +206,9 @@ export function sampleState(now = new Date()): AppState {
         closed: false,
         dayStart: 8,
         nightStart: 20,
+        teamId: "",
+        // Renseignée juste après : l'objet ne peut pas se lire lui-même.
+        participants: [],
       },
     ],
     entries: {},
@@ -217,6 +220,8 @@ export function sampleState(now = new Date()): AppState {
     audit: [],
   };
   const campaign = state.campaigns[0];
+  // Le centre d'exemple n'a qu'une campagne, ouverte à tout son effectif.
+  campaign.participants = state.agents.map(a => a.id);
   const types: Availability[] = ["FULL_24H", "DAY", "FULL_24H", "NIGHT", "FULL_24H", "UNAVAILABLE", "DAY"];
   state.agents.forEach((agent, index) => {
     monthDays(campaign.month).forEach((date, day) => {

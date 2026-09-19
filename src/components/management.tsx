@@ -33,6 +33,7 @@ import {
   localDate,
   localMonth,
   auditFamilies,
+  campaignAgents,
   fonctions,
   gradeLabel,
   grades,
@@ -75,7 +76,9 @@ export function Campaigns() {
       />
       <div className="campaign-list">
         {state.campaigns.map(c => {
-          const count = state.agents.filter(a => isValidated(state, c.id, a.id)).length;
+          // Sur les agents que cette campagne concerne, pas sur le centre.
+          const concerned = campaignAgents(state, c.id);
+          const count = concerned.filter(a => isValidated(state, c.id, a.id)).length;
           return (
             <Panel
               key={c.id}
@@ -102,7 +105,7 @@ export function Campaigns() {
                   <span>
                     Réponses validées
                     <strong>
-                      {count} / {state.agents.length} {plural(state.agents.length, "agent")}
+                      {count} / {concerned.length} {plural(concerned.length, "agent")}
                     </strong>
                   </span>
                 </span>

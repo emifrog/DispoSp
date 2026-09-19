@@ -24,7 +24,17 @@ import { useApp } from "./provider";
 import { Avatar, Legend, PageTitle, ProgressRing, SegmentedTabs, StatusBadge } from "./common";
 import { Button } from "./ui/button";
 import { availabilityCsv, download } from "@/lib/exports";
-import { type Agent, dateLabel, entryKey, isValidated, localDate, monthDays, monthLabel, plural } from "@/lib/domain";
+import {
+  type Agent,
+  campaignAgents,
+  dateLabel,
+  entryKey,
+  isValidated,
+  localDate,
+  monthDays,
+  monthLabel,
+  plural,
+} from "@/lib/domain";
 // Deux hauteurs parce qu'il y a deux densités. Le virtualiseur ne mesure pas les
 // lignes, il les estime : une valeur fausse décalerait les cales de défilement
 // et ferait sauter la matrice. Ces deux nombres doivent donc suivre le CSS de
@@ -43,9 +53,11 @@ export function AvailabilityTable() {
   // agent dans une longue liste, pas un chiffre par journée.
   const [density, setDensity] = useState<"detailed" | "compact">("detailed");
   const days = useMemo(() => monthDays(campaign.month), [campaign.month]);
+  // Les participants de la campagne, et eux seuls : afficher tout le centre
+  // faisait apparaître en « à valider » des agents jamais invités.
   const data = useMemo(
     () =>
-      state.agents.filter(
+      campaignAgents(state, campaignId).filter(
         a =>
           a.name.toLocaleLowerCase("fr").includes(search.toLocaleLowerCase("fr")) &&
           (!team || a.team === team) &&
@@ -53,7 +65,7 @@ export function AvailabilityTable() {
       ),
     [state, campaignId, search, team, status],
   );
-  // L'avancement du centre : une case par agent affiché et par jour du mois.
+  // L'avancement de la campagne : une case par agent affiché et par jour du mois.
   const cells = data.length * days.length;
   const entered = data.reduce(
     (total, a) => total + days.filter(d => state.entries[entryKey(campaignId, a.id, d)]).length,

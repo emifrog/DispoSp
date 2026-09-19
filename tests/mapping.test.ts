@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { buildState, taken, READ_FAILED, type Raw } from "../src/lib/data-mapping";
-import { entryKey, gradeLabel, responseKey, shiftKey } from "../src/lib/domain";
+import {
+  campaignAgents,
+  entryKey,
+  gradeLabel,
+  isValidated,
+  responseKey,
+  shiftKey,
+  visibleCampaigns,
+} from "../src/lib/domain";
 
 const CAMPAIGN = "c1";
 const SHIFT_DAY = "s-day";
@@ -58,6 +66,7 @@ function raw(overrides: Partial<Raw> = {}): Raw {
       {
         id: CAMPAIGN,
         name: "Disponibilités d’octobre 2026",
+        team_id: "t1",
         starts_on: "2026-10-01",
         opens_at: "2026-08-31T22:00:00Z",
         closes_at: "2026-09-30T21:59:59Z",
@@ -192,6 +201,53 @@ describe("Construction de l’état depuis la base", () => {
     expect(gradeLabel(state.agents[1])).toBe("Agent");
     expect(state.agents[1].matricule).toBe("");
     expect(state.agents[1].phone).toBe("");
+  });
+
+  it("garde le périmètre de la campagne, et pas seulement ses validations", () => {
+    const state = buildState(raw(), "Secours");
+    // u1 a validé, u2 non : les deux sont participants, et la projection ne
+    // gardait que le premier. Le périmètre disparaissait avec le second.
+    expect(state.campaigns[0].participants.sort()).toEqual(["u1", "u2"]);
+    expect(state.campaigns[0].teamId).toBe("t1");
+  });
+
+  it("compte le taux de réponse sur les invités, pas sur le centre", () => {
+    // Le scénario de l’audit : un centre de deux agents actifs, une campagne
+    // ouverte à un seul, qui a validé. Le taux est de 100 %, pas de 50 % — le
+    // second n’a jamais été invité, il n’est donc pas un non-répondant.
+    const state = buildState(
+      raw({ participants: [{ campaign_id: CAMPAIGN, user_id: "u1", validated_at: "2026-09-17T09:30:00Z" }] }),
+      "Secours",
+    );
+    const concerned = campaignAgents(state, CAMPAIGN);
+    expect(concerned.map(a => a.id)).toEqual(["u1"]);
+    expect(concerned.filter(a => isValidated(state, CAMPAIGN, a.id))).toHaveLength(1);
+    // L’effectif actif du centre en compte bien deux : c’est la comparaison
+    // avec lui qui donnait 50 %.
+    expect(state.agents).toHaveLength(2);
+  });
+
+  it("écarte du périmètre un participant qui a quitté l’effectif actif", () => {
+    // u3 est désactivé. Même invité, il ne doit peser sur aucun taux.
+    const state = buildState(
+      raw({
+        participants: [
+          { campaign_id: CAMPAIGN, user_id: "u1", validated_at: null },
+          { campaign_id: CAMPAIGN, user_id: "u3", validated_at: null },
+        ],
+      }),
+      "Secours",
+    );
+    expect(state.campaigns[0].participants).toContain("u3");
+    expect(campaignAgents(state, CAMPAIGN).map(a => a.id)).toEqual(["u1"]);
+  });
+
+  it("ne propose à un agent que les campagnes où il est convié", () => {
+    const state = buildState(raw(), "Secours");
+    expect(visibleCampaigns(state, "u1", false).map(c => c.id)).toEqual([CAMPAIGN]);
+    expect(visibleCampaigns(state, "inconnu", false)).toEqual([]);
+    // Qui encadre les voit toutes, y compris celles d’une autre équipe.
+    expect(visibleCampaigns(state, "inconnu", true).map(c => c.id)).toEqual([CAMPAIGN]);
   });
 
   it("distingue une lecture vide d’une lecture qui a échoué", () => {

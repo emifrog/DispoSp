@@ -4,6 +4,7 @@ import { CircleAlert, Moon, Sun, TrendingUp } from "lucide-react";
 import { useApp } from "./provider";
 import { AdministrationOnly, Avatar, PageTitle, Panel, ProgressRing, SegmentedTabs } from "./common";
 import {
+  campaignAgents,
   coverage,
   entryKey,
   isValidated,
@@ -75,7 +76,10 @@ export function Statistics() {
 function ByMonth({ state }: { state: AppState }) {
   const rows = state.campaigns.map(c => {
     const days = monthDays(c.month);
-    const validated = state.agents.filter(a => state.responses[responseKey(c.id, a.id)]).length;
+    // Chaque campagne a son propre périmètre : comparer des mois ouverts à des
+    // équipes différentes sur l'effectif du centre rendait la colonne illisible.
+    const concerned = campaignAgents(state, c.id);
+    const validated = concerned.filter(a => state.responses[responseKey(c.id, a.id)]).length;
     const slots = days.flatMap(date => SHIFTS.map(shift => coverage(state, c.id, date, shift, "potential")));
     const measured = slots.filter(s => s.defined);
     const covered = measured.filter(s => s.covered).length;
@@ -86,7 +90,8 @@ function ByMonth({ state }: { state: AppState }) {
       id: c.id,
       name: c.name,
       month: c.month,
-      response: pct(validated, state.agents.length),
+      response: pct(validated, concerned.length),
+      concerned: concerned.length,
       coverage: measured.length ? pct(covered, measured.length) : null,
       measured: measured.length,
       published,
@@ -128,7 +133,11 @@ function ByMonth({ state }: { state: AppState }) {
                     <small>{monthLabel(r.month)}</small>
                   </th>
                   <td>
-                    <Bar percent={r.response} label={`${r.response} %`} tone="blue" />
+                    <Bar
+                      percent={r.response}
+                      label={`${r.response} % · ${r.concerned} ${plural(r.concerned, "agent")}`}
+                      tone="blue"
+                    />
                   </td>
                   <td>
                     {r.coverage === null ? (
@@ -171,13 +180,14 @@ function ByMonth({ state }: { state: AppState }) {
  */
 function ByWeekday({ state, campaignId, month }: { state: AppState; campaignId: string; month: string }) {
   const days = monthDays(month);
+  const concerned = campaignAgents(state, campaignId);
   const rows = weekdayNames.map((name, index) => {
     const weekday = index + 1;
     const dates = days.filter(d => ((new Date(`${d}T12:00:00`).getDay() + 6) % 7) + 1 === weekday);
     const counts = Object.fromEntries(TYPES.map(t => [t, 0])) as Record<Availability, number>;
     let unfilled = 0;
     for (const date of dates)
-      for (const agent of state.agents) {
+      for (const agent of concerned) {
         const entry = state.entries[entryKey(campaignId, agent.id, date)];
         if (entry) counts[entry.type] += 1;
         else unfilled += 1;
@@ -189,7 +199,7 @@ function ByWeekday({ state, campaignId, month }: { state: AppState; campaignId: 
       dates: dates.length,
       counts,
       unfilled,
-      total: dates.length * state.agents.length,
+      total: dates.length * concerned.length,
       coverage: measured.length ? pct(measured.filter(s => s.covered).length, measured.length) : null,
     };
   });
@@ -253,7 +263,9 @@ function ariaFor(name: string, counts: Record<Availability, number>, unfilled: n
 /** Ce que chaque agent a saisi et effectué, sur la campagne et sur la durée. */
 function ByAgent({ state, campaignId }: { state: AppState; campaignId: string }) {
   const days = monthDays(state.campaigns.find(c => c.id === campaignId)?.month ?? "");
-  const rows = state.agents
+  // La saisie du mois ne concerne que les participants ; les gardes, elles, se
+  // comptent sur toutes les campagnes, donc sur tout l'effectif.
+  const rows = campaignAgents(state, campaignId)
     .map(agent => {
       const filled = days.filter(d => state.entries[entryKey(campaignId, agent.id, d)]).length;
       // Les gardes effectuées se comptent sur toutes les campagnes, pas sur le
