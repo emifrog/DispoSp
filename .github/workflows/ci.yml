@@ -47,7 +47,16 @@ jobs:
       - name: Navigateur de test
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Tests de bout en bout
+      # Aucune coordonnée Supabase n'est fournie ici, et c'est délibéré : ce
+      # travail vérifie que la surface publique — manifeste, agent de service,
+      # page hors ligne, écran de connexion — se sert sans aucun accès à la
+      # base. Les parcours qui demandent une session se sautent d'eux-mêmes.
+      #
+      # Cela n'a pas toujours été vrai : le garde de session exigeait la
+      # configuration avant même de regarder le chemin demandé, si bien que
+      # même le manifeste échouait ici. `tests/middleware.test.ts` garde
+      # désormais cette propriété, et échoue si elle se reperd.
+      - name: Tests de bout en bout — surface publique, sans base
         run: pnpm test:e2e
 
       - uses: actions/upload-artifact@v4

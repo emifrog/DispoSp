@@ -52,7 +52,7 @@ Voir `DECISIONS_FONCTIONNELLES.md`. Jour 8 h–20 h, Nuit 20 h–8 h le lendemai
 - `src/components/provider.tsx` : l'état vient du rendu serveur, relu à chaque navigation ; les commandes partent à l'action serveur. Rien n'est conservé dans le navigateur. **Les rôles affichés ne constituent pas un contrôle de sécurité** : la base décide.
 - `src/lib/exports.ts` : exports CSV et ICS ; `/api/export` : classeur Excel généré côté serveur en mode connecté.
 - `src/app/manifest.ts`, `public/sw.js` et `src/components/pwa.tsx` : installation sur l'écran d'accueil.
-- `src/lib/supabase/` : fabriques de clients et middleware de session. `publicPaths` liste ce que le garde ne doit jamais intercepter — déconnexion, choix d'un nouveau mot de passe et vérification du lien qui y mène, manifeste, agent de service, page hors ligne. Les deux écrans de mot de passe en font partie parce qu'on y arrive précisément sans session.
+- `src/lib/supabase/` : fabriques de clients et middleware de session. `publicPaths` liste ce que le garde ne doit jamais intercepter — déconnexion, choix d'un nouveau mot de passe et vérification du lien qui y mène, manifeste, agent de service, page hors ligne. Les deux écrans de mot de passe en font partie parce qu'on y arrive précisément sans session. **L'ordre compte** : le garde regarde le chemin avant d'exiger la configuration Supabase, sinon un environnement qui n'en a pas — l'intégration continue — échouerait jusqu'à servir le manifeste. La moitié inverse de la décision tient toujours : un écran de travail sans configuration s'arrête au lieu de s'afficher vide. `tests/middleware.test.ts` garde les deux.
 - `src/lib/session.ts` et `src/lib/session.server.ts` : types partagés d'un côté, lecture de session de l'autre. La séparation est nécessaire — un composant client qui importerait `next/headers` casse la compilation.
 - `supabase/migrations/` : 20 tables couvrant organisations, équipes, profils, droits, campagnes, participants, disponibilités, qualifications, créneaux types, besoins d'effectifs et de qualifications, plannings, affectations, désistements, invitations, disponibilités habituelles, notifications et audit. Isolation RLS, validation, invalidation et publication contrôlées en base.
 - `.github/workflows/ci.yml` : formatage, lint, types, tests unitaires et schéma, build et tests de bout en bout à chaque push et chaque pull request.
@@ -176,7 +176,8 @@ Quelques garanties tenues par la base, et non par l'interface :
 - Le brouillon est la révision 0 ; modifier le brouillon ne touche pas la version que les agents consultent.
 - Un agent ne lit que ses propres gardes publiées, jamais le brouillon du gestionnaire.
 
-**Une garantie qui n’est pas tenue, et qu’il faut lire comme telle.** « Seul un administrateur change un rôle » vaut pour une fiche existante, et la base le fait respecter. Elle ne vaut pas pour une invitation : la policy d’écriture des invitations vérifie le droit d’administrer le centre — qu’un gestionnaire possède — sans contrôler le rôle accordé. Un gestionnaire peut donc faire entrer un nouvel administrateur alors qu’il ne peut promouvoir personne. Vérifié en base : la promotion directe est refusée, l’invitation aboutit à `ADMIN`.
+- Depuis la migration `20260920090000_correctifs_droits_et_besoins.sql`, un gestionnaire peut inviter un agent ou un gestionnaire ; seul un administrateur peut accorder ADMIN. La règle est contrôlée en base à la création et à la modification d’une invitation en attente. Vérifier que cette migration est appliquée avant de déployer le code correspondant.
+- `public.set_staffing_requirement()` écrit l’effectif et les minima d’un créneau dans une transaction : un refus conserve le besoin précédent. L’application d’un besoin à plusieurs créneaux reste partielle si un appel échoue.
 
 - Le journal d'audit conserve l'ancienne et la nouvelle valeur, et n'est lisible que par les profils gestionnaire et administrateur.
 
@@ -196,9 +197,13 @@ Ces six vérifications sont celles exécutées par l'intégration continue.
 
 **La suite navigateur a fondu avec le mode démonstration**, et il faut le dire franchement : les trente parcours d'interface qu'elle jouait — saisie, validation, affectation, publication, exports — pilotaient douze agents fictifs qui n'existent plus. Ils n'ont pas été remplacés par des tests automatiques ; ils sont devenus les étapes manuelles de [la recette](RECETTE.md). Ce qui reste automatique et sans données : le manifeste, les icônes, l'agent de service et l'adaptation aux écrans.
 
-Les parcours de `tests/e2e/connexion.spec.ts` demandent un projet Supabase joignable et se sautent sans `NEXT_PUBLIC_SUPABASE_URL` dans l'environnement du lanceur — ce qui est le cas de l'intégration continue. Pour les exécuter, exporter les variables Supabase, construire, puis `pnpm test:e2e`.
+Les parcours de `tests/e2e/connexion.spec.ts` demandent un projet Supabase joignable et se sautent sans `NEXT_PUBLIC_SUPABASE_URL` — ce qui est le cas de l'intégration continue, qui n'en fournit aucun et vérifie ainsi que la surface publique se sert sans base.
 
-Les règles métier, elles, n'ont rien perdu : elles sont vérifiées contre un vrai PostgreSQL par les 87 tests de `tests/database.test.ts`, migrations et politiques comprises — 135 tests unitaires au total.
+En local, rien à exporter : la configuration Playwright charge `.env` comme Next le fait pour le serveur. Sans cela les deux divergeaient, et des parcours se sautaient en croyant le serveur non configuré alors qu'il l'était — « douze tests ignorés » qui ne voulaient plus rien dire.
+
+Les deux parcours de `pwa.spec.ts` qui demandent une session attendent `E2E_EMAIL` et `E2E_PASSWORD`, un compte d'essai rattaché à un centre. Sans eux ils se sautent, au lieu d'échouer sur un écran de connexion.
+
+Les règles métier, elles, n'ont rien perdu : elles sont vérifiées contre un vrai PostgreSQL par les 95 tests de `tests/database.test.ts`, migrations et politiques comprises — 145 tests au total au commit `2abab2e`. Le suivi des vérifications et des correctifs figure dans [le rapport d’analyse](ANALYSE_PROJET_2026-09-19.md).
 
 Dans un environnement Windows où `pnpm exec` ne résout pas les exécutables, utiliser `node node_modules/@playwright/test/cli.js install chromium`, puis `node node_modules/@playwright/test/cli.js test`.
 
