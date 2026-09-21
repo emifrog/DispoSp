@@ -103,3 +103,13 @@ Ces choix ont été annoncés au démarrage du développement. Ils sont modifiab
 >
 > - **Trois rôles au lieu de quatre.** `RESPONSABLE` est retiré. Un gestionnaire n'est plus tenu à son équipe, il gère tout son centre ; seul un administrateur change un rôle, et personne ne change le sien. Les comptes concernés sont passés gestionnaires.
 > - **Le grade et la fonction sont deux choses.** Le grade se gagne à l'ancienneté et suit la personne ; la fonction se tient sur un engin. Ils étaient confondus dans un champ unique, ce qui obligeait à renoncer à l'un des deux.
+
+> **Mise à jour du 21 septembre 2026 — les notifications poussées.** Elles étaient renvoyées à la V2 ; elles sont livrées avec la première version, à la demande du porteur du projet. Un email se lit quand on ouvre sa boîte, le centre de messages quand on ouvre l'application : ni l'un ni l'autre n'atteint l'agent qui n'a rien ouvert, celui-là même que vise une campagne qui s'ouvre. Cinq décisions encadrent ce choix.
+>
+> - **L'activation se fait appareil par appareil, jamais pour un compte.** Le protocole ne permet pas autre chose — c'est le navigateur qui crée l'abonnement, pas le serveur —, et c'est aussi ce qu'on veut : le poste partagé du centre n'a pas à sonner la nuit parce qu'un agent a coché une case chez lui. Un agent qui change de téléphone réactive sur le nouveau.
+> - **Le message ne dit que la nature de l'événement.** « Votre planning a été publié ou modifié. » Ni nom, ni motif de désistement, ni date de garde : une notification s'affiche sur un écran verrouillé, que lit quiconque passe devant. Le détail reste dans l'application, derrière la session.
+> - **Aucun rattrapage.** Activer les notifications ne fait pas remonter ce qui a été écrit avant. Une bulle qui annonce une campagne ouverte la semaine dernière ne rend service à personne.
+> - **Rien ne remplace le centre de messages ni l'email.** La notification poussée est un rappel, pas le canal officiel. Un téléphone éteint, un abonnement expiré ou une autorisation retirée ne doivent jamais faire perdre l'information.
+> - **Sur iPhone, l'application doit être installée sur l'écran d'accueil** (iOS 16.4 et au-delà). Ce n'est pas un choix du projet mais une contrainte d'Apple ; elle change ce qu'on explique aux agents, et l'écran d'activation donne le chemin.
+>
+> Scénarios de recette correspondants : un agent active sur son téléphone et reçoit l'essai ; une campagne ouverte lui apporte une bulle application fermée ; la même campagne n'apporte rien à son ordinateur, qu'il n'a pas activé ; le message affiché ne nomme personne ; un agent qui désactive cesse de recevoir sans perdre ses messages dans l'application.

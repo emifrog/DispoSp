@@ -1,6 +1,6 @@
 # Plan de développement — DispoSP
 
-État au 19 septembre 2026. Les onze migrations (`0001` à `0007`, la création atomique des campagnes, les écritures atomiques de la disponibilité habituelle, le resserrement des rôles avec la séparation grade/fonction, et les désistements) sont appliquées sur le projet de développement. Les statuts ci-dessous distinguent les fonctionnalités implémentées des vérifications restant à effectuer sur le site hébergé.
+État au 21 septembre 2026. **Les seize migrations sont appliquées** sur le projet de développement, les deux du Web Push comprises ; le tableau des migrations du [README](README.md) fait foi. Ce qui reste tient à la configuration de l’hébergement et à la recette, pas au schéma. Les statuts ci-dessous distinguent les fonctionnalités implémentées des vérifications restant à effectuer sur le site hébergé.
 
 Ce document complète le cahier des charges V1.0 du 17 septembre 2026 et `DECISIONS_FONCTIONNELLES.md`, qui restent la référence fonctionnelle. La configuration et les commandes sont détaillées dans le [README](README.md).
 
@@ -10,14 +10,14 @@ L’application ne tourne plus que **branchée sur Supabase** : authentification
 
 Le parcours agent → validation → affectation → publication → consultation a déjà été consigné comme observé sur le centre de test. L’administration, les notifications, les exports et les disponibilités habituelles sont désormais implémentés. Cette mise à jour documentaire ne constitue pas une nouvelle recette du projet hébergé.
 
-Les redirections d’authentification et la configuration Resend restent à confirmer sur l’hébergement avant la mise en service.
+Les redirections d’authentification, la configuration Resend et celle des notifications poussées restent à confirmer sur l’hébergement avant la mise en service.
 
 ### Avancement par domaine
 
 | Domaine                     | État                     | Détail                                                                                                                               |
 | --------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | Socle technique             | ✅ implémenté            | Versionnement, formatage, lint, types et intégration continue                                                                        |
-| Base de données             | ✅ migrations appliquées | 20 tables, onze migrations appliquées, isolation RLS et règles métier                                                                |
+| Base de données             | ✅ migrations appliquées | 22 tables, seize migrations appliquées, isolation RLS et règles métier                                                               |
 | Authentification            | 🟡 SSO à configurer      | Inscription, confirmation d’adresse, connexion, mot de passe oublié, session et déconnexion ; SSO SAML écrit, fournisseur à déclarer |
 | Lecture et écriture         | ✅ implémentées          | Données et commandes métier raccordées à Supabase                                                                                    |
 | Administration              | ✅ implémentée           | Fiches agents avec grade et fonction, invitations, équipes, trois rôles et qualifications                                            |
@@ -27,9 +27,9 @@ Les redirections d’authentification et la configuration Resend restent à conf
 | Synthèse et couverture      | ✅ implémentées          | Matrice virtualisée, vue nominative par journée, niveaux de couverture et distinction potentiel/planifié                             |
 | Planning et équité          | ✅ implémentés           | Brouillon, publication contrôlée, répartition Jour/Nuit/24 h                                                                         |
 | Historique et audit         | ✅ implémentés           | Journal, filtres sujet/auteur/période/recherche et export du journal                                                                 |
-| Notifications               | 🟡 recette à compléter   | Centre interne, lecture, rappels manuels et envoi Resend implémentés ; réception à vérifier                                          |
+| Notifications               | 🟡 recette à compléter   | Centre interne, rappels manuels, emails Resend et notifications poussées implémentés ; clés VAPID et réception à vérifier            |
 | Exports                     | ✅ implémentés           | CSV, ICS, Excel, journal d’audit et impression PDF, matrice mensuelle comprise                                                       |
-| Application installable     | ✅ implémentée           | Interface adaptée au mobile, manifeste, icônes et installation sur l’écran d’accueil                                                 |
+| Application installable     | ✅ implémentée           | Interface adaptée au mobile, manifeste, icônes, installation sur l’écran d’accueil et notifications poussées                         |
 | Hébergement et exploitation | 🟡 à confirmer           | Configuration connectée, emails, sauvegardes et recette à plusieurs comptes                                                          |
 
 ### Garanties métier
@@ -45,7 +45,7 @@ Les redirections d’authentification et la configuration Resend restent à conf
 
 La suite couvre les règles métier, les migrations et droits sur PostgreSQL embarqué via PGlite, les exports et des parcours navigateur sur ordinateur et mobile. Un scénario à 300 agents vérifie notamment la virtualisation de la synthèse. Deux tests gardent l’adaptation aux écrans : aucun débordement horizontal à 320 ni 768 px, et aucune commande sous 24 px de côté. Il ne remplace pas une mesure de charge du service hébergé avec plusieurs utilisateurs simultanés.
 
-Les six contrôles de l’intégration continue sont le formatage, le lint, les types, les tests unitaires et de base, la construction et les tests navigateur. Leurs résultats courants font foi ; aucun nouveau résultat de test applicatif n’est revendiqué par cette mise à jour documentaire.
+Les six contrôles de l’intégration continue sont le formatage, le lint, les types, les tests unitaires et de base, la construction et les tests navigateur. Leurs résultats courants font foi. Au 21 septembre 2026 : 190 tests unitaires et de base, dont 114 sur PostgreSQL embarqué — les notifications poussées y ajoutent la liste des services de remise acceptés, le contenu envoyé, l’isolation des abonnements et la file d’envoi — et 22 parcours navigateur passés avec un compte d’essai. **Aucune vérification sur le projet hébergé n’est revendiquée ici** : la réception réelle sur un téléphone relève de la recette.
 
 ## 2. Priorités vers une première utilisation
 
@@ -58,6 +58,7 @@ La vérification de ces priorités sur le site public est détaillée pas à pas
 | 3        | Configurer Resend et vérifier la réception                            | Emails d’ouverture, de rappel et de publication reçus avec des liens corrects |
 | 4        | Faire une recette métier avec plusieurs agents                        | Modèles habituels, validation, couverture, publication et exports cohérents   |
 | 5        | Déployer la version utilisant les écritures atomiques                 | Pas de campagne ni de modèle partiellement enregistré après un échec          |
+| 6        | Déclarer les clés VAPID sur l’hébergeur, puis reconstruire            | Un téléphone activé reçoit la notification, application fermée                |
 | 6        | Préparer l’exploitation                                               | Sauvegarde restaurable, suivi des erreurs et règles de conservation définis   |
 
 Le développement des lots 3 et 5 a avancé : la priorité porte désormais sur leur recette en mode connecté, les limites identifiées et la mise en service. L’application d’une migration ne prouve pas à elle seule le bon fonctionnement du parcours utilisateur hébergé.
@@ -66,7 +67,7 @@ Le développement des lots 3 et 5 a avancé : la priorité porte désormais sur 
 
 ### Lot 0 — Socle ✅ implémenté
 
-Versionnement et outillage, authentification, lecture des données, intégration continue et virtualisation de la synthèse. Les onze migrations sont appliquées ; le schéma compte 20 tables.
+Versionnement et outillage, authentification, lecture des données, intégration continue et virtualisation de la synthèse. Les seize migrations sont appliquées ; le schéma compte 22 tables.
 
 ### Lot 1 — Écriture des données ✅ implémentée, déploiement à confirmer
 
@@ -108,6 +109,21 @@ L’envoi nécessite **les trois variables** `RESEND_API_KEY`, `RESEND_FROM` et 
 
 **À faire :** vérifier l’expéditeur et la réception réelle des trois types de message, puis définir le suivi des échecs et les reprises. Le rappel est déclenché manuellement. Les envois se font par lots de 50 ; aucune tâche autonome ne traite toute la file ou ne programme les relances. Prévenir les doublons lors d’une reprise après un envoi réussi mais un marquage échoué.
 
+#### Notifications poussées sur le téléphone 🟡 implémentées, migrations et réception à valider
+
+Un email se lit quand on ouvre sa boîte, le centre de messages quand on ouvre l’application. Ni l’un ni l’autre n’atteint l’agent qui n’a rien ouvert — celui-là même que vise une campagne qui s’ouvre ou un planning qui change. La notification poussée arrive sur l’écran verrouillé, application fermée.
+
+- **L’abonnement appartient à l’appareil, pas au compte.** Chaque téléphone s’active séparément, depuis **Mon profil** ou **Notifications**, et un bouton d’essai permet de le vérifier sur-le-champ.
+- La file des envois vit en base, comme celle des emails : un déclencheur inscrit un envoi par appareil abonné, le serveur réserve un lot de dix par bail de deux minutes, cinq tentatives espacées, abandon au-delà de vingt-quatre heures. Un 404 ou un 410 du service de remise efface l’abonnement.
+- **Le message est volontairement pauvre** : la nature de l’événement, rien d’autre. Ni nom, ni motif de désistement, ni date de garde — un écran verrouillé se lit par-dessus l’épaule.
+- Aucun rattrapage : activer les notifications ne fait pas remonter les messages écrits avant l’activation.
+- Le traitement part après la réponse de chaque commande. `POST /api/push/dispatch`, protégé par `PUSH_DISPATCH_SECRET`, ouvre le même traitement à un planificateur externe ; aucun n’est configuré.
+- Migrations `20260921100156_web_push_notifications.sql` et `20260921130000_web_push_abonnement.sql` appliquées.
+
+L’envoi nécessite `NEXT_PUBLIC_WEB_PUSH_PUBLIC_KEY`, `WEB_PUSH_PRIVATE_KEY`, `WEB_PUSH_SUBJECT` et `SUPABASE_SECRET_KEY`. En leur absence, l’écran n’offre pas l’activation et les notifications restent dans l’application.
+
+**À faire :** déclarer les quatre variables sur l’hébergeur, reconstruire — la clé publique est figée dans le paquet —, puis vérifier la réception réelle sur Android et sur iPhone. **Sur iPhone, les notifications n’existent que dans l’application installée sur l’écran d’accueil** (iOS 16.4 et au-delà) : ouverte dans Safari, l’application ne peut même pas les proposer.
+
 ### Lot 4 — Mise en service 🟡 configuration et recette à confirmer
 
 - Vérifier les trois variables du mode connecté sur l’hébergeur, puis reconstruire/redéployer après toute modification des variables publiques.
@@ -134,11 +150,11 @@ L’envoi nécessite **les trois variables** `RESEND_API_KEY`, `RESEND_FROM` et 
 
 ### Lot 6 — Application installable ✅ implémentée
 
-Manifeste, icônes et agent de service : l’application s’ajoute à l’écran d’accueil et s’ouvre en plein écran. L’écran de profil propose l’installation lorsque le navigateur la signale, et donne le chemin iOS, que Safari ne signale jamais.
+Manifeste, icônes et agent de service : l’application s’ajoute à l’écran d’accueil et s’ouvre en plein écran. L’écran de profil propose l’installation lorsque le navigateur la signale, et donne le chemin iOS, que Safari ne signale jamais. L’agent de service a depuis un second rôle, lui aussi sans cache : recevoir les notifications poussées du lot 3.
 
 **L’agent de service ne met aucune donnée en cache**, et c’est délibéré : un planning ou une disponibilité servis depuis un cache seraient présentés comme à jour sans l’être. Il n’existe que parce qu’un navigateur exige un gestionnaire `fetch` pour proposer l’installation, et il laisse tout passer au réseau. Seule la page `/hors-ligne`, qui ne contient aucune donnée, est conservée.
 
-La consultation hors ligne reste une extension à cadrer ; les notifications poussées relèvent de la V2. **À confirmer :** installation réelle depuis l’URL publique, sur Android et sur iOS — un manifeste servi en HTTPS est nécessaire, et l’environnement de développement ne le fournit pas.
+La consultation hors ligne reste une extension à cadrer. **À confirmer :** installation réelle depuis l’URL publique, sur Android et sur iOS — un manifeste servi en HTTPS est nécessaire, et l’environnement de développement ne le fournit pas. Sur iPhone, cette installation conditionne aussi les notifications poussées.
 
 ### Lot 7 — Besoins, statistiques et désistements ✅ implémentés
 
@@ -148,52 +164,55 @@ La consultation hors ligne reste une extension à cadrer ; les notifications pou
 
 ### Hors périmètre V1
 
-Notifications poussées, **échanges nommés** entre agents — « je te donne ma garde, tu prends la mienne » —, proposition automatique de planning, règles de repos et intégrations externes. La connexion par compte d’entreprise est écrite mais attend la déclaration d’un fournisseur SAML côté Supabase.
+**Échanges nommés** entre agents — « je te donne ma garde, tu prends la mienne » —, proposition automatique de planning, règles de repos et intégrations externes. La connexion par compte d’entreprise est écrite mais attend la déclaration d’un fournisseur SAML côté Supabase. Les notifications poussées, d’abord renvoyées à la V2, ont été avancées : elles sont livrées avec le lot 3.
 
 ## 4. Couverture du cahier des charges V1
 
-| Exigence (§)                                   | État | Commentaire                                                                 |
-| ---------------------------------------------- | ---- | --------------------------------------------------------------------------- |
-| Authentification (§18)                         | ✅   | Email, mot de passe, réinitialisation, inscription et confirmation          |
-| Rôles et droits (§2)                           | ✅   | Trois rôles en base et dans l’interface                                     |
-| Fiche agent (§3)                               | ✅   | Fiche complète, grade et fonction séparés ; acceptation hébergée à vérifier |
-| Calendrier cinq états (§4)                     | ✅   | Saisie persistée, validation explicite et invalidation                      |
-| Saisie multiple et règles répétitives (§4)     | ✅   | Périodes et jours de semaine                                                |
-| Disponibilités habituelles (§4)                | ✅   | Modèles personnels ; enregistrement et application atomiques                |
-| Campagnes (§5)                                 | ✅   | Création atomique et migration livrées ; déploiement et recette à confirmer |
-| Tableau de synthèse (§6)                       | ✅   | Colonne figée, tri, filtres, virtualisation                                 |
-| Vue par journée nominative (§6)                | ✅   | Listes nominatives et impression                                            |
-| Besoins et couverture (§7)                     | ✅   | Effectifs, qualifications, potentiel et planifié distincts                  |
-| Planning et publication (§8)                   | ✅   | Publication vérifiée et version figée en base                               |
-| Tableau d’équité (§8)                          | ✅   | Ventilation Jour/Nuit/24 h                                                  |
-| Tableau de bord (§9)                           | ✅   | Niveaux déficit/limite/couvert et besoins non définis                       |
-| Notifications (§10)                            | 🟡   | Centre interne et Resend implémentés ; réception à vérifier, rappel manuel  |
-| Exports (§11)                                  | ✅   | CSV, ICS, Excel et journal ; PDF par impression, matrice comprise           |
-| Historique et audit (§12)                      | ✅   | Journal, filtres sujet/auteur/période/recherche et export CSV               |
-| Modèle de données (§14)                        | ✅   | 20 tables, onze migrations appliquées                                       |
-| Sécurité et RGPD (§16)                         | 🟡   | Contrôles techniques présents ; dispositions d’exploitation à compléter     |
-| Responsive et installable (§17)                | ✅   | De 320 px au grand écran, sans débordement ; manifeste, icônes et agent     |
-| Interface à plusieurs centaines d’agents (§21) | 🟡   | Scénario de virtualisation à 300 agents ; charge hébergée à mesurer         |
+| Exigence (§)                                   | État | Commentaire                                                                                        |
+| ---------------------------------------------- | ---- | -------------------------------------------------------------------------------------------------- |
+| Authentification (§18)                         | ✅   | Email, mot de passe, réinitialisation, inscription et confirmation                                 |
+| Rôles et droits (§2)                           | ✅   | Trois rôles en base et dans l’interface                                                            |
+| Fiche agent (§3)                               | ✅   | Fiche complète, grade et fonction séparés ; acceptation hébergée à vérifier                        |
+| Calendrier cinq états (§4)                     | ✅   | Saisie persistée, validation explicite et invalidation                                             |
+| Saisie multiple et règles répétitives (§4)     | ✅   | Périodes et jours de semaine                                                                       |
+| Disponibilités habituelles (§4)                | ✅   | Modèles personnels ; enregistrement et application atomiques                                       |
+| Campagnes (§5)                                 | ✅   | Création atomique et migration livrées ; déploiement et recette à confirmer                        |
+| Tableau de synthèse (§6)                       | ✅   | Colonne figée, tri, filtres, virtualisation                                                        |
+| Vue par journée nominative (§6)                | ✅   | Listes nominatives et impression                                                                   |
+| Besoins et couverture (§7)                     | ✅   | Effectifs, qualifications, potentiel et planifié distincts                                         |
+| Planning et publication (§8)                   | ✅   | Publication vérifiée et version figée en base                                                      |
+| Tableau d’équité (§8)                          | ✅   | Ventilation Jour/Nuit/24 h                                                                         |
+| Tableau de bord (§9)                           | ✅   | Niveaux déficit/limite/couvert et besoins non définis                                              |
+| Notifications (§10)                            | 🟡   | Centre interne, Resend et Web Push implémentés ; migrations et réception à vérifier, rappel manuel |
+| Exports (§11)                                  | ✅   | CSV, ICS, Excel et journal ; PDF par impression, matrice comprise                                  |
+| Historique et audit (§12)                      | ✅   | Journal, filtres sujet/auteur/période/recherche et export CSV                                      |
+| Modèle de données (§14)                        | ✅   | 22 tables ; seize migrations appliquées                                                            |
+| Sécurité et RGPD (§16)                         | 🟡   | Contrôles techniques présents ; dispositions d’exploitation à compléter                            |
+| Responsive et installable (§17)                | ✅   | De 320 px au grand écran ; manifeste, icônes, agent et notifications poussées                      |
+| Interface à plusieurs centaines d’agents (§21) | 🟡   | Scénario de virtualisation à 300 agents ; charge hébergée à mesurer                                |
 
 ## 5. À décider ou confirmer, hors développement
 
 1. **Hébergement.** Mode du site public, domaine, disponibilité attendue et responsabilité d’exploitation.
 2. **Emails.** Resend est intégré ; confirmer l’expéditeur, son domaine et les variables serveur, puis contrôler la réception.
-3. **Entrées et sorties.** Qui invite, qui gère les rôles et comment traiter les départs et demandes d’effacement.
-4. **Conservation des données.** Information des agents, durée de conservation et procédure d’effacement compatible avec l’historique.
-5. **Centre pilote.** Désigner les premiers agents et responsables qui réaliseront la recette.
-6. **Migrations suivantes.** Confirmer le mode de suivi des migrations déjà appliquées avant de passer à un déploiement par la CLI Supabase.
+3. **Notifications poussées.** Les deux migrations sont passées ; reste à déclarer la paire de clés VAPID et son contact sur l’hébergeur, puis à décider si un planificateur externe appelle `/api/push/dispatch`. Décider aussi ce qu’on dit aux agents : l’activation se fait appareil par appareil, et sur iPhone elle suppose l’application installée sur l’écran d’accueil.
+4. **Entrées et sorties.** Qui invite, qui gère les rôles et comment traiter les départs et demandes d’effacement.
+5. **Conservation des données.** Information des agents, durée de conservation et procédure d’effacement compatible avec l’historique.
+6. **Centre pilote.** Désigner les premiers agents et responsables qui réaliseront la recette.
+7. **Migrations suivantes.** Confirmer le mode de suivi des migrations déjà appliquées avant de passer à un déploiement par la CLI Supabase.
 
 ## 6. Risques à suivre
 
-| Risque                                              | Portée                                              | Réduction                                                                  |
-| --------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------- |
-| Échec pendant la création d’une campagne            | Campagne incomplète                                 | Transaction testée, migration appliquée ; déployer et vérifier le parcours |
-| Deux responsables modifient le même planning        | Conflit de modification                             | Vérifier la concurrence et signaler les conflits dans l’interface          |
-| Mode public ou URL Auth mal configurés              | Démonstration affichée ou confirmation inaccessible | Recette depuis l’URL publique avec un second compte                        |
-| Invitation non éprouvée sur le projet hébergé       | Arrivée d’un agent bloquée                          | Vérifier inscription, confirmation, rattachement et droits                 |
-| Emails en attente ou renvoyés                       | Agents non prévenus ou messages en double           | Suivi de la file, reprise et prévention des doublons                       |
-| Charge et restauration non vérifiées en hébergement | Dégradation ou reprise difficile                    | Essai à plusieurs comptes, mesure de charge et exercice de restauration    |
+| Risque                                              | Portée                                              | Réduction                                                                                        |
+| --------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Échec pendant la création d’une campagne            | Campagne incomplète                                 | Transaction testée, migration appliquée ; déployer et vérifier le parcours                       |
+| Deux responsables modifient le même planning        | Conflit de modification                             | Vérifier la concurrence et signaler les conflits dans l’interface                                |
+| Mode public ou URL Auth mal configurés              | Démonstration affichée ou confirmation inaccessible | Recette depuis l’URL publique avec un second compte                                              |
+| Invitation non éprouvée sur le projet hébergé       | Arrivée d’un agent bloquée                          | Vérifier inscription, confirmation, rattachement et droits                                       |
+| Emails en attente ou renvoyés                       | Agents non prévenus ou messages en double           | Suivi de la file, reprise et prévention des doublons                                             |
+| Clé VAPID régénérée après la mise en service        | Tous les téléphones abonnés deviennent muets        | Garder la paire avec les autres secrets ; en cas de changement, prévenir les agents de réactiver |
+| Notifications poussées activées puis oubliées       | Agent qui croit être prévenu et ne l’est plus       | Bouton d’essai sur le profil ; l’email et le centre de messages restent le filet                 |
+| Charge et restauration non vérifiées en hébergement | Dégradation ou reprise difficile                    | Essai à plusieurs comptes, mesure de charge et exercice de restauration                          |
 
 ## 7. Comment vérifier l’état à tout moment
 
@@ -212,13 +231,14 @@ Les tests de `tests/e2e/connexion.spec.ts` nécessitent un build et un environne
 
 ## 8. Prochaine action
 
-Les migrations étant appliquées, déployer la version de l’application qui appelle `public.create_campaign()` et les deux fonctions de disponibilité habituelle, si ce n’est pas déjà fait. Vérifier la création d’une campagne : un planning complet, deux créneaux par date et les seuls membres actifs de l’équipe comme participants.
+Les migrations étant toutes appliquées, déployer la version de l’application qui appelle `public.create_campaign()`, les deux fonctions de disponibilité habituelle et les fonctions Web Push, si ce n’est pas déjà fait. Vérifier la création d’une campagne : un planning complet, deux créneaux par date et les seuls membres actifs de l’équipe comme participants.
 
 Effectuer une recette sur l’URL publique avec un administrateur et un second compte agent :
 
-1. Confirmer le mode connecté, les URL Supabase Auth et les trois variables Resend.
+1. Confirmer le mode connecté, les URL Supabase Auth, les trois variables Resend et les trois du Web Push.
 2. Enregistrer une invitation, transmettre l’adresse de l’application, créer le compte invité et confirmer son email. Vérifier son centre, son rôle et l’historique.
 3. Enregistrer un modèle de disponibilités habituelles, le retrouver après reconnexion, l’appliquer à une campagne ouverte puis valider explicitement. Vérifier qu’une modification invalide la réponse.
 4. Comparer couverture potentielle et planifiée, affecter puis publier un créneau, et contrôler ce que voit l’agent.
 5. Vérifier les notifications internes et les emails d’ouverture, de rappel et de publication avec des comptes et campagnes adaptés.
-6. Contrôler les exports CSV, Excel, ICS et l’impression, puis consigner les résultats et les éventuels écarts.
+6. Activer les notifications poussées depuis un téléphone — installé sur l’écran d’accueil s’il s’agit d’un iPhone —, envoyer l’essai, puis ouvrir une campagne et vérifier que la bulle arrive application fermée.
+7. Contrôler les exports CSV, Excel, ICS et l’impression, puis consigner les résultats et les éventuels écarts.

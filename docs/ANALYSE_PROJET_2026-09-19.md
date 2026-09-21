@@ -4,6 +4,14 @@ Version examinée : commit **849291b** sur **main**, arbre de travail propre au 
 
 DispoSP couvre désormais une grande partie de la V1. Les évolutions sont substantielles : application exclusivement connectée, trois rôles, grade et fonction séparés, modèles de disponibilité atomiques, besoins en lot, statistiques, désistements, exports et PWA. Toutefois, la mise en service ne se réduit pas à la configuration de l’hébergement : plusieurs défauts de droits et de cohérence métier restent à corriger.
 
+## Note de périmètre — notifications poussées, 21 septembre 2026
+
+**Ce n'est pas un audit** mais une note de livraison, ajoutée pour que ce dossier ne laisse pas croire un périmètre qu'il n'a plus. Elle ne change aucun constat ci-dessous : les réserves A2, A3, A4 et la multi-organisation restent ouvertes telles qu'elles sont décrites.
+
+Les notifications poussées (Web Push), jusqu'ici renvoyées à la V2, sont implémentées : abonnement par appareil depuis le profil, file d'envoi en base avec bail et reprises, contenu réduit à la nature de l'événement, envoi d'essai. Deux tables et deux migrations s'ajoutent — `20260921100156_web_push_notifications.sql` et `20260921130000_web_push_abonnement.sql` —, portant le schéma à 22 tables.
+
+**Vérifications exécutées :** 190 tests réussis dans 10 fichiers, dont 114 sur PostgreSQL embarqué ; formatage, lint, types et construction ; 22 parcours navigateur passés et 6 sautés avec un compte d'essai. Les deux migrations sont déclarées appliquées par le porteur du projet. **Non vérifié ici :** cette application, la réception réelle sur un téléphone Android ou iPhone, et le comportement des services de remise de Google et d'Apple. Ces trois points relèvent de [la recette](RECETTE.md), partie 0.5 et partie 8.
+
 ## Suivi A2 et A4 — commit 312705e
 
 Revue des commits **97db0b3** (A2) et **312705e** (A4), après **0740be0** (A7). Ce suivi est le plus récent et prévaut sur les états historiques ci-dessous. Aucun code applicatif n’a été modifié pendant cette revue.

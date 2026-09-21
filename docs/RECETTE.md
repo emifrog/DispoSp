@@ -6,7 +6,7 @@ Chaque étape dit ce qu'on fait, ce qu'on doit voir, et quoi conclure si on voit
 
 ## Avant de commencer
 
-**Il faut** : deux comptes de messagerie distincts (un administrateur, un agent) et, si possible, un téléphone. Comptez une demi-journée d'attention, étalée sur deux ou trois jours — l'essentiel du délai vient de la vérification du domaine d'expédition et de l'attente des emails.
+**Il faut** : deux comptes de messagerie distincts (un administrateur, un agent) et un téléphone — la partie 8, qui vérifie l'installation et les notifications poussées, ne peut pas se faire autrement. Comptez une demi-journée d'attention, étalée sur deux ou trois jours — l'essentiel du délai vient de la vérification du domaine d'expédition et de l'attente des emails.
 
 **Choisissez un mois qui ne sert pas encore.** La recette crée une vraie campagne avec de vraies données : ne la faites pas sur le mois en cours.
 
@@ -58,6 +58,16 @@ Un domaine non validé donne pire : les messages partent et atterrissent en ind�
 **Attendu** — La clé présente, les deux gabarits modifiés.
 
 **Sinon** — Sans la clé, aucune invitation ne part : la ligne est enregistrée et l'écran le dit, mais aucun agent ne peut entrer. Sans les gabarits, les liens ne fonctionnent que sur l'appareil qui a fait la demande — ce qui condamne l'activation, toujours demandée par une personne et ouverte par une autre.
+
+### 0.5 Les notifications poussées
+
+**Faire** — Vérifier que les deux migrations `20260921100156_web_push_notifications.sql` et `20260921130000_web_push_abonnement.sql` sont bien passées sur **le projet Supabase du site public** — elles le sont sur celui de développement. La table `public.push_subscriptions` doit exister. Puis vérifier sur l'hébergeur `NEXT_PUBLIC_WEB_PUSH_PUBLIC_KEY`, `WEB_PUSH_PRIVATE_KEY` et `WEB_PUSH_SUBJECT`, en plus de `SUPABASE_SECRET_KEY` déjà vérifiée à l'étape précédente.
+
+**Attendu** — La table est là ; les trois variables sont présentes. **Après toute modification de `NEXT_PUBLIC_WEB_PUSH_PUBLIC_KEY`, reconstruire et redéployer** : une variable publique est figée dans le paquet au moment de la construction.
+
+**Sinon** — Sans les migrations, l'activation échouera sur le téléphone de l'agent. Sans les variables, l'écran n'offre pas l'activation du tout : les notifications restent dans le centre de messages et dans les emails, ce qui est le comportement voulu, mais la partie 8 n'a alors plus d'objet.
+
+**À ne pas faire** — Régénérer la paire de clés une fois des agents abonnés. Changer la clé publique **invalide tous les abonnements existants** : chaque téléphone devient muet sans que personne le remarque, et chaque agent doit réactiver. Gardez la paire avec les autres secrets du projet.
 
 ---
 
@@ -270,11 +280,33 @@ Ces vérifications ne sont pas du confort. Elles portent sur des données person
 
 ## Partie 8 — Le téléphone
 
+### 8.1 Installer l'application
+
 **Faire** — Ouvrir le site public sur un téléphone. Sur Android : la bannière d'installation, ou **Mon profil → Installer l'application**. Sur iPhone : Safari, bouton Partager, « Sur l'écran d'accueil ».
 
 **Attendu** — Une icône DispoSP sur l'écran d'accueil. L'application s'ouvre en plein écran, sans barre d'adresse.
 
 **À vérifier** — Couper la connexion et ouvrir l'application : une page « Pas de connexion » doit s'afficher, et **aucune donnée ancienne**. C'est voulu : un planning servi depuis un cache serait présenté comme à jour sans l'être.
+
+### 8.2 Activer les notifications
+
+**Sur iPhone, faites-le depuis l'application installée à l'étape 8.1**, pas depuis Safari : Apple ne permet les notifications que là. Sur Android, l'onglet suffit.
+
+**Faire** — **Mon profil → Notifications sur cet appareil → Activer les notifications**, et accepter la demande du téléphone. Puis **Envoyer un essai**.
+
+**Attendu** — Le panneau annonce « Actives sur cet appareil. », et la bulle d'essai arrive en quelques secondes. Verrouillez l'écran et renvoyez un essai : elle doit arriver aussi.
+
+**Sinon** — Si le panneau dit « Le navigateur les a bloquées », l'autorisation a été refusée une fois : une page ne peut plus la redemander, il faut rouvrir DispoSP dans les réglages du téléphone. Si l'essai part sans rien afficher, désactivez puis réactivez — l'abonnement de l'appareil n'était plus valable.
+
+### 8.3 Recevoir pour de vrai
+
+**Faire** — Avec le compte administrateur, sur un autre appareil, ouvrir une campagne ou publier un créneau qui concerne l'agent. **Fermer l'application sur le téléphone de l'agent** — pas seulement la mettre en arrière-plan.
+
+**Attendu** — La bulle arrive sur l'écran verrouillé dans la minute. Elle dit ce qui s'est passé — « Une campagne de disponibilités est ouverte. » — et **rien de plus** : ni nom, ni date de garde, ni motif. C'est voulu : un écran verrouillé se lit par-dessus l'épaule. Toucher la bulle ouvre l'application sur le centre de messages.
+
+**À vérifier** — L'ordinateur de l'agent, sur lequel il n'a rien activé, ne reçoit rien. L'activation vaut pour un appareil, pas pour un compte.
+
+**Sinon** — La notification existe quand même dans **Notifications**, et l'email est parti. C'est le filet : la bulle est un rappel, jamais le canal officiel. Vérifiez alors l'étape 0.5 — migrations passées, trois variables présentes, construction refaite après un changement de clé publique.
 
 ---
 
@@ -312,6 +344,7 @@ Prévoir où regarder quand quelque chose ne va pas : les logs de l'hébergeur, 
 - **La concurrence.** Si deux responsables modifient le même brouillon de planning en même temps, le dernier qui écrit gagne, sans avertissement. À un seul responsable par équipe, cela ne se verra pas.
 - **Plusieurs centres.** Tout est éprouvé sur une seule organisation.
 - **La durée.** Un mois de recette ne dit rien de ce qui se passe au bout d'un an de campagnes accumulées.
+- **Le parc de téléphones.** Les notifications poussées sont vérifiées sur les appareils de la recette, pas sur tous les modèles ni tous les réglages d'économie d'énergie. Un délai de remise dépend du service de Google ou d'Apple, pas de l'application.
 
 ---
 

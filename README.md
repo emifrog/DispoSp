@@ -13,6 +13,8 @@ pnpm dev
 
 Ouvrir http://127.0.0.1:3000. Pour vérifier une version de production : `pnpm build`, puis `pnpm start`.
 
+**Les notifications poussées demandent une version de production.** En développement, l'agent de service n'est pas enregistré au chargement — il survivrait aux rechargements et brouillerait la lecture de ce qui vient du serveur ; le bouton d'activation l'enregistre alors à la demande. `127.0.0.1` est traité comme une origine sûre, donc l'essai fonctionne en local.
+
 L'application demande un compte. Sans session, toute adresse renvoie vers l'écran de connexion — hormis ce qu'un navigateur va chercher avant d'en avoir une : le manifeste, l'agent de service et la page hors ligne. Rien n'est conservé dans le navigateur : l'état vient du rendu serveur, relu à chaque navigation.
 
 ## Parcours livrés
@@ -52,10 +54,11 @@ Voir `DECISIONS_FONCTIONNELLES.md`. Jour 8 h–20 h, Nuit 20 h–8 h le lendemai
 - `src/lib/domain.ts` : règles métier pures, calculs de couverture et commandes testables.
 - `src/components/provider.tsx` : l'état vient du rendu serveur, relu à chaque navigation ; les commandes partent à l'action serveur. Rien n'est conservé dans le navigateur. **Les rôles affichés ne constituent pas un contrôle de sécurité** : la base décide.
 - `src/lib/exports.ts` : exports CSV et ICS ; `/api/export` : classeur Excel généré côté serveur en mode connecté.
-- `src/app/manifest.ts`, `public/sw.js` et `src/components/pwa.tsx` : installation sur l'écran d'accueil.
+- `src/app/manifest.ts`, `public/sw.js` et `src/components/pwa.tsx` : installation sur l'écran d'accueil et activation des notifications poussées, appareil par appareil.
+- `src/lib/push.ts`, `src/lib/push.server.ts` et `src/app/api/push/` : contenu poussé, file d'envoi signée en VAPID, inscription d'un appareil et envoi d'essai.
 - `src/lib/supabase/` : fabriques de clients et middleware de session. `publicPaths` liste ce que le garde ne doit jamais intercepter — déconnexion, choix d'un nouveau mot de passe et vérification du lien qui y mène, manifeste, agent de service, page hors ligne. Les deux écrans de mot de passe en font partie parce qu'on y arrive précisément sans session. **L'ordre compte** : le garde regarde le chemin avant d'exiger la configuration Supabase, sinon un environnement qui n'en a pas — l'intégration continue — échouerait jusqu'à servir le manifeste. La moitié inverse de la décision tient toujours : un écran de travail sans configuration s'arrête au lieu de s'afficher vide. `tests/middleware.test.ts` garde les deux.
 - `src/lib/session.ts` et `src/lib/session.server.ts` : types partagés d'un côté, lecture de session de l'autre. La séparation est nécessaire — un composant client qui importerait `next/headers` casse la compilation.
-- `supabase/migrations/` : 20 tables couvrant organisations, équipes, profils, droits, campagnes, participants, disponibilités, qualifications, créneaux types, besoins d'effectifs et de qualifications, plannings, affectations, désistements, invitations, disponibilités habituelles, notifications et audit. Isolation RLS, validation, invalidation et publication contrôlées en base.
+- `supabase/migrations/` : 22 tables couvrant organisations, équipes, profils, droits, campagnes, participants, disponibilités, qualifications, créneaux types, besoins d'effectifs et de qualifications, plannings, affectations, désistements, invitations, disponibilités habituelles, notifications, abonnements des appareils, file des envois poussés et audit. Isolation RLS, validation, invalidation et publication contrôlées en base.
 - `.github/workflows/ci.yml` : formatage, lint, types, tests unitaires et schéma, build et tests de bout en bout à chaque push et chaque pull request.
 
 ## Configuration et fonctionnement Supabase
@@ -89,20 +92,21 @@ Le schéma est découpé en migrations successives, à appliquer dans l'ordre et
 | `supabase/migrations/0007_availability_templates.sql`                  | Disponibilité habituelle par jour de semaine                                                             | Appliquée — confirmation du porteur du projet |
 | `supabase/migrations/20260918151529_atomic_campaign_creation.sql`      | Création atomique des campagnes, plannings, créneaux et participants                                     | Appliquée — confirmation du porteur du projet |
 | `supabase/migrations/20260918180846_atomic_availability_templates.sql` | Enregistrement et application atomiques de la disponibilité habituelle                                   | Appliquée — confirmation du porteur du projet |
-
-| `supabase/migrations/20260919120000_grades_fonctions_roles.sql` | Trois rôles au lieu de quatre, séparation du grade et de la fonction | Appliquée — confirmation du porteur du projet |
-| `supabase/migrations/20260919200000_desistements.sql` | Désistements sur une garde publiée, leurs notifications et leur audit | Appliquée — confirmation du porteur du projet |
-| `supabase/migrations/20260920090000_correctifs_droits_et_besoins.sql` | Ferme l'escalade par invitation ; rend l'écriture d'un besoin atomique | Appliquée — confirmation du porteur du projet |
-| `supabase/migrations/20260920140000_invitation_compte_existant.sql` | Rattache un invité dont le compte existe déjà | **À appliquer** |
-| `supabase/migrations/20260921090000_eligibilite_publication.sql` | Contrôle d'éligibilité à la publication d'une garde | État à confirmer |
-| `supabase/migrations/20260921100156_web_push_notifications.sql` | Abonnements des appareils, file des envois poussés et son traitement | **À appliquer** |
-| `supabase/migrations/20260921130000_web_push_abonnement.sql` | Inscription d'un appareil par la session qui le tient | **À appliquer** |
+| `supabase/migrations/20260919120000_grades_fonctions_roles.sql`        | Trois rôles au lieu de quatre, séparation du grade et de la fonction                                     | Appliquée — confirmation du porteur du projet |
+| `supabase/migrations/20260919200000_desistements.sql`                  | Désistements sur une garde publiée, leurs notifications et leur audit                                    | Appliquée — confirmation du porteur du projet |
+| `supabase/migrations/20260920090000_correctifs_droits_et_besoins.sql`  | Ferme l'escalade par invitation ; rend l'écriture d'un besoin atomique                                   | Appliquée — confirmation du porteur du projet |
+| `supabase/migrations/20260920140000_invitation_compte_existant.sql`    | Rattache un invité dont le compte existe déjà                                                            | Appliquée — confirmation du porteur du projet |
+| `supabase/migrations/20260921090000_eligibilite_publication.sql`       | Contrôle d'éligibilité à la publication d'une garde                                                      | Appliquée — confirmation du porteur du projet |
+| `supabase/migrations/20260921100156_web_push_notifications.sql`        | Abonnements des appareils, file des envois poussés et son traitement                                     | Appliquée — confirmation du porteur du projet |
+| `supabase/migrations/20260921130000_web_push_abonnement.sql`           | Inscription d'un appareil par la session qui le tient                                                    | Appliquée — confirmation du porteur du projet |
 
 Les deux migrations du 18 septembre n’ajoutent que des fonctions : `public.create_campaign()` pour la première, `public.save_availability_template()` et `public.apply_availability_template()` pour la seconde. Elles ne modifient aucune donnée existante.
 
 Celles du 19 septembre vont plus loin. `20260919120000` **modifie des données** : `RESPONSABLE` disparaît et les comptes qui le portaient passent `GESTIONNAIRE`. C’est une extension de droits — d’une seule équipe au centre entier, plus le droit d’inviter — tracée au journal d’audit. Elle ajoute `profiles.fonction` et `invitations.fonction`, et `private.can_manage()` perd sa branche par équipe : un gestionnaire gère désormais tout son centre, et le filtre par équipe n’a plus d’objet.
 
 `20260919200000` ajoute `public.shift_withdrawals`. Un agent ne peut s’y inscrire que pour lui-même et que sur une garde qu’il tient réellement : `private.holds_published_shift()` exige de figurer dans la révision publiée. Le décideur est estampillé par un déclencheur, jamais par le client, et la table ne touche pas au planning.
+
+Les deux du 21 septembre portent les notifications poussées. `20260921100156` ajoute `public.push_subscriptions` et `public.push_deliveries` : la première n’accepte qu’une adresse de remise d’un service connu, la seconde est une file que **seul le serveur** peut lire — aucun droit n’est donné à une session d’agent, et le déclencheur `private.enqueue_push()` y inscrit un envoi par appareil dès qu’une notification est écrite. `20260921130000` ajoute `public.register_push_subscription()`, la seule façon pour un appareil de s’inscrire : elle lit le centre sur le rattachement actif de l’appelant plutôt que de le croire sur parole, et reprend un téléphone qui a changé de main.
 
 Le déploiement de l’application et la vérification du parcours hébergé restent à confirmer.
 
@@ -207,7 +211,7 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=votre-cle-publiable
 
 **Il n'existe pas de mode de repli.** Sans ces valeurs l'application s'arrête, et c'est délibéré : un déploiement mal configuré doit se voir. Le mode démonstration, qui affichait douze agents fictifs conservés dans le navigateur, a été retiré — un site en production ne peut donc plus montrer silencieusement de fausses données à la place des vraies.
 
-Les variables `NEXT_PUBLIC_*` sont intégrées au moment de la construction : après modification, reconstruire puis redémarrer ou redéployer l’application. Pour les emails métier, ajouter côté serveur `RESEND_API_KEY`, `RESEND_FROM` et `APP_URL` ; ne jamais préfixer la clé Resend par `NEXT_PUBLIC_`.
+Les variables `NEXT_PUBLIC_*` sont intégrées au moment de la construction : après modification, reconstruire puis redémarrer ou redéployer l’application. Pour les emails métier, ajouter côté serveur `RESEND_API_KEY`, `RESEND_FROM` et `APP_URL` ; ne jamais préfixer la clé Resend par `NEXT_PUBLIC_`. Pour les notifications poussées, ajouter `NEXT_PUBLIC_WEB_PUSH_PUBLIC_KEY`, `WEB_PUSH_PRIVATE_KEY` et `WEB_PUSH_SUBJECT` — la clé publique **doit** porter le préfixe, la privée jamais. `.env.example` décrit chaque variable et sa raison d'être.
 
 `src/lib/data.server.ts` construit depuis la base exactement la forme que les écrans consomment déjà : aucun écran n'a eu à changer. Le mapping vit à part dans `src/lib/data-mapping.ts`, pur et testé seul, parce que c'est là que se logent les erreurs — fuseau de la fenêtre de réponse, séparation brouillon/publication, révisions périmées, lignes hors de portée RLS.
 
@@ -265,7 +269,7 @@ Ces six vérifications sont celles exécutées par l'intégration continue.
 - **Aucun écran de l'espace de travail ne doit être prérendu.** Next l'apprenait par `cookies()`, que le client Supabase finit par appeler — mais sans coordonnées il n'y arrive jamais, `credentials()` levant avant. Le prérendu les prenait donc pour des pages statiques et le build s'arrêtait sur la première : « Error occurred prerendering page "/accueil" ». `readSession()` ouvre maintenant par `await connection()`, qui le dit sans rien supposer de la configuration. `export const dynamic` ferait la même chose, mais la v16 l'a retiré de la configuration de segment.
 - **Le sondage de démarrage de Playwright vise `/connexion`, pas la racine.** La racine n'est pas un chemin public : sans coordonnées, le garde y lève et rend une 500, que Playwright ne tient pas pour un serveur prêt. Il attendait ses soixante secondes puis renonçait — sur l'environnement même que ces parcours doivent couvrir.
 
-Sans base, la suite navigateur rend 6 parcours passés et 16 sautés ; avec `.env` et un compte d'essai, 18 passés et 4 sautés.
+Avec `.env` et un compte d'essai, la suite navigateur rend 22 parcours passés et 6 sautés. Sans projet Supabase — le cas de l'intégration continue —, les parcours qui demandent une session se sautent d'eux-mêmes et seule la surface publique s'exécute.
 
 **La suite navigateur a fondu avec le mode démonstration**, et il faut le dire franchement : les trente parcours d'interface qu'elle jouait — saisie, validation, affectation, publication, exports — pilotaient douze agents fictifs qui n'existent plus. Ils n'ont pas été remplacés par des tests automatiques ; ils sont devenus les étapes manuelles de [la recette](RECETTE.md). Ce qui reste automatique et sans données : le manifeste, les icônes, l'agent de service et l'adaptation aux écrans.
 
@@ -273,9 +277,9 @@ Les parcours de `tests/e2e/connexion.spec.ts` demandent un projet Supabase joign
 
 En local, rien à exporter : la configuration Playwright charge `.env` comme Next le fait pour le serveur. Sans cela les deux divergeaient, et des parcours se sautaient en croyant le serveur non configuré alors qu'il l'était — « douze tests ignorés » qui ne voulaient plus rien dire.
 
-Les deux parcours de `pwa.spec.ts` qui demandent une session attendent `E2E_EMAIL` et `E2E_PASSWORD`, un compte d'essai rattaché à un centre. Sans eux ils se sautent, au lieu d'échouer sur un écran de connexion.
+Les trois parcours de `pwa.spec.ts` qui demandent une session attendent `E2E_EMAIL` et `E2E_PASSWORD`, un compte d'essai rattaché à un centre. Sans eux ils se sautent, au lieu d'échouer sur un écran de connexion. Celui des notifications poussées demande en plus la clé publique VAPID : un navigateur piloté refuse toute autorisation de notification, le parcours vérifie donc que l'écran ne prétend jamais qu'elles sont actives et qu'il donne toujours la suite — activer, ou rouvrir ce que le navigateur a fermé.
 
-Les règles métier, elles, n'ont rien perdu : elles sont vérifiées contre un vrai PostgreSQL par les 95 tests de `tests/database.test.ts`, migrations et politiques comprises — 145 tests au total au commit `2abab2e`. Le suivi des vérifications et des correctifs figure dans [le rapport d’analyse](ANALYSE_PROJET_2026-09-19.md).
+Les règles métier, elles, n'ont rien perdu : elles sont vérifiées contre un vrai PostgreSQL par les 114 tests de `tests/database.test.ts`, migrations et politiques comprises — 190 tests au total au 21 septembre 2026. Le suivi des vérifications et des correctifs figure dans [le rapport d’analyse](ANALYSE_PROJET_2026-09-19.md).
 
 Dans un environnement Windows où `pnpm exec` ne résout pas les exécutables, utiliser `node node_modules/@playwright/test/cli.js install chromium`, puis `node node_modules/@playwright/test/cli.js test`.
 
@@ -287,7 +291,7 @@ node node_modules/@playwright/test/cli.js install chromium
 node node_modules/@playwright/test/cli.js test
 ```
 
-Les tests couvrent notamment les validations explicites, la clôture, les disponibilités 24 h, les publications, les exports, l'isolation des organisations en PostgreSQL, la publication contrôlée en base, la résistance à une sauvegarde locale inutilisable, la virtualisation de la synthèse et les parcours utilisateur sur ordinateur et mobile. Quatre d'entre eux gardent l'adaptation aux écrans, décrite plus bas. Les tests navigateur fixent l'horloge au 18 septembre 2026 pour rendre la campagne d'exemple reproductible.
+Les tests couvrent notamment les validations explicites, la clôture, les disponibilités 24 h, les publications, les exports, l'isolation des organisations en PostgreSQL, la publication contrôlée en base, la résistance à une sauvegarde locale inutilisable, la virtualisation de la synthèse et les parcours utilisateur sur ordinateur et mobile. Pour les notifications poussées : la liste des services de remise acceptés, le contenu envoyé — qui ne doit nommer personne —, l'isolation des abonnements entre agents, la reprise d'un appareil qui change de main, la file d'envoi hors de portée d'une session et l'effacement d'un appareil que le service de remise ne connaît plus. Quatre d'entre eux gardent l'adaptation aux écrans, décrite plus bas. Les tests navigateur fixent l'horloge au 18 septembre 2026 pour rendre la campagne d'exemple reproductible.
 
 ### Adaptation aux écrans
 
@@ -310,15 +314,15 @@ Les deux règles correspondantes mesurent, l'une la position des liens du menu a
 
 ## Limites et prochaines étapes
 
-Les onze migrations (`0001` à `0007`, puis les quatre migrations horodatées) sont appliquées sur le projet de développement ; l’application lit et écrit les données en mode connecté. Les étapes restantes sont suivies dans [le plan de développement](PLAN_DEVELOPPEMENT.md), et la vérification avant mise en service dans [la recette](RECETTE.md) :
+**Les seize migrations sont appliquées** — les deux du Web Push comprises — et l’application lit et écrit les données en mode connecté. Les étapes restantes sont suivies dans [le plan de développement](PLAN_DEVELOPPEMENT.md), et la vérification avant mise en service dans [la recette](RECETTE.md) :
 
-- Confirmer la configuration du site hébergé et effectuer une recette avec plusieurs comptes : invitation, confirmation d’adresse, disponibilités habituelles, validation, publication et réception des emails.
+- Confirmer la configuration du site hébergé et effectuer une recette avec plusieurs comptes : invitation, confirmation d’adresse, disponibilités habituelles, validation, publication, réception des emails et des notifications poussées sur un téléphone.
 - Déployer la version qui appelle `public.create_campaign()`, `public.save_availability_template()` et `public.apply_availability_template()`, puis vérifier ces parcours en mode connecté : les migrations sont appliquées, le comportement hébergé reste à observer.
 - Finaliser la mise en service : configuration de l’expéditeur, suivi des échecs d’envoi, sauvegardes/restauration et règles de conservation des données.
 
 L’envoi Resend traite des lots de 50 notifications après certaines commandes. Il n’existe ni rappel planifié ni traitement autonome de toute la file en attente.
 
-Les notifications poussées suivent le même principe : un lot de dix envois après chaque commande, et rien qui tourne tout seul. `POST /api/push/dispatch` est là pour qu’un planificateur externe rattrape ce qu’un service de remise indisponible aurait laissé en attente ; aucun n’est configuré à ce jour. Les deux migrations Web Push restent à appliquer sur le projet hébergé.
+Les notifications poussées suivent le même principe : un lot de dix envois après chaque commande, et rien qui tourne tout seul. `POST /api/push/dispatch` est là pour qu’un planificateur externe rattrape ce qu’un service de remise indisponible aurait laissé en attente ; aucun n’est configuré à ce jour. Les deux migrations Web Push sont appliquées ; il reste à déclarer les clés VAPID sur l’hébergeur et à vérifier la réception sur un vrai téléphone.
 
 **Les messages d’activation et de réinitialisation ne passent pas par Resend** : ils sont envoyés par Supabase Auth, avec son propre expéditeur. Deux gabarits sont à régler dans Authentication → Email Templates, faute de quoi les liens ne fonctionnent que sur l’appareil qui a fait la demande — or ce n’est jamais le cas pour une activation, demandée par le gestionnaire et ouverte par l’agent :
 
@@ -341,3 +345,5 @@ Le retrait d'un compte et de ses données se fait par `supabase/provisioning/ret
 - [Authentification Supabase côté serveur](https://supabase.com/docs/guides/auth/server-side/creating-a-client)
 - [Sécurisation de l'API Supabase](https://supabase.com/docs/guides/api/securing-your-api)
 - [Changelog Supabase](https://supabase.com/changelog)
+- [Applications web progressives avec Next.js](https://nextjs.org/docs/app/guides/progressive-web-apps) — manifeste, agent de service et notifications poussées
+- [Protocole Web Push et clés VAPID](https://developer.mozilla.org/fr/docs/Web/API/Push_API)

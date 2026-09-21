@@ -4,6 +4,8 @@ Version : **4c5dbcb**, après les commits A3, A5, chargement et responsive.
 
 **Contre-vérification au commit b8efb8d : R1 et R2 sont corrigés dans les cas reproduits.** Aucun autre défaut responsive n’a été identifié dans le périmètre de cette revue. Les limites de navigateur, d’appareil et de données décrites ci-dessous restent applicables.
 
+> **Hors périmètre de cette revue.** Le panneau « Notifications sur cet appareil », ajouté depuis sur **Mon profil** et **Notifications**, n’a pas été mesuré ici. Il reprend la mise en forme du panneau d’installation, déjà contrôlée, et les deux gardes automatiques d’adaptation aux écrans — aucun débordement horizontal à 320 ni 768 px, aucune commande sous 24 px — s’appliquent à lui comme au reste. Une vérification visuelle sur appareil physique reste à faire, avec le reste de la recette Safari/iPhone et Android.
+
 ## Clôture de R1 et R2
 
 - **R1 : quatre vérifications réussies**, à 320 × 568, 844 × 390, 1 024 × 768 et 1 280 × 600. Le défilement à la souris fonctionne dans la barre latérale ; le lien Paramètres est entièrement visible après défilement et son clic ouvre effectivement la page attendue. À 844 × 390, sa position passe d’environ y = 766 px à y = 267 px après défilement.
