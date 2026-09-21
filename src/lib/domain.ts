@@ -145,6 +145,9 @@ export const stateSchema = z.object({
         reason: z.string().default(""),
         state: z.enum(["PENDING", "ACCEPTED", "REFUSED", "CANCELLED"]),
         createdAt: z.string(),
+        /** Ce désistement écarte-t-il encore l'agent de cette garde ? Accepté,
+            et postérieur à l'affectation qui tient encore au brouillon. */
+        blocking: z.boolean().default(false),
       }),
     )
     .default([]),
@@ -323,6 +326,14 @@ export function campaignAgents(state: AppState, campaignId: string) {
 export const visibleCampaigns = (state: AppState, userId: string, manages: boolean) =>
   manages ? state.campaigns : state.campaigns.filter(c => c.participants.includes(userId));
 
+/** Les agents qu'un désistement accepté écarte encore de cette garde. */
+export const withdrawnFrom = (state: AppState, campaignId: string, date: string, shift: Shift) =>
+  new Set(
+    state.withdrawals
+      .filter(w => w.blocking && w.campaignId === campaignId && w.date === date && w.shift === shift)
+      .map(w => w.userId),
+  );
+
 export function availableAgents(state: AppState, campaignId: string, date: string, shift: Shift) {
   return state.agents.filter(
     a =>
@@ -348,11 +359,17 @@ export function coverage(
     need: count,
     actual: agents.filter(a => a.qualifications.includes(name)).length,
   }));
+  // Une affectation qui ne passera pas la publication. Deux causes : la
+  // disponibilité ne correspond plus, ou l'agent s'est désisté et on le lui a
+  // accordé. La base refuse les deux ; l'écran doit le dire avant le clic,
+  // sinon la couverture annonce « couvert » jusqu'au refus.
+  const withdrawn = mode === "potential" ? new Set<string>() : withdrawnFrom(state, campaignId, date, shift);
   const invalid =
     mode === "potential"
       ? []
       : agents.filter(
           a =>
+            withdrawn.has(a.id) ||
             !isValidated(state, campaignId, a.id) ||
             !isAvailable(state.entries[entryKey(campaignId, a.id, date)]?.type, shift),
         );

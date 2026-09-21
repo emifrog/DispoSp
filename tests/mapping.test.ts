@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import { buildState, taken, READ_FAILED, type Raw } from "../src/lib/data-mapping";
 import {
   campaignAgents,
+  coverage,
   entryKey,
   gradeLabel,
   isValidated,
   responseKey,
   shiftKey,
   visibleCampaigns,
+  withdrawnFrom,
 } from "../src/lib/domain";
 
 const CAMPAIGN = "c1";
@@ -116,12 +118,48 @@ function raw(overrides: Partial<Raw> = {}): Raw {
       },
     ],
     assignments: [
-      { schedule_shift_id: SHIFT_DAY, user_id: "u1", revision: 0, status: "PROPOSED" },
-      { schedule_shift_id: SHIFT_DAY, user_id: "u2", revision: 0, status: "CANCELLED" },
-      { schedule_shift_id: SHIFT_DAY, user_id: "u1", revision: 2, status: "CONFIRMED" },
-      { schedule_shift_id: SHIFT_DAY, user_id: "u2", revision: 2, status: "CONFIRMED" },
-      { schedule_shift_id: SHIFT_DAY, user_id: "u2", revision: 1, status: "CONFIRMED" },
-      { schedule_shift_id: "s-orphelin", user_id: "u1", revision: 0, status: "PROPOSED" },
+      {
+        schedule_shift_id: SHIFT_DAY,
+        user_id: "u1",
+        revision: 0,
+        status: "PROPOSED",
+        assigned_at: "2026-09-18T08:00:00Z",
+      },
+      {
+        schedule_shift_id: SHIFT_DAY,
+        user_id: "u2",
+        revision: 0,
+        status: "CANCELLED",
+        assigned_at: "2026-09-18T08:00:00Z",
+      },
+      {
+        schedule_shift_id: SHIFT_DAY,
+        user_id: "u1",
+        revision: 2,
+        status: "CONFIRMED",
+        assigned_at: "2026-09-18T08:00:00Z",
+      },
+      {
+        schedule_shift_id: SHIFT_DAY,
+        user_id: "u2",
+        revision: 2,
+        status: "CONFIRMED",
+        assigned_at: "2026-09-18T08:00:00Z",
+      },
+      {
+        schedule_shift_id: SHIFT_DAY,
+        user_id: "u2",
+        revision: 1,
+        status: "CONFIRMED",
+        assigned_at: "2026-09-18T08:00:00Z",
+      },
+      {
+        schedule_shift_id: "s-orphelin",
+        user_id: "u1",
+        revision: 0,
+        status: "PROPOSED",
+        assigned_at: "2026-09-18T08:00:00Z",
+      },
     ],
     withdrawals: [
       {
@@ -131,6 +169,7 @@ function raw(overrides: Partial<Raw> = {}): Raw {
         reason: "Convocation",
         state: "PENDING",
         created_at: "2026-10-05T08:00:00Z",
+        decided_at: null,
       },
       // Créneau inconnu : la ligne se jette plutôt que de porter une date vide.
       {
@@ -140,6 +179,7 @@ function raw(overrides: Partial<Raw> = {}): Raw {
         reason: null,
         state: "PENDING",
         created_at: "2026-10-05T09:00:00Z",
+        decided_at: null,
       },
     ],
     audit: [
@@ -250,6 +290,65 @@ describe("Construction de l’état depuis la base", () => {
     expect(visibleCampaigns(state, "inconnu", true).map(c => c.id)).toEqual([CAMPAIGN]);
   });
 
+  it("ne bloque que sur un désistement accepté après l’affectation", () => {
+    const withdrawal = {
+      id: "w1",
+      schedule_shift_id: SHIFT_DAY,
+      user_id: "u1",
+      reason: "",
+      state: "ACCEPTED",
+      created_at: "2026-09-19T08:00:00Z",
+    };
+    // L'affectation du brouillon date du 18. Une décision du 19 l'écarte.
+    const after = buildState(raw({ withdrawals: [{ ...withdrawal, decided_at: "2026-09-19T09:00:00Z" }] }), "S");
+    expect(after.withdrawals[0].blocking).toBe(true);
+    expect(withdrawnFrom(after, CAMPAIGN, "2026-10-01", "DAY").has("u1")).toBe(true);
+
+    // Une décision du 17, suivie d'une réaffectation le 18 : l'encadrement a
+    // remis l'agent en connaissance de cause, et rien ne doit plus bloquer.
+    const before = buildState(raw({ withdrawals: [{ ...withdrawal, decided_at: "2026-09-17T09:00:00Z" }] }), "S");
+    expect(before.withdrawals[0].blocking).toBe(false);
+
+    // En attente : ce n'est pas encore une décision.
+    const pending = buildState(raw({ withdrawals: [{ ...withdrawal, state: "PENDING", decided_at: null }] }), "S");
+    expect(pending.withdrawals[0].blocking).toBe(false);
+  });
+
+  it("retire de la couverture planifiée un agent qui s’est désisté", () => {
+    const withdrawn = buildState(
+      raw({
+        // u1 est au brouillon depuis le 18 ; sa demande est accordée le 19.
+        withdrawals: [
+          {
+            id: "w1",
+            schedule_shift_id: SHIFT_DAY,
+            user_id: "u1",
+            reason: "",
+            state: "ACCEPTED",
+            created_at: "2026-09-19T08:00:00Z",
+            decided_at: "2026-09-19T09:00:00Z",
+          },
+        ],
+        requirements: [
+          {
+            campaign_id: CAMPAIGN,
+            date: "2026-10-01",
+            shift_code: "DAY",
+            headcount: 1,
+            staffing_requirement_qualifications: null,
+          },
+        ],
+      }),
+      "S",
+    );
+    const result = coverage(withdrawn, CAMPAIGN, "2026-10-01", "DAY", "planned");
+    // L'effectif est atteint, mais la publication refuserait : l'écran ne doit
+    // donc pas annoncer « couvert » jusqu'au clic.
+    expect(result.actual).toBe(1);
+    expect(result.invalid.map(a => a.id)).toEqual(["u1"]);
+    expect(result.covered).toBe(false);
+  });
+
   it("distingue une lecture vide d’une lecture qui a échoué", () => {
     // Une absence légitime : RLS renvoie un ensemble vide, sans erreur.
     expect(taken("disponibilités", { data: [], error: null }, [])).toEqual([]);
@@ -272,6 +371,8 @@ describe("Construction de l’état depuis la base", () => {
     // projection remonte la chaîne pour donner une date et un créneau lisibles.
     expect(state.withdrawals).toEqual([
       {
+        // En attente : aucune décision, donc rien qui écarte l'agent.
+        blocking: false,
         id: "w1",
         shiftId: SHIFT_DAY,
         campaignId: "c1",

@@ -112,6 +112,7 @@ export type Raw = {
     reason: string | null;
     state: string;
     created_at: string;
+    decided_at: string | null;
   }[];
   shifts: {
     id: string;
@@ -121,7 +122,13 @@ export type Raw = {
     published_revision: number;
     published_at: string | null;
   }[];
-  assignments: { schedule_shift_id: string; user_id: string; revision: number; status: string }[];
+  assignments: {
+    schedule_shift_id: string;
+    user_id: string;
+    revision: number;
+    status: string;
+    assigned_at: string;
+  }[];
   audit: {
     id: number | string;
     occurred_at: string;
@@ -404,11 +411,25 @@ export function buildState(raw: Raw, fallbackOrganizationName: string): AppState
 
   // Un désistement ne vaut que pour une garde connue : une ligne dont le
   // créneau n'a pas été chargé n'a rien à dire à l'écran.
+  // Quand une affectation du brouillon a-t-elle été posée ? Il faut le savoir
+  // pour dire si un désistement accepté la concerne encore.
+  const draftedAt = new Map<string, string>();
+  for (const row of raw.assignments)
+    if (row.revision === 0) draftedAt.set(`${row.schedule_shift_id}/${row.user_id}`, row.assigned_at);
+
   state.withdrawals = raw.withdrawals.flatMap(row => {
     const shift = shiftById.get(row.schedule_shift_id);
     if (!shift) return [];
+    // La même règle que la base applique à la publication : un désistement
+    // accepté écarte l'agent, à moins qu'on ne l'ait réaffecté depuis. Sans
+    // cette comparaison, l'écran signalerait un blocage là où la base
+    // publierait — ou l'inverse, ce qui serait pire.
+    const assigned = draftedAt.get(`${row.schedule_shift_id}/${row.user_id}`);
+    const blocking =
+      row.state === "ACCEPTED" && Boolean(row.decided_at) && Boolean(assigned) && row.decided_at! > assigned!;
     return [
       {
+        blocking,
         id: row.id,
         shiftId: row.schedule_shift_id,
         campaignId: shift.campaignId,

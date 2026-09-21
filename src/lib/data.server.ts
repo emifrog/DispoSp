@@ -75,12 +75,12 @@ export async function loadState(session: AttachedSession): Promise<AppState> {
       .in("campaign_id", campaignIds),
     supabase.from("schedules").select("id, campaign_id").in("campaign_id", campaignIds),
     supabase.from("schedule_shifts").select("id, schedule_id, date, shift_code, published_revision, published_at"),
-    supabase.from("schedule_assignments").select("schedule_shift_id, user_id, revision, status"),
+    supabase.from("schedule_assignments").select("schedule_shift_id, user_id, revision, status, assigned_at"),
     // RLS décide qui voit quoi : un agent n'obtient que les siens, qui encadre
     // obtient ceux du centre. L'écran n'a rien à filtrer.
     supabase
       .from("shift_withdrawals")
-      .select("id, schedule_shift_id, user_id, reason, state, created_at")
+      .select("id, schedule_shift_id, user_id, reason, state, created_at, decided_at")
       .eq("organization_id", organizationId)
       .order("created_at", { ascending: false }),
     supabase

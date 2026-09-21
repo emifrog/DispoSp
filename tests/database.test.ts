@@ -17,6 +17,7 @@ const MIGRATIONS = [
   "20260919200000_desistements.sql",
   "20260920090000_correctifs_droits_et_besoins.sql",
   "20260920140000_invitation_compte_existant.sql",
+  "20260921090000_eligibilite_publication.sql",
 ];
 const baseAuthSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
 const orgA = "10000000-0000-0000-0000-000000000001";
@@ -2201,5 +2202,134 @@ describe("Rattachement par invitation, compte neuf ou existant", () => {
     await invite("jamais@example.org");
     expect(await membership(unconfirmed)).toHaveLength(0);
     expect((await pending()).map(r => r.email)).toContain("jamais@example.org");
+  });
+});
+
+// Ce que la publication doit refuser : un agent sorti de l'effectif, et un
+// agent à qui l'on vient de répondre qu'il n'était plus attendu. Les deux
+// passaient, et le second contredisait la notification déjà envoyée.
+describe("Éligibilité à la publication", () => {
+  const org = "10000000-0000-0000-0000-0000000000a0";
+  const team = "20000000-0000-0000-0000-0000000000a0";
+  const manager = "30000000-0000-0000-0000-0000000000a0";
+  const alice = "30000000-0000-0000-0000-0000000000a1";
+  const bob = "30000000-0000-0000-0000-0000000000a2";
+  const campaign = "40000000-0000-0000-0000-0000000000a0";
+  const schedule = "60000000-0000-0000-0000-0000000000a0";
+  const shift = "70000000-0000-0000-0000-0000000000a0";
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+  const publish = () => live.query("select private.publish_schedule_shift($1)", [shift]);
+  const revision = async () => {
+    await live.exec("reset role");
+    return (
+      await live.query<{ published_revision: number }>(
+        "select published_revision from public.schedule_shifts where id=$1",
+        [shift],
+      )
+    ).rows[0].published_revision;
+  };
+  const assign = async (user: string) => {
+    await be(manager);
+    await live.query(
+      "insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,assigned_by) values ($1,$2,$3,$4)",
+      [org, shift, user, manager],
+    );
+  };
+
+  beforeAll(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const m of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    await live.exec(`
+      insert into auth.users(id) values ('${manager}'), ('${alice}'), ('${bob}');
+      insert into public.profiles(user_id,display_name) values
+        ('${manager}','Chef'), ('${alice}','Alice'), ('${bob}','Bob');
+      insert into public.organizations(id,name) values ('${org}','Centre A0');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values
+        ('${org}','${manager}','${team}','GESTIONNAIRE',true),
+        ('${org}','${alice}','${team}','AGENT',true),
+        ('${org}','${bob}','${team}','AGENT',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        values ('${campaign}','${org}','${team}','Novembre','2026-11-01','2026-11-01',now()-interval '1 day',now()+interval '1 day');
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values
+        ('${org}','${campaign}','${alice}'), ('${org}','${campaign}','${bob}');
+      insert into public.schedules(id,organization_id,campaign_id,team_id) values ('${schedule}','${org}','${campaign}','${team}');
+      insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code)
+        values ('${shift}','${org}','${schedule}','2026-11-01','DAY');
+      insert into public.staffing_requirements(organization_id,campaign_id,date,shift_code,headcount)
+        values ('${org}','${campaign}','2026-11-01','DAY',1);`);
+    for (const agent of [alice, bob]) {
+      await be(agent);
+      await live.query(
+        "insert into public.availability_entries(campaign_id,user_id,date,availability_type) values ($1,$2,'2026-11-01','FULL_24H')",
+        [campaign, agent],
+      );
+      await live.query(
+        "update public.campaign_participants set validated_at=now() where campaign_id=$1 and user_id=$2",
+        [campaign, agent],
+      );
+    }
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("publie une garde en règle", async () => {
+    await assign(alice);
+    await be(manager);
+    await publish();
+    expect(await revision()).toBe(1);
+  });
+
+  it("refuse de republier un agent dont le désistement a été accepté", async () => {
+    await be(alice);
+    await live.query(
+      "insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id,reason) values ($1,$2,$3,'Convocation')",
+      [org, shift, alice],
+    );
+    await be(manager);
+    await live.query("update public.shift_withdrawals set state='ACCEPTED' where user_id=$1", [alice]);
+    // Le brouillon n'a pas bougé : c'est exactement l'oubli que le garde vise.
+    await expect(publish()).rejects.toThrow("Accepted withdrawal");
+    expect(await revision()).toBe(1);
+  });
+
+  it("publie de nouveau si l’encadrement réaffecte après avoir tranché", async () => {
+    // Retirer puis remettre : la réaffectation porte une date plus récente que
+    // la décision, et vaut décision neuve. Sans quoi un désistement d'octobre
+    // interdirait cette garde à cet agent pour toujours.
+    await be(manager);
+    await live.query("delete from public.schedule_assignments where schedule_shift_id=$1 and revision=0", [shift]);
+    await assign(alice);
+    await be(manager);
+    await publish();
+    expect(await revision()).toBe(2);
+  });
+
+  it("refuse de publier un agent sorti de l’effectif", async () => {
+    await live.exec("reset role");
+    await live.query("delete from public.schedule_assignments where schedule_shift_id=$1 and revision=0", [shift]);
+    await live.query(
+      "insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,assigned_by) values ($1,$2,$3,$4)",
+      [org, shift, bob, manager],
+    );
+    // Bob garde sa disponibilité validée : c'est bien son rattachement qui
+    // change, pas sa réponse. Le défaut tenait à ce que rien ne le regardait.
+    await live.query("update public.memberships set active=false where user_id=$1", [bob]);
+    await be(manager);
+    await expect(publish()).rejects.toThrow("Inactive members");
+    expect(await revision()).toBe(2);
+  });
+
+  it("le nomme, pour qu’on sache lequel retirer", async () => {
+    await be(manager);
+    await expect(publish()).rejects.toThrow("Bob");
   });
 });

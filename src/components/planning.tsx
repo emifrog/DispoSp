@@ -32,6 +32,7 @@ import {
   requirement,
   shiftKey,
   suggestedRequirement,
+  withdrawnFrom,
   workload,
   type Agent,
   type Shift,
@@ -83,6 +84,7 @@ export function Planning() {
         .includes(search.toLocaleLowerCase("fr")),
   );
   const result = coverage(state, campaignId, date, shift, "planned");
+  const withdrawn = withdrawnFrom(state, campaignId, date, shift);
   const published = state.publications[key];
   const changed = published && JSON.stringify([...published.agents].sort()) !== JSON.stringify([...assignedIds].sort());
   function openNeeds() {
@@ -332,10 +334,22 @@ export function Planning() {
               </Button>
             </>
           )}
-          {result.invalid.length > 0 && (
+          {/* Deux causes, deux remèdes : l'une se règle avec l'agent, l'autre
+              a déjà été tranchée et demande un remplaçant. Les confondre
+              enverrait chercher au mauvais endroit. */}
+          {withdrawn.size > 0 && (
             <p className="text-red small">
-              {result.invalid.length} {plural(result.invalid.length, "affectation")}{" "}
-              {plural(result.invalid.length, "ne correspond", "ne correspondent")} plus à une disponibilité validée.
+              {withdrawn.size} {plural(withdrawn.size, "agent")} {plural(withdrawn.size, "s’est", "se sont")} désisté
+              {withdrawn.size > 1 ? "s" : ""} de cette garde, et {plural(withdrawn.size, "sa", "leur")} demande a été
+              acceptée. Retirez-{plural(withdrawn.size, "le", "les")} et trouvez un remplaçant : la publication refuse.
+            </p>
+          )}
+          {result.invalid.filter(a => !withdrawn.has(a.id)).length > 0 && (
+            <p className="text-red small">
+              {result.invalid.filter(a => !withdrawn.has(a.id)).length}{" "}
+              {plural(result.invalid.filter(a => !withdrawn.has(a.id)).length, "affectation")}{" "}
+              {plural(result.invalid.filter(a => !withdrawn.has(a.id)).length, "ne correspond", "ne correspondent")}{" "}
+              plus à une disponibilité validée.
             </p>
           )}
           <p className="small muted">

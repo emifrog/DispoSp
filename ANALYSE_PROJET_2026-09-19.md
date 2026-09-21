@@ -4,6 +4,34 @@ Version examinée : commit **849291b** sur **main**, arbre de travail propre au 
 
 DispoSP couvre désormais une grande partie de la V1. Les évolutions sont substantielles : application exclusivement connectée, trois rôles, grade et fonction séparés, modèles de disponibilité atomiques, besoins en lot, statistiques, désistements, exports et PWA. Toutefois, la mise en service ne se réduit pas à la configuration de l’hébergement : plusieurs défauts de droits et de cohérence métier restent à corriger.
 
+## Suivi A2 et A4 — commit 312705e
+
+Revue des commits **97db0b3** (A2) et **312705e** (A4), après **0740be0** (A7). Ce suivi est le plus récent et prévaut sur les états historiques ci-dessous. Aucun code applicatif n’a été modifié pendant cette revue.
+
+**Vérifications : 159 tests réussis dans 8 fichiers.** Deux diagnostics supplémentaires isolés reproduisent les réserves ci-dessous ; leur réussite confirme les défauts, pas leur correction. Ils sont conservés dans le dossier ignoré .local/audit-a2-a4/. Les emails réels, la configuration Auth hébergée et le workflow GitHub n’ont pas été exécutés ici ; typecheck, lint et build n’ont pas été relancés pendant ce suivi.
+
+| Constat | Avancement confirmé                                                                                                                                                                                               | Statut                                                                                                              |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| A2      | Invitation Auth côté serveur, clé secrète isolée, activation et choix du mot de passe, renvoi, rattachement des comptes confirmés existants. Quatre tests PostgreSQL ajoutés.                                     | Parcours principal implémenté ; réserve sur la réinvitation d’un membre désactivé et recette email réelle restante. |
+| A4      | Équipe et participants conservés dans le modèle ; tableau de bord, matrice, compteurs et statistiques utilisent les participants actifs ; les campagnes proposées aux agents sont filtrées. Quatre tests ajoutés. | Calculs d’écran corrigés ; export Excel encore hors périmètre.                                                      |
+| A7      | Correctif maintenant commité, déclaré effectué par l’utilisateur.                                                                                                                                                 | Tests du garde inclus dans la suite locale ; exécution complète de la CI non vérifiée ici.                          |
+
+### Réserve A2 — une réinvitation peut être acceptée sans rendre l’accès
+
+**Reproduit en PostgreSQL avec les treize migrations :** un compte confirmé possède déjà une appartenance inactive au centre. Un gestionnaire le réinvite ; l’invitation reçoit accepted_at et accepted_by, mais l’appartenance reste inactive. La lecture de session ne retient que les appartenances actives : l’agent reste sans accès.
+
+Cause : [attach_invited](E:/GitHub/DispoSp/supabase/migrations/20260920140000_invitation_compte_existant.sql:41) ignore le conflit sur une appartenance existante puis marque malgré tout l’invitation acceptée. Le commentaire de migration annonce pourtant le cas d’un agent retiré puis réinvité. **À traiter :** refuser clairement ce cas avec une indication de réactivation, ou prévoir une réactivation explicite respectant les droits ; ne pas annoncer un rattachement réussi sans appartenance active. Ajouter ce scénario aux tests.
+
+Le cas d’un compte actif dans un autre centre reste également lié à la réserve multi-organisation de l’audit initial : le nouveau rattachement peut créer plusieurs appartenances actives, alors que readSession utilise encore maybeSingle. Il faut définir le choix de centre ou refuser ce rattachement tant que ce choix n’existe pas.
+
+### Réserve A4 — Excel conserve les agents qui ne participent pas
+
+**Reproduit :** avec une campagne limitée à un participant, campaignAgents ne renvoie que celui-ci, mais l’onglet Disponibilités du classeur conserve tous les agents du centre. La [route d’export](E:/GitHub/DispoSp/src/app/api/export/route.ts:21) transmet l’état complet à [buildWorkbook](E:/GitHub/DispoSp/src/lib/workbook.ts:45), qui utilise encore state.agents. Les onglets construits à partir de cette liste peuvent donc présenter les autres équipes comme concernées. Le CSV de la matrice utilise, lui, les lignes filtrées et bénéficie du correctif A4.
+
+**À traiter :** appliquer le périmètre de campagne aux onglets concernés du classeur et tester une campagne avec des agents extérieurs à ses participants. Distinguer explicitement les éventuelles vues portant volontairement sur tout le centre.
+
+**Suite recommandée :** terminer ces deux cas de clôture, puis traiter A3 (pagination toujours absente) et A5 (éligibilité à la publication). Pour A2, vérifier aussi l’affichage après un échec d’envoi : l’invitation peut être enregistrée alors que le provider ne recharge pas les données sur un résultat en erreur.
+
 ## Suivi des correctifs — commit 2abab2e
 
 Les sections numérotées ci-dessous conservent les constats et les résultats de l’audit initial du commit **849291b**. Les références de lignes historiques peuvent avoir changé. Le tableau suivant indique leur statut après relecture des correctifs ; il prévaut sur les formulations initiales.
