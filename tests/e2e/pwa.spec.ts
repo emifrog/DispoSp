@@ -73,4 +73,32 @@ test.describe("Application installable", () => {
     // Safari n'annonce jamais la possibilité d'installer : le chemin se dit.
     await expect(page.getByText("Sur iPhone et iPad")).toBeVisible();
   });
+
+  test("le profil propose d’activer les notifications sur l’appareil", async ({ page }) => {
+    const email = process.env.E2E_EMAIL;
+    const password = process.env.E2E_PASSWORD;
+    test.skip(!email || !password, "Demande E2E_EMAIL et E2E_PASSWORD, un compte rattaché à un centre.");
+    // Sans clé publique VAPID dans le paquet, l'application n'offre pas
+    // l'activation : c'est le cas de l'intégration continue, et le parcours se
+    // saute plutôt que d'échouer sur une absence voulue.
+    test.skip(!process.env.NEXT_PUBLIC_WEB_PUSH_PUBLIC_KEY, "Demande une paire de clés VAPID.");
+    await page.goto("/connexion");
+    await page.getByLabel("Adresse électronique").fill(email!);
+    await page.getByLabel("Mot de passe", { exact: true }).fill(password!);
+    await page.getByRole("button", { name: "Se connecter" }).click();
+    await page.waitForURL(url => !url.pathname.startsWith("/connexion"));
+    await page.goto("/profil");
+    await expect(page.getByRole("heading", { name: "Notifications sur cet appareil" })).toBeVisible();
+    // Un navigateur piloté répond « refusé » à toute demande d'autorisation, et
+    // rien ne le fait changer d'avis de l'extérieur. Le parcours vérifie donc ce
+    // qui compte des deux côtés : l'écran ne prétend jamais que les
+    // notifications sont actives, et il donne toujours la suite — le bouton
+    // d'activation, ou le chemin pour rouvrir ce que le navigateur a fermé.
+    await expect(page.getByText("Actives sur cet appareil.")).toHaveCount(0);
+    await expect(
+      page
+        .getByRole("button", { name: "Activer les notifications" })
+        .or(page.getByText("Les notifications ont été refusées pour DispoSP")),
+    ).toBeVisible();
+  });
 });

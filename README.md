@@ -33,6 +33,7 @@ L'application demande un compte. Sans session, toute adresse renvoie vers l'écr
 - Désistements : un agent signale qu’il ne peut plus tenir une garde publiée, l’encadrement tranche. Accepter ne réaffecte pas — le remplacement se fait au planning, et l’écran le rappelle tant qu’il n’est pas fait.
 - Administration des agents, fiches avec grade, fonction, matricule et téléphone, équipes, trois rôles, qualifications, invitations et désactivation/réactivation.
 - Historique filtrable par sujet, auteur et recherche ; centre de notifications avec suivi de lecture et envoi des emails via Resend lorsqu’il est configuré.
+- Notifications poussées sur le téléphone, application fermée, une fois activées depuis le profil sur l’appareil concerné.
 - Exports CSV, ICS et Excel ; impression complète de la matrice mensuelle, de la vue par journée et du planning personnel pour enregistrer un PDF.
 - Interface adaptée aux ordinateurs et téléphones, de 320 px au grand écran ; dialogues accessibles au clavier.
 
@@ -93,6 +94,9 @@ Le schéma est découpé en migrations successives, à appliquer dans l'ordre et
 | `supabase/migrations/20260919200000_desistements.sql` | Désistements sur une garde publiée, leurs notifications et leur audit | Appliquée — confirmation du porteur du projet |
 | `supabase/migrations/20260920090000_correctifs_droits_et_besoins.sql` | Ferme l'escalade par invitation ; rend l'écriture d'un besoin atomique | Appliquée — confirmation du porteur du projet |
 | `supabase/migrations/20260920140000_invitation_compte_existant.sql` | Rattache un invité dont le compte existe déjà | **À appliquer** |
+| `supabase/migrations/20260921090000_eligibilite_publication.sql` | Contrôle d'éligibilité à la publication d'une garde | État à confirmer |
+| `supabase/migrations/20260921100156_web_push_notifications.sql` | Abonnements des appareils, file des envois poussés et son traitement | **À appliquer** |
+| `supabase/migrations/20260921130000_web_push_abonnement.sql` | Inscription d'un appareil par la session qui le tient | **À appliquer** |
 
 Les deux migrations du 18 septembre n’ajoutent que des fonctions : `public.create_campaign()` pour la première, `public.save_availability_template()` et `public.apply_availability_template()` pour la seconde. Elles ne modifient aucune donnée existante.
 
@@ -143,7 +147,7 @@ Le spinner est un SVG animé par CSS, pas une icône de la bibliothèque : `pref
 
 `src/app/manifest.ts` décrit l'application, ses icônes et deux raccourcis ; `src/components/pwa.tsx` enregistre l'agent de service et propose l'installation depuis l'écran de profil. Les icônes servies viennent du dossier de marque, comme décrit plus haut ; iOS ignore le manifeste et prend `apple-touch-icon.png`.
 
-**L'agent de service ne met aucune donnée en cache.** C'est une décision, pas un raccourci : une disponibilité, une affectation ou un planning servis depuis un cache seraient une information périmée présentée comme à jour, ce qui dans ce métier est pire que pas d'information du tout. Il n'existe que parce qu'un navigateur ne propose l'installation qu'à une application dotée d'un gestionnaire `fetch`, et celui-ci laisse tout passer au réseau. Une seule ressource est conservée, `/hors-ligne`, qui ne contient rien et ne peut donc pas dater. La consultation hors ligne reste une extension à cadrer, et les notifications poussées relèvent de la V2.
+**L'agent de service ne met aucune donnée en cache.** C'est une décision, pas un raccourci : une disponibilité, une affectation ou un planning servis depuis un cache seraient une information périmée présentée comme à jour, ce qui dans ce métier est pire que pas d'information du tout. Il n'existe que parce qu'un navigateur ne propose l'installation qu'à une application dotée d'un gestionnaire `fetch`, et celui-ci laisse tout passer au réseau. Une seule ressource est conservée, `/hors-ligne`, qui ne contient rien et ne peut donc pas dater. La consultation hors ligne reste une extension à cadrer. L'agent de service a désormais un second rôle, lui aussi sans cache : recevoir les notifications poussées — voir plus bas.
 
 Sur Chrome et ses dérivés, le profil affiche un bouton lorsque le navigateur signale que l'installation est possible. Safari ne le signale jamais : le chemin iOS — Partager, puis « Sur l'écran d'accueil » — est donc écrit en toutes lettres.
 
@@ -158,6 +162,39 @@ Une notification est écrite au moment où elle est méritée : un déclencheur 
 L'adresse elle-même vient de `auth.users`, que PostgREST n'expose pas. `0006` en garde une copie sur `profiles`, remplie à la création du profil et tenue à jour par déclencheur : l'autorité reste au schéma d'authentification, et aucune session cliente ne peut la modifier.
 
 Le rappel avant clôture est un geste, pas une horloge : personne ne fait tourner de tâche planifiée. Le bouton du tableau de bord vise les agents qui n'ont pas validé, et la base refuse d'empiler deux rappels sur la même personne. L’envoi automatique des invitations n’est pas implémenté : l’administrateur transmet encore l’adresse de l’application à l’agent. Les emails de confirmation d’inscription sont gérés séparément par Supabase Auth.
+
+### Notifications poussées sur le téléphone (Web Push)
+
+Un email se lit quand on ouvre sa boîte, et le centre de messages quand on ouvre l'application. Ni l'un ni l'autre ne prévient l'agent qui n'a rien ouvert — or c'est exactement lui que vise une campagne qui s'ouvre ou un planning qui change. La notification poussée arrive sur l'écran verrouillé, application fermée.
+
+**L'abonnement appartient à l'appareil, pas au compte.** Chaque téléphone s'active séparément, depuis « Mon profil ». C'est une conséquence du protocole — le navigateur crée l'abonnement, pas le serveur — et c'est aussi ce qu'on veut : le poste partagé du centre n'a pas à sonner la nuit parce qu'un agent a coché une case chez lui.
+
+La chaîne, de bout en bout :
+
+1. L'appareil s'abonne auprès de son service de remise (Google, Apple, Mozilla) et poste le résultat à `POST /api/push/subscribe`, qui appelle `public.register_push_subscription()`. Le centre n'est pas demandé au navigateur : il est lu sur le rattachement actif de la session.
+2. Une notification est écrite, comme avant. Le déclencheur `private.enqueue_push()` inscrit **un envoi par appareil déjà abonné** dans `public.push_deliveries`. Aucun rattrapage : activer les notifications ne fait pas remonter les messages d'hier.
+3. `src/lib/push.server.ts` réserve un lot de dix envois (`public.claim_push_deliveries()`), les signe avec la clé VAPID et les remet aux services de remise, puis estampille chacun (`public.finish_push_delivery()`).
+4. `public/sw.js` reçoit le message et affiche la bulle. Un clic amène au premier plan la fenêtre déjà ouverte plutôt que d'en ouvrir une seconde.
+
+**Ce qui part est délibérément pauvre.** Un écran verrouillé se lit par-dessus l'épaule : le message dit la nature de l'événement — « Votre planning a été publié ou modifié. » — et rien d'autre. Ni nom, ni motif de désistement, ni date de garde. Le détail est dans l'application, derrière la session.
+
+La file est en base pour la même raison que celle des emails : une notification est méritée au moment où elle est écrite, l'envoi est un acte séparé qui peut échouer. Chaque passage réserve ses envois pour deux minutes — le bail — de sorte que deux traitements simultanés ne poussent jamais le même message deux fois et qu'une interruption ne perde rien. Cinq tentatives espacées, puis l'abandon ; au-delà de vingt-quatre heures, l'envoi est supprimé plutôt que délivré en retard. Un 404 ou un 410 du service de remise efface l'abonnement : l'appareil n'existe plus, le garder ferait échouer tous les envois suivants.
+
+Le traitement part après la réponse de chaque commande (`after()`, dans `src/app/actions.ts`) : l'agent n'attend pas que cinq téléphones aient reçu leur bulle pour voir son écran se mettre à jour, et un service de remise lent ne fait pas échouer une écriture déjà faite. `POST /api/push/dispatch`, protégé par `PUSH_DISPATCH_SECRET`, ouvre le même traitement à un planificateur externe — utile pour rattraper ce qu'un service indisponible a laissé en attente, inutile le reste du temps.
+
+**Configuration.** `NEXT_PUBLIC_WEB_PUSH_PUBLIC_KEY`, `WEB_PUSH_PRIVATE_KEY` et `WEB_PUSH_SUBJECT`, plus `SUPABASE_SECRET_KEY` pour le traitement de la file. Sans elles, l'écran de profil n'offre pas l'activation et les notifications restent dans l'application — même principe que pour Resend. La paire de clés se génère une fois :
+
+```bash
+node node_modules/web-push/src/cli.js generate-vapid-keys --json
+```
+
+Changer la clé publique invalide **tous** les abonnements existants : chaque appareil doit réactiver. Elle part dans le paquet du navigateur, c'est sa raison d'être ; la clé privée, jamais — elle seule autorise à pousser un message sur les téléphones du centre.
+
+**Sur iPhone et iPad, les notifications n'existent que dans l'application installée** (iOS 16.4 et au-delà) : ouverte dans Safari, l'application ne peut même pas les proposer. L'écran de profil le dit et donne le chemin. Sur Android et sur ordinateur, l'onglet suffit.
+
+L'adresse de remise est vérifiée deux fois — par `validPushEndpoint()` et par une contrainte de la table — contre la liste des services connus. Une adresse libre ferait de l'expéditeur un relais HTTP vers l'hôte de son choix, signé de sa clé.
+
+Enfin, un bouton d'essai : activer les notifications ne prouve rien, et sans lui l'agent ne saurait qu'à la prochaine campagne — un mois plus tard — si la bulle arrive vraiment. L'essai n'atteint que ses propres appareils, les policies ne lui rendant que ses abonnements.
 
 ### Configuration
 
@@ -280,6 +317,8 @@ Les onze migrations (`0001` à `0007`, puis les quatre migrations horodatées) s
 - Finaliser la mise en service : configuration de l’expéditeur, suivi des échecs d’envoi, sauvegardes/restauration et règles de conservation des données.
 
 L’envoi Resend traite des lots de 50 notifications après certaines commandes. Il n’existe ni rappel planifié ni traitement autonome de toute la file en attente.
+
+Les notifications poussées suivent le même principe : un lot de dix envois après chaque commande, et rien qui tourne tout seul. `POST /api/push/dispatch` est là pour qu’un planificateur externe rattrape ce qu’un service de remise indisponible aurait laissé en attente ; aucun n’est configuré à ce jour. Les deux migrations Web Push restent à appliquer sur le projet hébergé.
 
 **Les messages d’activation et de réinitialisation ne passent pas par Resend** : ils sont envoyés par Supabase Auth, avec son propre expéditeur. Deux gabarits sont à régler dans Authentication → Email Templates, faute de quoi les liens ne fonctionnent que sur l’appareil qui a fait la demande — or ce n’est jamais le cas pour une activation, demandée par le gestionnaire et ouverte par l’agent :
 

@@ -2,7 +2,17 @@
 
 Version : **4c5dbcb**, après les commits A3, A5, chargement et responsive.
 
-**Verdict : l’application s’adapte correctement sur les écrans principaux testés, mais deux défauts empêchent de la considérer entièrement responsive.** Le menu doit rester accessible sur un écran peu haut ; la création de campagne doit tenir dans une fenêtre mobile étroite.
+**Contre-vérification au commit b8efb8d : R1 et R2 sont corrigés dans les cas reproduits.** Aucun autre défaut responsive n’a été identifié dans le périmètre de cette revue. Les limites de navigateur, d’appareil et de données décrites ci-dessous restent applicables.
+
+## Clôture de R1 et R2
+
+- **R1 : quatre vérifications réussies**, à 320 × 568, 844 × 390, 1 024 × 768 et 1 280 × 600. Le défilement à la souris fonctionne dans la barre latérale ; le lien Paramètres est entièrement visible après défilement et son clic ouvre effectivement la page attendue. À 844 × 390, sa position passe d’environ y = 766 px à y = 267 px après défilement.
+- **R2 : vingt vérifications réussies**, avec quatre fenêtres (campagne, invitation, besoins en lot, saisie rapide) sur cinq dimensions : 320 × 568, 360 × 700, 390 × 844, 768 × 1 024 et 844 × 390. Le débordement horizontal interne est nul et les champs restent dans les limites de chaque fenêtre. Le formulaire de campagne est également contrôlé visuellement à 320 px.
+- Vérifications faites dans le même banc isolé, avec les composants et le CSS actuels. Les nouveaux tests connectés du dépôt ont été relus, mais leur exécution avec une session réelle n’est pas certifiée par ces mesures. La suite complète n’a pas été relancée pour cette contre-vérification ciblée.
+
+Captures après correction : [menu en paysage](E:/GitHub/DispoSp/docs/audits/responsive-2026-09-21/menu-paysage-corrige.png), [formulaire à 320 px](E:/GitHub/DispoSp/docs/audits/responsive-2026-09-21/campagne-320-corrige.png).
+
+Les descriptions R1/R2 et les captures avant correction ci-dessous sont conservées comme historique de l’audit initial.
 
 ## Méthode et limites
 

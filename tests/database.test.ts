@@ -18,8 +18,14 @@ const MIGRATIONS = [
   "20260920090000_correctifs_droits_et_besoins.sql",
   "20260920140000_invitation_compte_existant.sql",
   "20260921090000_eligibilite_publication.sql",
+  "20260921100156_web_push_notifications.sql",
+  "20260921130000_web_push_abonnement.sql",
 ];
-const baseAuthSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
+// `service_role` est le compte du serveur chez Supabase, et il passe outre les
+// policies : la file d'envoi des notifications poussées se lit pour tout un
+// centre, ce qu'aucune session d'agent ne pourrait faire. Sans lui ici, la
+// migration Web Push ne s'appliquerait même pas.
+const baseAuthSchema = `create role anon; create role authenticated; create role service_role bypassrls; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated, service_role; grant execute on function auth.uid() to authenticated, service_role; alter default privileges in schema public grant all on tables to service_role; alter default privileges in schema public grant all on functions to service_role;`;
 const orgA = "10000000-0000-0000-0000-000000000001";
 const orgB = "10000000-0000-0000-0000-000000000002";
 const teamA = "20000000-0000-0000-0000-000000000001";
@@ -35,9 +41,7 @@ async function asUser(id: string) {
   await db.exec("set role authenticated");
 }
 beforeAll(async () => {
-  await db.exec(
-    `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`,
-  );
+  await db.exec(baseAuthSchema);
   // Applied in order, exactly as they are against the real project: the tests
   // therefore check the migration sequence, not a single hand-kept schema file.
   for (const migration of MIGRATIONS)
@@ -332,7 +336,7 @@ describe("Planning, publication et audit", () => {
 // meant for a fresh database replayed on one that already carries part of it.
 describe("Enchaînement des migrations", () => {
   const read = (name: string) => readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), "utf8");
-  const authSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
+  const authSchema = baseAuthSchema;
 
   it("refuse 0002 sur une base qui n’a jamais reçu 0001", async () => {
     const fresh = new PGlite();
@@ -374,7 +378,7 @@ function withValues(sql: string, values: Record<string, string>) {
 // The provisioning script is pasted by hand into the Supabase SQL editor, so it
 // gets the same scrutiny as the migrations: run it against a real engine first.
 describe("Provisionnement de la première organisation", () => {
-  const authSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
+  const authSchema = baseAuthSchema;
   const script = () =>
     readFileSync(new URL("../supabase/provisioning/premiere-organisation.sql", import.meta.url), "utf8");
   const forEmail = (email: string) =>
@@ -437,7 +441,7 @@ describe("Provisionnement de la première organisation", () => {
 });
 
 describe("Ouverture de la première campagne", () => {
-  const authSchema = `create role anon; create role authenticated; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated; grant execute on function auth.uid() to authenticated;`;
+  const authSchema = baseAuthSchema;
   const file = (name: string) => readFileSync(new URL(`../supabase/provisioning/${name}`, import.meta.url), "utf8");
 
   async function provisioned() {
@@ -2331,5 +2335,160 @@ describe("Éligibilité à la publication", () => {
   it("le nomme, pour qu’on sache lequel retirer", async () => {
     await be(manager);
     await expect(publish()).rejects.toThrow("Bob");
+  });
+});
+
+describe("Notifications poussées (Web Push)", () => {
+  const org = "10000000-0000-0000-0000-0000000000b0";
+  const other = "10000000-0000-0000-0000-0000000000b1";
+  const team = "20000000-0000-0000-0000-0000000000b0";
+  const otherTeam = "20000000-0000-0000-0000-0000000000b1";
+  const alice = "30000000-0000-0000-0000-0000000000b0";
+  const bob = "30000000-0000-0000-0000-0000000000b1";
+  const outsider = "30000000-0000-0000-0000-0000000000b2";
+  // Ce qu'un navigateur rend vraiment : une adresse de remise chez un service
+  // connu, et deux clés au format fixe que les contraintes de la table vérifient.
+  const phone = "https://fcm.googleapis.com/fcm/send/appareil-alice";
+  const p256dh = "B".repeat(87);
+  const auth = "A".repeat(22);
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+  const asServer = async () => {
+    await live.exec("reset role");
+    await live.exec("set role service_role");
+  };
+  const register = (endpoint = phone) =>
+    live.query("select public.register_push_subscription($1,$2,$3)", [endpoint, p256dh, auth]);
+  const notify = async (user: string) => {
+    await live.exec("reset role");
+    await live.query(
+      "insert into public.notifications(organization_id,user_id,kind,subject) values ($1,$2,'CAMPAIGN_OPENED','Campagne ouverte')",
+      [org, user],
+    );
+  };
+  const deliveries = async () => {
+    await live.exec("reset role");
+    return (await live.query<{ status: string }>("select status from public.push_deliveries")).rows;
+  };
+
+  beforeAll(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const m of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    await live.exec(`
+      insert into auth.users(id) values ('${alice}'), ('${bob}'), ('${outsider}');
+      insert into public.profiles(user_id,display_name) values
+        ('${alice}','Alice'), ('${bob}','Bob'), ('${outsider}','Étranger');
+      insert into public.organizations(id,name) values ('${org}','Centre B0'), ('${other}','Centre B1');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha'), ('${otherTeam}','${other}','Bravo');
+      insert into public.memberships values
+        ('${org}','${alice}','${team}','AGENT',true),
+        ('${org}','${bob}','${team}','AGENT',true),
+        ('${other}','${outsider}','${otherTeam}','AGENT',true);`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("attache l’appareil au compte connecté et à son centre", async () => {
+    await be(alice);
+    await register();
+    await live.exec("reset role");
+    expect(
+      (await live.query("select organization_id, user_id from public.push_subscriptions where endpoint=$1", [phone]))
+        .rows,
+    ).toEqual([{ organization_id: org, user_id: alice }]);
+  });
+
+  it("refuse une adresse de remise inconnue au même titre que l’application", async () => {
+    await be(alice);
+    // La table refuse ce que `validPushEndpoint` refuse déjà côté serveur : sans
+    // cette contrainte, une adresse arbitraire ferait de l'expéditeur un relais.
+    await expect(register("https://exemple.test/collecte")).rejects.toThrow();
+  });
+
+  it("ne montre à personne les appareils d’un autre", async () => {
+    await be(bob);
+    expect((await live.query("select id from public.push_subscriptions")).rows).toEqual([]);
+    await be(alice);
+    expect((await live.query("select endpoint from public.push_subscriptions")).rows).toEqual([{ endpoint: phone }]);
+  });
+
+  it("refuse d’inscrire un appareil au nom d’un autre", async () => {
+    await be(bob);
+    await expect(
+      live.query(
+        "insert into public.push_subscriptions(organization_id,user_id,endpoint,p256dh,auth) values ($1,$2,'https://fcm.googleapis.com/fcm/send/vole',$3,$4)",
+        [org, alice, p256dh, auth],
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("écrit un envoi par appareil dès qu’une notification est écrite", async () => {
+    await notify(alice);
+    expect(await deliveries()).toEqual([{ status: "pending" }]);
+    // Bob n'a pas d'appareil : sa notification n'attend rien et n'encombre rien.
+    await notify(bob);
+    expect(await deliveries()).toEqual([{ status: "pending" }]);
+  });
+
+  it("garde la file hors de portée d’une session d’agent", async () => {
+    await be(alice);
+    await expect(live.query("select * from public.claim_push_deliveries()")).rejects.toThrow();
+    const nowhere = "00000000-0000-0000-0000-000000000000";
+    await expect(live.query("select public.finish_push_delivery($1,$1,201)", [nowhere])).rejects.toThrow();
+  });
+
+  it("réserve l’envoi pour le serveur, puis l’estampille", async () => {
+    await asServer();
+    const claimed = await live.query<{ id: string; lease: string; endpoint: string; kind: string }>(
+      "select id, lease, endpoint, kind from public.claim_push_deliveries()",
+    );
+    expect(claimed.rows).toHaveLength(1);
+    expect(claimed.rows[0].endpoint).toBe(phone);
+    expect(claimed.rows[0].kind).toBe("CAMPAIGN_OPENED");
+    // Réservé : un second passage simultané ne le reprendrait pas.
+    expect(await deliveries()).toEqual([{ status: "sending" }]);
+    await asServer();
+    await live.query("select public.finish_push_delivery($1,$2,201)", [claimed.rows[0].id, claimed.rows[0].lease]);
+    expect(await deliveries()).toEqual([{ status: "sent" }]);
+  });
+
+  it("efface l’appareil que le service de remise ne connaît plus", async () => {
+    await notify(alice);
+    await asServer();
+    const claimed = await live.query<{ id: string; lease: string }>(
+      "select id, lease from public.claim_push_deliveries()",
+    );
+    expect(claimed.rows).toHaveLength(1);
+    await live.query("select public.finish_push_delivery($1,$2,410)", [claimed.rows[0].id, claimed.rows[0].lease]);
+    await live.exec("reset role");
+    // L'abonnement disparu emporte ses envois : le garder ferait échouer chaque
+    // passage suivant, indéfiniment.
+    expect((await live.query("select id from public.push_subscriptions")).rows).toEqual([]);
+    expect(await deliveries()).toEqual([]);
+  });
+
+  it("reprend l’appareil qui change de main", async () => {
+    await be(alice);
+    await register();
+    // Le même téléphone, le compte suivant : le navigateur rend la même adresse
+    // de remise, et l'abonnement d'Alice ne doit pas survivre à son départ.
+    await be(bob);
+    await register();
+    await live.exec("reset role");
+    expect((await live.query("select user_id from public.push_subscriptions")).rows).toEqual([{ user_id: bob }]);
+  });
+
+  it("refuse l’inscription d’un compte rattaché à aucun centre actif", async () => {
+    await live.exec("reset role");
+    await live.query("update public.memberships set active=false where user_id=$1", [outsider]);
+    await be(outsider);
+    await expect(register("https://web.push.apple.com/appareil-etranger")).rejects.toThrow("aucun centre actif");
   });
 });

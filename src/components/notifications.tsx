@@ -2,6 +2,7 @@
 import { Bell, BellRing, Check, Inbox } from "lucide-react";
 import { useApp } from "./provider";
 import { PageTitle, Panel } from "./common";
+import { PushNotifications } from "./pwa";
 import { Button } from "./ui/button";
 import { notificationLabels, plural } from "@/lib/domain";
 
@@ -62,6 +63,9 @@ export function Notifications() {
           </ol>
         )}
       </Panel>
+      {/* Le même panneau que sur le profil, et pour cause : c'est ici qu'on se
+          demande pourquoi rien n'arrive sur son téléphone. */}
+      <PushNotifications />
     </>
   );
 }

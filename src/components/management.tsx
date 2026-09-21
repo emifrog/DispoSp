@@ -46,7 +46,7 @@ import {
   type MemberRole,
 } from "@/lib/domain";
 import { auditCsv, download } from "@/lib/exports";
-import { InstallApp } from "./pwa";
+import { InstallApp, PushNotifications } from "./pwa";
 import { roleLabels } from "@/lib/session";
 
 export function Campaigns() {
@@ -864,6 +864,7 @@ export function Profile() {
             </div>
           </dl>
         </Panel>
+        <PushNotifications />
         <InstallApp />
       </div>
     </>
