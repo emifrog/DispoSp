@@ -80,3 +80,47 @@ describe("Classeur Excel", () => {
     for (const agent of agents) expect(labelsRead).toContain(agent.name);
   });
 });
+
+/**
+ * Le classeur ne parle que de sa campagne.
+ *
+ * Le jeu de démonstration convie tout le centre, ce qui rendait le défaut
+ * invisible : les deux listes coïncidaient. Un centre à plusieurs équipes ne
+ * coïncide pas, et l'export présentait alors des agents que la campagne n'avait
+ * jamais invités — avec un mois de « ? » qui se lit comme un défaut de réponse.
+ */
+describe("Classeur d’une campagne qui ne convie pas tout le centre", () => {
+  const partial = sampleState(now);
+  const only = partial.campaigns[0];
+  const invited = partial.agents.slice(0, 3);
+  const outsider = partial.agents[partial.agents.length - 1];
+  only.participants = invited.map(a => a.id);
+  const sheets = buildWorkbook(partial, only);
+  const names = (sheet: string, column = 1) => {
+    const read: string[] = [];
+    sheets.getWorksheet(sheet)?.eachRow((row, index) => {
+      if (index > 1) read.push(String(row.getCell(column).value ?? ""));
+    });
+    return read;
+  };
+
+  it("ne retient que les participants dans les disponibilités", () => {
+    expect(sheets.getWorksheet("Disponibilités")?.rowCount).toBe(invited.length + 1);
+    expect(names("Disponibilités")).not.toContain(outsider.name);
+  });
+
+  it("compte la synthèse et le taux de réponse sur eux seuls", () => {
+    const row = sheets.getWorksheet("Synthèse")?.getRow(2);
+    const counts = [2, 3, 4, 5, 6].map(column => Number(row?.getCell(column).value));
+    expect(counts.reduce((a, b) => a + b, 0)).toBe(invited.length);
+    const stats = sheets.getWorksheet("Statistiques");
+    const concerned = stats?.getRow(5);
+    expect(String(concerned?.getCell(1).value)).toBe("Agents concernés");
+    expect(Number(concerned?.getCell(2).value)).toBe(invited.length);
+  });
+
+  it("laisse dehors les qualifications et l’équité de qui n’est pas convié", () => {
+    expect(names("Qualifications")).not.toContain(outsider.name);
+    expect(names("Statistiques")).not.toContain(outsider.name);
+  });
+});

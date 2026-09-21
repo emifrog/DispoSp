@@ -70,6 +70,81 @@ describe("Lecture page par page", () => {
     spy.mockRestore();
   });
 
+  it("lance les pages suivantes ensemble, au lieu de les attendre l’une après l’autre", async () => {
+    // Le compte dit d'avance où commence chaque page : elles peuvent donc
+    // partir en même temps. C'est tout l'intérêt — quarante pages en file
+    // indienne, c'est quarante allers-retours à chaque navigation.
+    let inFlight = 0;
+    let peak = 0;
+    const release: (() => void)[] = [];
+    const all = Array.from({ length: 3000 }, (_, i) => ({ i }));
+    const page = (from: number, to: number) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      const answer = { data: all.slice(from, to + 1), error: null, count: all.length };
+      // La première page répond tout de suite ; les autres attendent qu'on les
+      // libère, ce qui laisse le temps de compter combien sont en vol.
+      if (from === 0) {
+        inFlight -= 1;
+        return Promise.resolve(answer);
+      }
+      return new Promise<typeof answer>(resolve =>
+        release.push(() => {
+          inFlight -= 1;
+          resolve(answer);
+        }),
+      );
+    };
+    const reading = paged<{ i: number }>("disponibilités", 500, page);
+    await vi.waitFor(() => expect(release.length).toBe(5));
+    expect(peak).toBe(5);
+    release.forEach(done => done());
+    const rows = await reading;
+    expect(rows.map(r => r.i)).toEqual(all.map(r => r.i));
+  });
+
+  it("ne dépasse jamais six pages en vol", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const all = Array.from({ length: 20_000 }, (_, i) => ({ i }));
+    const page = async (from: number, to: number) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await Promise.resolve();
+      inFlight -= 1;
+      return { data: all.slice(from, to + 1), error: null, count: all.length };
+    };
+    expect(await paged<{ i: number }>("disponibilités", 500, page)).toHaveLength(20_000);
+    // Quarante pages restantes, six à la fois : on accélère sans occuper tout
+    // le pool de connexions que les autres tables attendent.
+    expect(peak).toBeLessThanOrEqual(6);
+  });
+
+  /**
+   * Le filet du calcul de plages.
+   *
+   * Les plages étant prévues d'avance, une page servie plus courte que demandée
+   * ne décale pas les suivantes : elle laisse un **trou au milieu**. Le compte
+   * final ne tombe plus juste, et la lecture doit alors repartir à la file,
+   * où chaque page part de ce qui a réellement été reçu.
+   */
+  it("relit à la file plutôt que de rendre une liste trouée", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const all = Array.from({ length: 1400 }, (_, i) => ({ i }));
+    let parallel = true;
+    const page = (from: number, to: number) => {
+      // Première page pleine — rien ne laisse deviner le plafond — puis des
+      // pages écourtées tant qu'on lit en parallèle.
+      const size = parallel && from > 0 ? 200 : to - from + 1;
+      if (from > 0) parallel = false;
+      return Promise.resolve({ data: all.slice(from, from + size), error: null, count: all.length });
+    };
+    const rows = await paged<{ i: number }>("disponibilités", 500, page);
+    expect(rows.map(r => r.i)).toEqual(all.map(r => r.i));
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
   it("remonte l’échec d’une page, sans rendre les précédentes", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     let call = 0;

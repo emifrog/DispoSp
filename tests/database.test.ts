@@ -20,6 +20,7 @@ const MIGRATIONS = [
   "20260921090000_eligibilite_publication.sql",
   "20260921100156_web_push_notifications.sql",
   "20260921130000_web_push_abonnement.sql",
+  "20260921140000_verrou_publication.sql",
 ];
 // `service_role` est le compte du serveur chez Supabase, et il passe outre les
 // policies : la file d'envoi des notifications poussées se lit pour tout un

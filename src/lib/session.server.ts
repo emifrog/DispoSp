@@ -1,5 +1,6 @@
 import "server-only";
 import { connection } from "next/server";
+import { taken } from "./data-mapping";
 import { createReadClient } from "./supabase/server";
 import type { Session } from "./session";
 
@@ -39,18 +40,34 @@ export async function readSession(): Promise<Session | null> {
       .maybeSingle(),
   ]);
 
-  const row = membership.data as {
+  /*
+   * Une panne de base n'est pas une absence de rattachement.
+   *
+   * Les deux lectures rendaient jusqu'ici `data` sans regarder `error`, et
+   * `maybeSingle()` rend une erreur dans deux cas très différents : la base est
+   * injoignable, ou la requête a ramené plusieurs lignes — deux rattachements
+   * actifs, ce que la multi-organisation rendra possible. Dans les deux cas
+   * l'agent était traité en « compte non rattaché », donc renvoyé vers un écran
+   * qui lui explique posément d'attendre son gestionnaire. La panne, elle, ne
+   * laissait aucune trace : ni à l'écran, ni dans les journaux.
+   *
+   * `taken` lève avec un message générique et écrit la cause dans le journal du
+   * serveur. « Compte non rattaché » redevient ce qu'il aurait dû rester : une
+   * ligne réellement absente.
+   */
+  const named = taken<{ display_name: string } | null>("profil", profile, null);
+  const row = taken<{
     organization_id: string;
     team_id: string;
     role: string;
     organizations: { name: string } | null;
     teams: { name: string } | null;
-  } | null;
+  } | null>("rattachement au centre", membership, null);
 
   return {
     userId: user.id,
     email: user.email ?? "",
-    displayName: profile.data?.display_name ?? user.email ?? "",
+    displayName: named?.display_name ?? user.email ?? "",
     membership: row
       ? {
           organizationId: row.organization_id,

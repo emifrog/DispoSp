@@ -99,10 +99,13 @@ Le schéma est découpé en migrations successives, à appliquer dans l'ordre et
 | `supabase/migrations/20260921090000_eligibilite_publication.sql`       | Contrôle d'éligibilité à la publication d'une garde                                                      | Appliquée — confirmation du porteur du projet |
 | `supabase/migrations/20260921100156_web_push_notifications.sql`        | Abonnements des appareils, file des envois poussés et son traitement                                     | Appliquée — confirmation du porteur du projet |
 | `supabase/migrations/20260921130000_web_push_abonnement.sql`           | Inscription d'un appareil par la session qui le tient                                                    | Appliquée — confirmation du porteur du projet |
+| `supabase/migrations/20260921140000_verrou_publication.sql`            | Verrou de ligne sur le créneau publié, contre deux publications simultanées                              | **À appliquer**                               |
 
 Les deux migrations du 18 septembre n’ajoutent que des fonctions : `public.create_campaign()` pour la première, `public.save_availability_template()` et `public.apply_availability_template()` pour la seconde. Elles ne modifient aucune donnée existante.
 
 Celles du 19 septembre vont plus loin. `20260919120000` **modifie des données** : `RESPONSABLE` disparaît et les comptes qui le portaient passent `GESTIONNAIRE`. C’est une extension de droits — d’une seule équipe au centre entier, plus le droit d’inviter — tracée au journal d’audit. Elle ajoute `profiles.fonction` et `invitations.fonction`, et `private.can_manage()` perd sa branche par équipe : un gestionnaire gère désormais tout son centre, et le filtre par équipe n’a plus d’objet.
+
+`20260921140000` ne change qu'une ligne de `private.publish_schedule_shift()` : le créneau est désormais lu `for update`. Sans ce verrou, deux publications simultanées lisaient la même `published_revision` et en calculaient la même ; la clé primaire de `schedule_assignments` arrêtait bien la seconde, mais par une violation de contrainte. Le verrou ne porte que sur la ligne du créneau — deux publications sur deux créneaux différents ne s'attendent pas.
 
 `20260919200000` ajoute `public.shift_withdrawals`. Un agent ne peut s’y inscrire que pour lui-même et que sur une garde qu’il tient réellement : `private.holds_published_shift()` exige de figurer dans la révision publiée. Le décideur est estampillé par un déclencheur, jamais par le client, et la table ne touche pas au planning.
 
@@ -314,7 +317,7 @@ Les deux règles correspondantes mesurent, l'une la position des liens du menu a
 
 ## Limites et prochaines étapes
 
-**Les seize migrations sont appliquées** — les deux du Web Push comprises — et l’application lit et écrit les données en mode connecté. Les étapes restantes sont suivies dans [le plan de développement](PLAN_DEVELOPPEMENT.md), et la vérification avant mise en service dans [la recette](RECETTE.md) :
+Les seize premières migrations sont appliquées — les deux du Web Push comprises — et l’application lit et écrit les données en mode connecté. **`20260921140000_verrou_publication.sql` reste à passer** : elle verrouille le créneau pendant sa publication, pour que deux responsables qui publient au même instant ne calculent pas la même révision. Les étapes restantes sont suivies dans [le plan de développement](PLAN_DEVELOPPEMENT.md), et la vérification avant mise en service dans [la recette](RECETTE.md) :
 
 - Confirmer la configuration du site hébergé et effectuer une recette avec plusieurs comptes : invitation, confirmation d’adresse, disponibilités habituelles, validation, publication, réception des emails et des notifications poussées sur un téléphone.
 - Déployer la version qui appelle `public.create_campaign()`, `public.save_availability_template()` et `public.apply_availability_template()`, puis vérifier ces parcours en mode connecté : les migrations sont appliquées, le comportement hébergé reste à observer.

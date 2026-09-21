@@ -43,6 +43,21 @@ export function taken<T>(what: string, result: { data: unknown; error: { message
   return (result.data ?? fallback) as T;
 }
 
+type Page = (
+  from: number,
+  to: number,
+) => PromiseLike<{ data: unknown; error: { message: string } | null; count: number | null }>;
+
+/**
+ * Le nombre de pages en vol à la fois.
+ *
+ * Six, et pas davantage : au-delà on n'accélère plus grand-chose — la base
+ * répond à la même vitesse — et on occupe des connexions du pool que les autres
+ * requêtes de la page attendent. Les tables sont déjà lues en parallèle entre
+ * elles ; cette limite vaut pour chacune.
+ */
+const IN_FLIGHT = 6;
+
 /**
  * Lire une table en entier, page par page.
  *
@@ -53,28 +68,64 @@ export function taken<T>(what: string, result: { data: unknown; error: { message
  * plafond passerait pour la dernière. On retomberait exactement dans la
  * troncature silencieuse qu'on cherche à supprimer.
  *
- * Sans compte disponible, on se rabat sur la taille de page, faute de mieux.
+ * Le compte sert une seconde fois : il dit d'avance combien de pages il reste,
+ * donc où elles commencent. Elles partent alors ensemble, par paquets, au lieu
+ * de s'attendre l'une l'autre. Sur un centre de cinquante agents, les
+ * disponibilités de l'année tiennent en une quarantaine de pages : c'était
+ * quarante allers-retours en file indienne à chaque navigation.
+ *
+ * Deux cas gardent la lecture séquentielle, parce qu'on ne peut pas y prévoir
+ * les plages : l'absence de compte, et la première page écourtée — signe que le
+ * serveur plafonne plus bas que ce qu'on demande.
  */
-export async function paged<T>(
-  what: string,
-  size: number,
-  page: (
-    from: number,
-    to: number,
-  ) => PromiseLike<{ data: unknown; error: { message: string } | null; count: number | null }>,
-): Promise<T[]> {
+export async function paged<T>(what: string, size: number, page: Page): Promise<T[]> {
+  const first = await page(0, size - 1);
+  const head = taken<T[]>(what, first, []);
+  const total = first.count;
+  if (total !== null && head.length >= total) return head;
+  // Ni fini ni avancé : mieux vaut une erreur qu'une boucle sans fin ou une
+  // liste tronquée qu'on présenterait comme entière.
+  if (!head.length) {
+    console.error(`Lecture interrompue : ${what}, 0 ligne sur ${total ?? "?"}`);
+    throw new Error(READ_FAILED);
+  }
+  if (total === null || head.length < size) return [...head, ...(await sequential<T>(what, size, page, head.length))];
+
+  const starts: number[] = [];
+  for (let from = size; from < total; from += size) starts.push(from);
+  const pages: T[][] = new Array(starts.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(IN_FLIGHT, starts.length) }, async () => {
+      for (let index = next++; index < starts.length; index = next++)
+        pages[index] = taken<T[]>(what, await page(starts[index], starts[index] + size - 1), []);
+    }),
+  );
+
+  const collected = [head, ...pages].flat();
+  if (collected.length >= total) return collected;
+  /*
+   * Moins de lignes que le compte annoncé : une page a été servie écourtée, ou
+   * des lignes ont disparu pendant la lecture. Les plages ayant été calculées
+   * d'avance, ce qui manque laisse un **trou au milieu** — et un trou muet est
+   * exactement ce que ce module existe pour empêcher. On relit tout à la file,
+   * où chaque page repart de ce qui a réellement été reçu.
+   */
+  console.error(`Lecture relancée à la file : ${what}, ${collected.length} ligne(s) sur ${total}`);
+  return sequential<T>(what, size, page, 0);
+}
+
+async function sequential<T>(what: string, size: number, page: Page, from: number): Promise<T[]> {
   const collected: T[] = [];
   for (;;) {
-    const result = await page(collected.length, collected.length + size - 1);
+    const result = await page(from + collected.length, from + collected.length + size - 1);
     const batch = taken<T[]>(what, result, []);
     collected.push(...batch);
 
     const total = result.count;
-    if (total !== null ? collected.length >= total : batch.length < size) return collected;
-    // Ni fini ni avancé : mieux vaut une erreur qu'une boucle sans fin ou une
-    // liste tronquée qu'on présenterait comme entière.
+    if (total !== null ? from + collected.length >= total : batch.length < size) return collected;
     if (!batch.length) {
-      console.error(`Lecture interrompue : ${what}, ${collected.length} ligne(s) sur ${total ?? "?"}`);
+      console.error(`Lecture interrompue : ${what}, ${from + collected.length} ligne(s) sur ${total ?? "?"}`);
       throw new Error(READ_FAILED);
     }
   }

@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import {
   availableAgents,
+  campaignAgents,
   coverage,
   coverageLevel,
   coverageLevelLabels,
@@ -42,7 +43,21 @@ export function buildWorkbook(state: AppState, campaign: Campaign): ExcelJS.Work
   book.creator = "DispoSP";
   book.created = new Date();
   const days = monthDays(campaign.month);
-  const agents = [...state.agents].sort((a, b) => a.name.localeCompare(b.name, "fr"));
+  /*
+   * Les agents de la campagne, pas ceux du centre.
+   *
+   * Le classeur partait de `state.agents` — tout l'effectif actif — là où les
+   * écrans avaient été corrigés pour ne compter que les participants. Sur un
+   * centre à plusieurs équipes, l'onglet Disponibilités présentait donc des
+   * agents que la campagne n'avait jamais conviés, avec une ligne de « ? » sur
+   * les trente et un jours : lisible comme un défaut de réponse, alors que
+   * personne ne leur avait rien demandé. Le taux de réponse, l'équité et la
+   * feuille Qualifications s'en trouvaient faussés dans le même mouvement.
+   *
+   * Aucune feuille ne porte volontairement sur le centre entier : le fichier
+   * s'exporte depuis une campagne, il ne parle que d'elle.
+   */
+  const agents = campaignAgents(state, campaign.id).sort((a, b) => a.name.localeCompare(b.name, "fr"));
 
   // 1. Disponibilités — la matrice, telle que l'écran la montre.
   const availability = sheet(book, "Disponibilités", [
@@ -135,6 +150,9 @@ export function buildWorkbook(state: AppState, campaign: Campaign): ExcelJS.Work
       const key = shiftKey(campaign.id, date, shift);
       const published = state.publications[key];
       for (const id of state.assignments[key] ?? []) {
+        // L'effectif entier, et non les seuls participants : une affectation
+        // faite avant un départ doit garder son nom, sans quoi la ligne
+        // disparaîtrait de l'export au lieu de signaler ce qu'il faut corriger.
         const agent = state.agents.find(a => a.id === id);
         if (!agent) continue;
         assignments.addRow({
