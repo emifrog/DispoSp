@@ -1651,10 +1651,19 @@ label {
   align-items: center;
   gap: 20px;
 }
+/* Le « × » ne mesure que onze pixels de large : sans dimension imposée, la
+   seule façon de faire taire le message demandait de viser. */
 .toast button {
   color: white;
   background: transparent;
   font-size: 21px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  line-height: 1;
 }
 .field-error {
   color: var(--red);
@@ -2401,10 +2410,15 @@ label {
   gap: 7px;
   font-weight: 400;
 }
-.qualification-choices input,
-.checkbox-field input {
-  width: auto;
+/* Même règle que `.checkbox-inline` : une case de navigateur fait 13 px, et
+   celles des qualifications comme celles des fiches se cochent au doigt. */
+.qualification-choices input[type="checkbox"],
+.checkbox-field input[type="checkbox"] {
+  width: 24px;
+  height: 24px;
   margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--blue);
 }
 .inline-add {
   display: flex;
@@ -2665,6 +2679,18 @@ fieldset.field legend {
 .stats-highlight-body {
   flex: 1;
   min-width: 0;
+}
+/* L'anneau mesure 137 px : sous 560, ce qui reste à côté de lui ne fait plus
+   une colonne de texte mais une gouttière. À 320 px elle tombait à 75 px, un
+   mot par ligne, et le bloc montait à 375 px de haut. Ils s'empilent donc,
+   l'anneau centré au-dessus de sa phrase. Au-delà, le côte à côte de la
+   maquette tient : 355 px de texte à 600 px de fenêtre. */
+@media (max-width: 560px) {
+  .stats-highlight {
+    flex-direction: column;
+    text-align: center;
+    gap: 16px;
+  }
 }
 .stats-highlight strong {
   font-size: 16px;
@@ -3000,10 +3026,13 @@ fieldset.field legend {
 
 /* --- Accueil de l'agent --------------------------------------------------- */
 
-/* Le « Voir tout » d'un en-tête de panneau. */
+/* Le « Voir tout » d'un en-tête de panneau. Ce n'est pas un lien posé dans une
+   phrase mais la commande d'un en-tête : la dispense du WCAG 2.5.8 ne le couvre
+   pas, et ses 18 px de texte doivent porter une cible de 24. */
 .panel-link {
   display: inline-flex;
   align-items: center;
+  min-height: 24px;
   gap: 4px;
   color: var(--blue);
   font-size: 12px;
@@ -3475,6 +3504,16 @@ fieldset.field legend {
     font-size: 10px;
     padding: 8px 10px;
   }
+  /* L'icône du sélecteur de tête de page mange la moitié de la place sur un
+     téléphone : « Jours de la semaine » y tombait sur trois lignes quand ses
+     voisines n'en prenaient qu'une. Le libellé porte le sens, l'icône décore —
+     c'est elle qui s'efface. */
+  .segmented-lg button svg {
+    display: none;
+  }
+  .segmented-lg button {
+    padding: 10px 6px;
+  }
   .stats-grid {
     gap: 11px;
   }
@@ -3675,10 +3714,20 @@ fieldset.field legend {
     flex-basis: 100%;
     max-width: none;
   }
+  /* Une base assez large pour lire l'option la plus longue — « Toutes les
+     réponses » en réclame 135 à cette taille de texte. En dessous de quoi le
+     sélecteur passe à la ligne et prend toute la largeur : mieux vaut une
+     rangée de plus qu'un filtre qui n'affiche que « Tout… ». Le `max-width`
+     de 48 % qui tenait ici le réduisait à 64 px sur un téléphone de 320, et
+     à 27 px sur l'historique où le filtre de période dispute la rangée. */
   .table-filters select {
-    flex: 1;
-    max-width: 48%;
+    flex: 1 1 145px;
+    min-width: 0;
+    max-width: none;
     font-size: 10px;
+  }
+  .table-filters .period-filter {
+    flex-basis: 100%;
   }
   .table-filters > .muted {
     margin: 0;

@@ -243,7 +243,19 @@ node node_modules/@playwright/test/cli.js install chromium
 node node_modules/@playwright/test/cli.js test
 ```
 
-Les tests couvrent notamment les validations explicites, la clôture, les disponibilités 24 h, les publications, les exports, l'isolation des organisations en PostgreSQL, la publication contrôlée en base, la résistance à une sauvegarde locale inutilisable, la virtualisation de la synthèse et les parcours utilisateur sur ordinateur et mobile. Deux d'entre eux gardent l'adaptation aux écrans : aucune page ne dépasse la largeur de l'appareil à 320 et 768 px, et aucune commande ne descend sous 24 px de côté. Les tests navigateur fixent l'horloge au 18 septembre 2026 pour rendre la campagne d'exemple reproductible.
+Les tests couvrent notamment les validations explicites, la clôture, les disponibilités 24 h, les publications, les exports, l'isolation des organisations en PostgreSQL, la publication contrôlée en base, la résistance à une sauvegarde locale inutilisable, la virtualisation de la synthèse et les parcours utilisateur sur ordinateur et mobile. Quatre d'entre eux gardent l'adaptation aux écrans, décrite plus bas. Les tests navigateur fixent l'horloge au 18 septembre 2026 pour rendre la campagne d'exemple reproductible.
+
+### Adaptation aux écrans
+
+Une seule rupture sépare le téléphone de l'ordinateur, à 760 px : en dessous, la barre latérale devient un tiroir et une barre de navigation s'installe en bas. Trois ruptures de confort l'accompagnent — 1200, 1000 et 560 px — et une quatrième, à 1700, élargit la mise en page sur les très grands écrans.
+
+`tests/e2e/responsive.spec.ts` en garde quatre règles. Deux s'exécutent toujours, sur `/connexion` et `/hors-ligne` : aucune page ne dépasse la largeur de l'appareil, aucune commande ne descend sous 24 px de côté. Les deux autres demandent `E2E_EMAIL` et `E2E_PASSWORD` et parcourent alors les quinze écrans de travail, où se trouvent les tableaux, les filtres et les modales — la partie où l'adaptation se joue vraiment. La quatrième mesure une chose qu'aucun débordement ne signale : **un sélecteur trop étroit pour l'option qu'il affiche**. Il ne déborde de rien, il ne coupe aucun texte au sens du navigateur, il affiche simplement « Tout… » et ne dit plus ce qu'il filtre.
+
+Trois défauts corrigés en septembre 2026 valent d'être notés, parce qu'ils reviendront sous la même forme :
+
+- **Une cible de 24 px doit être imposée, jamais espérée.** Une case à cocher de navigateur fait 13 px, un « × » de texte en fait 11. Trois endroits l'avaient oublié — les qualifications d'une fiche agent, les cases des fiches, la croix du bandeau de message.
+- **`max-width` en pourcentage sur un élément flexible est un piège sur téléphone.** Les filtres portaient `max-width: 48 %`, ce qui les réduisait à 64 px sur un écran de 320 et à 27 px sur l'historique, où le filtre de période dispute la même rangée. Une base en pixels (`flex: 1 1 145px`) laisse l'élément passer à la ligne plutôt que rétrécir sous le lisible.
+- **Un côte à côte qui tient à 600 px ne tient pas à 320.** L'anneau des statistiques laissait 75 px à son texte, un mot par ligne. Il s'empile sous 560 px, et garde la disposition de la maquette au-dessus.
 
 ## Limites et prochaines étapes
 
