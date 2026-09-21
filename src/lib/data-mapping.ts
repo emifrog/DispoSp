@@ -43,6 +43,43 @@ export function taken<T>(what: string, result: { data: unknown; error: { message
   return (result.data ?? fallback) as T;
 }
 
+/**
+ * Lire une table en entier, page par page.
+ *
+ * C'est le **compte exact** qui dit qu'on a fini, et non la taille de la page.
+ * S'arrêter sur « page plus courte que demandé » paraît suffisant et ne l'est
+ * pas : rien ne garantit que le serveur serve autant de lignes qu'on en
+ * demande — PostgREST a son propre plafond — et une page écourtée par ce
+ * plafond passerait pour la dernière. On retomberait exactement dans la
+ * troncature silencieuse qu'on cherche à supprimer.
+ *
+ * Sans compte disponible, on se rabat sur la taille de page, faute de mieux.
+ */
+export async function paged<T>(
+  what: string,
+  size: number,
+  page: (
+    from: number,
+    to: number,
+  ) => PromiseLike<{ data: unknown; error: { message: string } | null; count: number | null }>,
+): Promise<T[]> {
+  const collected: T[] = [];
+  for (;;) {
+    const result = await page(collected.length, collected.length + size - 1);
+    const batch = taken<T[]>(what, result, []);
+    collected.push(...batch);
+
+    const total = result.count;
+    if (total !== null ? collected.length >= total : batch.length < size) return collected;
+    // Ni fini ni avancé : mieux vaut une erreur qu'une boucle sans fin ou une
+    // liste tronquée qu'on présenterait comme entière.
+    if (!batch.length) {
+      console.error(`Lecture interrompue : ${what}, ${collected.length} ligne(s) sur ${total ?? "?"}`);
+      throw new Error(READ_FAILED);
+    }
+  }
+}
+
 const PARIS = "Europe/Paris";
 /** A campaign window is a timestamp in the database and a calendar day on screen. */
 export const dayIn = (timestamp: string) => formatInTimeZone(new Date(timestamp), PARIS, "yyyy-MM-dd");
