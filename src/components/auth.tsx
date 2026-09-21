@@ -177,8 +177,8 @@ function PasswordForm({
             {failure}
           </p>
         )}
-        <Button type="submit" className="full-width" disabled={form.formState.isSubmitting}>
-          <LogIn size={17} />
+        <Button type="submit" className="full-width" pending={form.formState.isSubmitting}>
+          {!form.formState.isSubmitting && <LogIn size={17} />}
           {form.formState.isSubmitting ? "Connexion…" : "Se connecter"}
           <ChevronRight size={17} />
         </Button>
@@ -256,8 +256,8 @@ function SsoForm({ onBack }: { onBack: () => void }) {
             {failure}
           </p>
         )}
-        <Button type="submit" className="full-width" disabled={form.formState.isSubmitting}>
-          <Building2 size={17} />
+        <Button type="submit" className="full-width" pending={form.formState.isSubmitting}>
+          {!form.formState.isSubmitting && <Building2 size={17} />}
           {form.formState.isSubmitting ? "Redirection…" : "Continuer"}
           <ChevronRight size={17} />
         </Button>
@@ -330,8 +330,8 @@ function ForgottenForm({ onBack }: { onBack: () => void }) {
             {failure}
           </p>
         )}
-        <Button type="submit" className="full-width" disabled={form.formState.isSubmitting}>
-          <Send size={17} />
+        <Button type="submit" className="full-width" pending={form.formState.isSubmitting}>
+          {!form.formState.isSubmitting && <Send size={17} />}
           {form.formState.isSubmitting ? "Envoi…" : "Envoyer le lien"}
         </Button>
       </form>

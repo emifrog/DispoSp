@@ -174,8 +174,8 @@ export function Campaigns() {
             Horaires : {state.organization.dayStart} h–{state.organization.nightStart} h et{" "}
             {state.organization.nightStart} h–{state.organization.dayStart} h le lendemain.
           </p>
-          <Button type="submit" className="full-width">
-            <Plus size={16} />
+          <Button type="submit" className="full-width" pending={form.formState.isSubmitting}>
+            {!form.formState.isSubmitting && <Plus size={16} />}
             Créer et ouvrir la campagne
           </Button>
         </form>
@@ -780,6 +780,7 @@ export function Settings() {
   const { state, run, canAdminister } = useApp();
   const [dayStart, setDayStart] = useState(state.organization.dayStart);
   const [nightStart, setNightStart] = useState(state.organization.nightStart);
+  const [saving, setSaving] = useState(false);
   if (!canAdminister) return <AdministrationOnly title="Paramètres du centre" />;
   return (
     <>
@@ -787,9 +788,11 @@ export function Settings() {
       <div className="settings-width">
         <Panel title="Horaires par défaut" subtitle="Ils sont appliqués uniquement aux nouvelles campagnes.">
           <form
-            onSubmit={e => {
+            onSubmit={async e => {
               e.preventDefault();
-              run({ type: "settings", dayStart, nightStart });
+              setSaving(true);
+              await run({ type: "settings", dayStart, nightStart });
+              setSaving(false);
             }}
           >
             <div className="form-grid">
@@ -818,7 +821,9 @@ export function Settings() {
               La nuit appartient à sa date de début. Le créneau 24 h couvre le Jour puis la Nuit, jusqu’au lendemain
               matin.
             </p>
-            <Button type="submit">Enregistrer les horaires</Button>
+            <Button type="submit" pending={saving}>
+              Enregistrer les horaires
+            </Button>
           </form>
         </Panel>
         <div className="info-card horizontal">

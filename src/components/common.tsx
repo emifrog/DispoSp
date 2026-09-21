@@ -129,6 +129,36 @@ export function Panel({
     </section>
   );
 }
+/**
+ * L'indicateur d'attente.
+ *
+ * Un SVG animé par CSS plutôt qu'une icône de la bibliothèque : la rotation
+ * doit s'arrêter pour qui a demandé moins d'animations, et une règle CSS sait
+ * le faire — un composant qui tourne tout seul, non.
+ *
+ * `aria-hidden` : il ne dit rien qu'un lecteur d'écran doive entendre. C'est le
+ * texte à côté qui porte le sens, et c'est lui qu'on annonce.
+ */
+export function Spinner({ size = 20 }: { size?: number }) {
+  return (
+    <svg className="spinner" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="3" />
+      <path d="M21 12a9 9 0 0 0-9-9" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** L'écran d'attente d'une navigation : il occupe la place plutôt que de la
+    laisser vide, pour que rien ne saute quand le contenu arrive. */
+export function Loading({ label = "Chargement…" }: { label?: string }) {
+  return (
+    <div className="loading-state" role="status">
+      <Spinner size={28} />
+      <p>{label}</p>
+    </div>
+  );
+}
+
 /** Un écran que seule l'administration peut lire. La base le dit aussi — ses
     policies ne renvoient rien aux autres — mais une page vide n'explique rien. */
 export function AdministrationOnly({ title }: { title: string }) {

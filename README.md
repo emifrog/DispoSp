@@ -129,6 +129,16 @@ Les icônes d'application portent le symbole, une flamme et un calendrier en cou
 
 Les fichiers d'origine restent dans `public/logo v2/`, sous leurs noms de livraison. Les fichiers servis en sont des copies renommées par usage : l'espace dans le nom du dossier n'a pas à se retrouver dans une URL, et « v2 » aura tort à la prochaine version.
 
+### Indicateurs d’attente
+
+Trois attentes différentes, trois indicateurs — les confondre ferait tourner vingt boutons pour un seul geste.
+
+- **Le bouton cliqué.** `Button` regarde ce que son `onClick` lui rend : une promesse, et il s’éteint, affiche son spinner et attend qu’elle se règle. Rien à passer au point d’appel, toutes les commandes rendent une promesse. Un bouton d’envoi ne reçoit pas le clic — c’est le `onSubmit` du formulaire qui travaille — il reçoit alors `pending` ; les formulaires React Hook Form y passent leur `formState.isSubmitting`.
+- **L’écran entier.** `provider.tsx` expose `busy`, vrai pendant l’action serveur **et** pendant le `router.refresh()` qui la suit — un `useTransition`, sans quoi l’écran paraîtrait rendu alors que ses données sont encore celles d’avant. Il rend une fine barre balayée en haut de la page, `role="status"`, sans rien masquer : l’écran reste lisible.
+- **La navigation.** `src/app/loading.tsx` couvre le premier chargement. Il est à la racine et non dans `(workspace)` : la mise en page du groupe lit toute la base avant de rendre la barre latérale, et un `loading` de groupe n’enveloppe pas la mise en page qui le porte.
+
+Le spinner est un SVG animé par CSS, pas une icône de la bibliothèque : `prefers-reduced-motion: reduce` arrête la rotation et le balayage de la barre, qui reste visible en opacité réduite. Une icône qui tournerait toute seule ne saurait pas s’arrêter. Il porte `aria-hidden` — c’est le texte à côté qui est annoncé.
+
 ### Application installable
 
 `src/app/manifest.ts` décrit l'application, ses icônes et deux raccourcis ; `src/components/pwa.tsx` enregistre l'agent de service et propose l'installation depuis l'écran de profil. Les icônes servies viennent du dossier de marque, comme décrit plus haut ; iOS ignore le manifeste et prend `apple-touch-icon.png`.

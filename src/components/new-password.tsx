@@ -176,8 +176,13 @@ export function NewPasswordForm({ variant = "reset" }: { variant?: keyof typeof 
                   {failure}
                 </p>
               )}
-              <Button type="submit" className="full-width" disabled={status !== "ready" || form.formState.isSubmitting}>
-                <Check size={17} />
+              <Button
+                type="submit"
+                className="full-width"
+                disabled={status !== "ready"}
+                pending={status === "checking" || form.formState.isSubmitting}
+              >
+                {status !== "checking" && !form.formState.isSubmitting && <Check size={17} />}
                 {status === "checking"
                   ? "Vérification du lien…"
                   : form.formState.isSubmitting
