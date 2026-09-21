@@ -131,6 +131,13 @@ label {
   flex-direction: column;
   z-index: 30;
   border-right: 1px solid #203654;
+  /* Le menu mesure près de 870 px : il ne tient pas dans une fenêtre de portable
+     posée en paysage, ni dans un 1024 × 768. Sans défilement, ses dernières
+     rubriques passaient sous le bord de l'écran et devenaient inatteignables —
+     huit d'entre elles à 844 × 390, « Paramètres » dès 1024 × 768. `contain`
+     évite que le geste, une fois le menu au bout, entraîne la page derrière. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .brand {
   display: block;
@@ -3499,6 +3506,15 @@ fieldset.field legend {
   .ribbon-icon {
     width: 34px;
     height: 34px;
+  }
+  /* Deux colonnes ne tiennent plus. Un champ `month` réclame 173 px de large
+     avant même de pouvoir s'afficher, un `date` 160 : la grille calculait des
+     pistes de 155 et 144 px dans un conteneur de 248, et le second champ
+     sortait de la boîte de dialogue — « Clôture des réponses » coupée à droite.
+     `min-width: auto` sur un élément de grille refuse de comprimer en deçà de
+     cette largeur intrinsèque ; seul l'empilement résout. */
+  .form-grid {
+    grid-template-columns: 1fr;
   }
   .segmented button {
     font-size: 10px;

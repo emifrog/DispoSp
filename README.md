@@ -264,6 +264,13 @@ Trois défauts corrigés en septembre 2026 valent d'être notés, parce qu'ils r
 - **`max-width` en pourcentage sur un élément flexible est un piège sur téléphone.** Les filtres portaient `max-width: 48 %`, ce qui les réduisait à 64 px sur un écran de 320 et à 27 px sur l'historique, où le filtre de période dispute la même rangée. Une base en pixels (`flex: 1 1 145px`) laisse l'élément passer à la ligne plutôt que rétrécir sous le lisible.
 - **Un côte à côte qui tient à 600 px ne tient pas à 320.** L'anneau des statistiques laissait 75 px à son texte, un mot par ligne. Il s'empile sous 560 px, et garde la disposition de la maquette au-dessus.
 
+Deux autres sont venus d'une relecture, et ils disent surtout ce qu'une mesure du débordement **horizontal de la page** ne peut pas voir :
+
+- **La hauteur.** Le menu mesure près de 870 px et il est en `position: fixed` : ce qui dépasse le bas de l'écran ne fait déborder aucune page, il sort simplement du cadre. Sans `overflow-y` sur la barre, huit rubriques devenaient inatteignables à 844 × 390 — un portable posé en paysage — et « Paramètres » dès 1024 × 768.
+- **L'intérieur d'un conteneur borné.** Une boîte de dialogue masque ce qui la dépasse : la page ne déborde de rien, et le champ est pourtant coupé. « Clôture des réponses » sortait de 47 px à 320 px, parce qu'un champ `month` réclame 173 px avant de pouvoir s'afficher et qu'un élément de grille ne se comprime jamais sous sa largeur intrinsèque. Les grilles de formulaire s'empilent donc sur téléphone.
+
+Les deux règles correspondantes mesurent, l'une la position des liens du menu après l'avoir poussé jusqu'au bout, l'autre le `scrollWidth` de la boîte de dialogue elle-même. Chacune a été vérifiée en retirant son correctif : sans eux, six rubriques hors d'atteinte et 49 px de débordement.
+
 ## Limites et prochaines étapes
 
 Les onze migrations (`0001` à `0007`, puis les quatre migrations horodatées) sont appliquées sur le projet de développement ; l’application lit et écrit les données en mode connecté. Les étapes restantes sont suivies dans [le plan de développement](PLAN_DEVELOPPEMENT.md), et la vérification avant mise en service dans [la recette](RECETTE.md) :
