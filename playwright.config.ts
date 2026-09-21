@@ -23,7 +23,13 @@ export default defineConfig({
   ],
   webServer: {
     command: "node node_modules/next/dist/bin/next start --hostname 127.0.0.1",
-    url: "http://127.0.0.1:3000",
+    // L'écran de connexion, pas la racine. La racine n'est pas un chemin public :
+    // sans coordonnées Supabase, le garde y lève et rend une 500, que Playwright
+    // ne tient pas pour un serveur prêt — il attendait alors ses soixante
+    // secondes puis renonçait, sur l'environnement même que ces parcours doivent
+    // couvrir. `/connexion` se sert sans aucune base, et c'est précisément la
+    // surface que l'intégration continue vérifie.
+    url: "http://127.0.0.1:3000/connexion",
     // L'application ne tourne qu'en mode connecté : les parcours qui demandent une
     // session se sautent d'eux-mêmes sans NEXT_PUBLIC_SUPABASE_URL, ce qui est le
     // cas de l'intégration continue. Restent le manifeste, l'agent de service et

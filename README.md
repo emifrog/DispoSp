@@ -223,6 +223,13 @@ pnpm test:e2e
 
 Ces six vérifications sont celles exécutées par l'intégration continue.
 
+**L'intégration continue ne fournit délibérément aucun projet Supabase**, et cela impose deux choses qu'il est facile de reperdre :
+
+- **Aucun écran de l'espace de travail ne doit être prérendu.** Next l'apprenait par `cookies()`, que le client Supabase finit par appeler — mais sans coordonnées il n'y arrive jamais, `credentials()` levant avant. Le prérendu les prenait donc pour des pages statiques et le build s'arrêtait sur la première : « Error occurred prerendering page "/accueil" ». `readSession()` ouvre maintenant par `await connection()`, qui le dit sans rien supposer de la configuration. `export const dynamic` ferait la même chose, mais la v16 l'a retiré de la configuration de segment.
+- **Le sondage de démarrage de Playwright vise `/connexion`, pas la racine.** La racine n'est pas un chemin public : sans coordonnées, le garde y lève et rend une 500, que Playwright ne tient pas pour un serveur prêt. Il attendait ses soixante secondes puis renonçait — sur l'environnement même que ces parcours doivent couvrir.
+
+Sans base, la suite navigateur rend 6 parcours passés et 16 sautés ; avec `.env` et un compte d'essai, 18 passés et 4 sautés.
+
 **La suite navigateur a fondu avec le mode démonstration**, et il faut le dire franchement : les trente parcours d'interface qu'elle jouait — saisie, validation, affectation, publication, exports — pilotaient douze agents fictifs qui n'existent plus. Ils n'ont pas été remplacés par des tests automatiques ; ils sont devenus les étapes manuelles de [la recette](RECETTE.md). Ce qui reste automatique et sans données : le manifeste, les icônes, l'agent de service et l'adaptation aux écrans.
 
 Les parcours de `tests/e2e/connexion.spec.ts` demandent un projet Supabase joignable et se sautent sans `NEXT_PUBLIC_SUPABASE_URL` — ce qui est le cas de l'intégration continue, qui n'en fournit aucun et vérifie ainsi que la surface publique se sert sans base.

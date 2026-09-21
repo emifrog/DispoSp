@@ -1,4 +1,5 @@
 import "server-only";
+import { connection } from "next/server";
 import { createReadClient } from "./supabase/server";
 import type { Session } from "./session";
 
@@ -6,6 +7,22 @@ import type { Session } from "./session";
 // query below runs under RLS as the signed-in user: an empty result is the
 // database's answer, not a missing filter.
 export async function readSession(): Promise<Session | null> {
+  /*
+   * Aucun écran de l'espace de travail ne peut être prérendu : ils dépendent
+   * tous de qui est connecté. Next l'apprenait jusqu'ici par `cookies()`, que
+   * le client Supabase finit par appeler — mais il n'y arrive jamais sans
+   * coordonnées, `credentials()` levant avant. Le prérendu croyait donc avoir
+   * affaire à des pages statiques, et le build échouait sur la première :
+   * « Error occurred prerendering page "/accueil" ». C'est exactement la
+   * situation de l'intégration continue, qui ne fournit délibérément aucun
+   * projet Supabase.
+   *
+   * `connection()` le dit avant toute lecture, et sans rien supposer de la
+   * configuration. `export const dynamic` ferait la même chose, mais la v16
+   * l'a retiré de la configuration de segment — voir
+   * `node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/02-route-segment-config/index.md`.
+   */
+  await connection();
   const supabase = await createReadClient();
   const {
     data: { user },
