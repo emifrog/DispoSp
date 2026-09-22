@@ -143,7 +143,7 @@ label {
   display: block;
   height: auto;
   max-width: 100%;
-  margin:auto;
+  margin: auto;
 }
 .sidebar-brand {
   padding: 0 14px 29px;
@@ -265,21 +265,34 @@ label {
   align-items: center;
   gap: 14px;
 }
-.demo-tag {
+/* Le rôle du compte, dans le bandeau. Une étiquette, pas un statut : pas de
+   point de couleur — ce qu'elle dit est stable, il n'y a rien à surveiller.
+   Trois teintes, du gris au bleu puis au marine de la marque, dans l'ordre de
+   ce que chaque rôle peut faire. Le mot dit tout seul lequel c'est ; la couleur
+   ne fait que le rendre reconnaissable d'un coup d'œil, et ne porte jamais
+   l'information à elle seule. Elle reste hors du vert, de l'orange et du rouge,
+   qui appartiennent à la couverture d'un créneau. */
+.role-tag {
   display: flex;
   align-items: center;
-  gap: 6px;
   color: #59708a;
   font-size: 10px;
   padding: 5px 8px;
   background: #f2f5f9;
   border-radius: 5px;
 }
-.demo-tag > span {
-  width: 5px;
-  height: 5px;
-  background: #879ab2;
-  border-radius: 50%;
+/* L'administrateur est plein, et c'est le seul : à teinte égale, son étiquette
+   se confondait avec le gris de l'agent, et c'est précisément celle qu'on doit
+   reconnaître sans lire — savoir qui, dans une salle, peut changer un rôle.
+   Contrastes mesurés : 4,67 pour l'agent, 6,12 pour le gestionnaire, 14,86 pour
+   l'administrateur — au-dessus des 4,5 exigés d'un texte de cette taille. */
+.role-tag.is-gestionnaire {
+  color: #1350c4;
+  background: #e8effc;
+}
+.role-tag.is-admin {
+  color: white;
+  background: var(--navy);
 }
 .role-switch select {
   border: 0;
@@ -307,10 +320,6 @@ label {
 .user-name strong {
   display: block;
   font-size: 12px;
-}
-.user-name small {
-  font-size: 10px;
-  color: var(--muted);
 }
 .context-banner {
   display: flex;
@@ -3297,12 +3306,6 @@ fieldset.field legend {
   .brand-mark {
     display: block;
   }
-  /* La pastille « Démo locale » répète le bandeau qui la suit immédiatement :
-     sur un écran étroit, la marque vaut mieux que la redite. Celle du mode
-     connecté reste, elle, parce qu'elle dit qu'on est sur de vraies données. */
-  .demo-tag:not(.connected) {
-    display: none;
-  }
   .topbar-actions {
     margin-left: auto;
   }
@@ -3442,7 +3445,9 @@ fieldset.field legend {
   .topbar-divider {
     display: none;
   }
-  .demo-tag {
+  /* Le nom disparaît sur un téléphone, l'étiquette de rôle reste : c'est elle
+     qui dit, à côté des initiales, sous quels droits on travaille. */
+  .role-tag {
     font-size: 9px;
   }
   .role-switch select {
@@ -3853,13 +3858,6 @@ fieldset.field legend {
 }
 
 /* Connexion et compte non rattaché */
-.demo-tag.connected {
-  color: #0f7256;
-  background: #e7f6f0;
-}
-.demo-tag.connected > span {
-  background: var(--green);
-}
 .sign-in {
   min-height: 100dvh;
   display: grid;

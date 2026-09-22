@@ -56,6 +56,16 @@ const initials = (name: string) =>
     .join("")
     .toUpperCase();
 
+/**
+ * La teinte de l'étiquette de rôle, du gris au marine.
+ *
+ * Nommée ici et non calculée à partir du rôle : un rôle que le schéma ajouterait
+ * demain — ou le `RESPONSABLE` que la migration du 19 septembre a retiré et
+ * qu'une base pas encore migrée porterait encore — retombe sur le gris neutre,
+ * plutôt que sur une classe CSS qui n'existe pas.
+ */
+const roleTones: Record<string, string> = { ADMIN: "is-admin", GESTIONNAIRE: "is-gestionnaire" };
+
 export function Shell({ children, session }: { children: ReactNode; session: AttachedSession }) {
   const { state, actor, campaignId, setCampaignId, memberRole, canAdminister } = useApp();
   const path = usePathname();
@@ -150,7 +160,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
         )}
         <div className="sidebar-bottom">
           <span className="version">
-            DispoSP <span>Première version · 0.1</span>
+            DispoSP <span>Version · 1.0</span>
           </span>
         </div>
       </aside>
@@ -189,15 +199,19 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
               <Bell size={19} />
               {unread > 0 && <span className="bell-badge">{unread > 9 ? "9+" : unread}</span>}
             </Link>
-            <span className="demo-tag connected">
-              <span />
-              Connecté
+            {/* Le rôle plutôt qu'un « Connecté » : l'agent sait qu'il est
+                connecté — il vient de saisir son mot de passe —, mais il ne
+                sait pas toujours ce que son rôle lui ouvre. Et cette place est
+                la seule du bandeau qui reste visible sur un téléphone, où le
+                nom et sa ligne disparaissent. */}
+            <span className={`role-tag ${roleTones[session.membership.role] ?? ""}`}>
+              <span className="sr-only">Rôle : </span>
+              {roleLabels[session.membership.role] ?? session.membership.role}
             </span>
             <span className="topbar-divider" />
             <div className="user-avatar">{initials(session.displayName)}</div>
             <div className="user-name">
               <strong>{session.displayName}</strong>
-              <small>{roleLabels[session.membership.role] ?? session.membership.role}</small>
             </div>
             <form method="post" action="/deconnexion">
               <button type="submit" className="button button-ghost button-sm" aria-label="Se déconnecter">
@@ -245,10 +259,10 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
             children
           )}
         </main>
-        <footer className="page-footer">
+        {/*<footer className="page-footer">
           <span>DispoSP · Plus loin, ensemble.</span>
           <span>Horaires en heure de Paris</span>
-        </footer>
+        </footer>*/}
       </div>
       <nav className="mobile-nav" aria-label="Navigation mobile">
         {nav.slice(0, 4).map(n => (
