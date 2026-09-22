@@ -351,8 +351,7 @@ export function PushInvitation({ userId }: { userId: string }) {
       <div className="install-app">
         <BellRing size={20} />
         <p>
-          Le message reste bref — la nature de l’événement, rien d’autre : un écran verrouillé se lit par-dessus
-          l’épaule. Chaque appareil s’active séparément, et vous pouvez revenir sur ce choix à tout moment depuis
+          Vous pouvez revenir sur ce choix à tout moment depuis
           <strong> Mon profil</strong>.
         </p>
       </div>
@@ -401,7 +400,7 @@ export function PushNotifications() {
           <div className="install-app">
             <BellRing size={20} />
             <p>
-              Ouverture d’une campagne, rappel avant clôture, publication du planning et désistements arrivent sur cet
+              Rappel avant clôture, publication du planning et désistements arrivent sur cet
               appareil, même application fermée. Le message reste volontairement bref&nbsp;: un écran verrouillé se lit
               par-dessus l’épaule, aucun nom ni détail de garde n’y figure.
             </p>

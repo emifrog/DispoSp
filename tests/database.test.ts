@@ -1,32 +1,11 @@
 import { PGlite } from "@electric-sql/pglite";
 import { readFileSync } from "node:fs";
 import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it } from "vitest";
+import { baseAuthSchema, MIGRATIONS } from "./fixtures/schema";
 const db = new PGlite();
-// Applied in order everywhere below, exactly as against the real project.
-const MIGRATIONS = [
-  "0001_foundation.sql",
-  "0002_planning.sql",
-  "0003_client_writes.sql",
-  "0004_agent_administration.sql",
-  "0005_notifications.sql",
-  "0006_email_dispatch.sql",
-  "0007_availability_templates.sql",
-  "20260918151529_atomic_campaign_creation.sql",
-  "20260918180846_atomic_availability_templates.sql",
-  "20260919120000_grades_fonctions_roles.sql",
-  "20260919200000_desistements.sql",
-  "20260920090000_correctifs_droits_et_besoins.sql",
-  "20260920140000_invitation_compte_existant.sql",
-  "20260921090000_eligibilite_publication.sql",
-  "20260921100156_web_push_notifications.sql",
-  "20260921130000_web_push_abonnement.sql",
-  "20260921140000_verrou_publication.sql",
-];
-// `service_role` est le compte du serveur chez Supabase, et il passe outre les
-// policies : la file d'envoi des notifications poussées se lit pour tout un
-// centre, ce qu'aucune session d'agent ne pourrait faire. Sans lui ici, la
-// migration Web Push ne s'appliquerait même pas.
-const baseAuthSchema = `create role anon; create role authenticated; create role service_role bypassrls; create schema auth; create table auth.users (id uuid primary key, email text unique, email_confirmed_at timestamptz); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$; grant usage on schema auth, public to authenticated, service_role; grant execute on function auth.uid() to authenticated, service_role; alter default privileges in schema public grant all on tables to service_role; alter default privileges in schema public grant all on functions to service_role;`;
+// La liste des migrations et le schéma d'authentification vivent avec les
+// autres montages de test : les parcours de provisionnement s'en servent aussi,
+// et deux listes finiraient par diverger.
 const orgA = "10000000-0000-0000-0000-000000000001";
 const orgB = "10000000-0000-0000-0000-000000000002";
 const teamA = "20000000-0000-0000-0000-000000000001";
@@ -454,10 +433,14 @@ describe("Ouverture de la première campagne", () => {
       "insert into auth.users(id,email,email_confirmed_at) values (gen_random_uuid(), 'chef@example.org', now())",
     );
     await fresh.exec(
+      // Les mêmes noms que ceux écrits en tête de premiere-campagne.sql : les
+      // parcours ci-dessous l'exécutent tel qu'il est livré, valeurs par défaut
+      // comprises, et vérifient donc aussi qu'elles se répondent d'un fichier à
+      // l'autre.
       withValues(file("premiere-organisation.sql"), {
         admin_email: "chef@example.org",
-        org_name: "CIS Test",
-        team_name: "Section Test",
+        org_name: "CIS Nice Bon Voyage",
+        team_name: "Bon Voyage",
       }),
     );
     return fresh;
@@ -466,7 +449,7 @@ describe("Ouverture de la première campagne", () => {
   it("refuse une organisation inconnue", async () => {
     const fresh = await provisioned();
     await expect(
-      fresh.exec(withValues(file("premiere-campagne.sql"), { org_name: "Centre absent", team_name: "Section Test" })),
+      fresh.exec(withValues(file("premiere-campagne.sql"), { org_name: "Centre absent", team_name: "Bon Voyage" })),
     ).rejects.toThrow();
     await fresh.exec("rollback");
     await fresh.close();

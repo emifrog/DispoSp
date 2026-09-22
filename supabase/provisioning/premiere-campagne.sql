@@ -10,8 +10,8 @@
 begin;
 do $$
 declare
-  org_name  constant text := 'CIS Test';
-  team_name constant text := 'Section Test';
+  org_name  constant text := 'CIS Nice Bon Voyage';
+  team_name constant text := 'Bon Voyage';
   -- Décalage en mois par rapport au mois courant : 1 = le mois prochain.
   month_offset constant int := 1;
   -- Le préfixe v_ évite toute ambiguïté avec les colonnes du même nom : sans lui

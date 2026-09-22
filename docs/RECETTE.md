@@ -59,7 +59,15 @@ Un domaine non validé donne pire : les messages partent et atterrissent en ind�
 
 **Sinon** — Sans la clé, aucune invitation ne part : la ligne est enregistrée et l'écran le dit, mais aucun agent ne peut entrer. Sans les gabarits, les liens ne fonctionnent que sur l'appareil qui a fait la demande — ce qui condamne l'activation, toujours demandée par une personne et ouverte par une autre.
 
-### 0.5 Les notifications poussées
+### 0.5 Le centre sur lequel se fait la recette
+
+**Faire** — Vérifier que le centre affiché en haut de l'application est le vrai centre, et non un centre d'essai. Le nom d'un centre ne se change depuis aucun écran : la bascule se fait par `supabase/provisioning/inventaire-du-centre.sql`, qui montre ce que contient le centre d'essai, puis `basculer-vers-un-vrai-centre.sql`, qui crée le vrai et **efface l'autre**. Le README détaille les trois étapes.
+
+**Attendu** — Le vrai nom, une section, les horaires du centre, et les comptes qui doivent y être rattachés — **y compris celui de la recette** (`E2E_EMAIL`), sans quoi les parcours navigateur qui demandent une session se sautent.
+
+**Sinon** — Faire la recette sur un centre d'essai la vide de son sens : les emails partent à des adresses fictives, et les plannings produits ne servent à personne. Une fois la bascule faite, ouvrir la première campagne avec `premiere-campagne.sql`, sans quoi tous les écrans affichent celui qui l'explique.
+
+### 0.6 Les notifications poussées
 
 **Faire** — Vérifier que les deux migrations `20260921100156_web_push_notifications.sql` et `20260921130000_web_push_abonnement.sql` sont bien passées sur **le projet Supabase du site public** — elles le sont sur celui de développement. La table `public.push_subscriptions` doit exister. Puis vérifier sur l'hébergeur `NEXT_PUBLIC_WEB_PUSH_PUBLIC_KEY`, `WEB_PUSH_PRIVATE_KEY` et `WEB_PUSH_SUBJECT`, en plus de `SUPABASE_SECRET_KEY` déjà vérifiée à l'étape précédente.
 
@@ -314,7 +322,7 @@ Ces vérifications ne sont pas du confort. Elles portent sur des données person
 
 **À vérifier** — L'ordinateur de l'agent, sur lequel il n'a rien activé, ne reçoit rien. L'activation vaut pour un appareil, pas pour un compte.
 
-**Sinon** — La notification existe quand même dans **Notifications**, et l'email est parti. C'est le filet : la bulle est un rappel, jamais le canal officiel. Vérifiez alors l'étape 0.5 — migrations passées, trois variables présentes, construction refaite après un changement de clé publique.
+**Sinon** — La notification existe quand même dans **Notifications**, et l'email est parti. C'est le filet : la bulle est un rappel, jamais le canal officiel. Vérifiez alors l'étape 0.6 — migrations passées, trois variables présentes, construction refaite après un changement de clé publique.
 
 ---
 

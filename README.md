@@ -346,6 +346,22 @@ Les désistements sont implémentés ; les **échanges nommés** entre agents �
 
 Le retrait d'un compte et de ses données se fait par `supabase/provisioning/retirer-un-compte.sql`, dans l'éditeur SQL du tableau de bord. Il efface dans l'ordre des dépendances, refuse de laisser un centre sans administrateur actif, et ne touche pas au journal d'audit : c'est la suppression du compte lui-même, à la main, qui en anonymise l'auteur.
 
+### Quitter le centre d'essai
+
+**Le nom d'un centre n'est modifiable par aucune session** : la migration `0003` ne donne au client le droit d'écrire que les horaires. Passer d'un centre d'essai à un vrai centre est donc une opération d'éditeur SQL, en trois temps :
+
+1. `supabase/provisioning/inventaire-du-centre.sql` — ne modifie rien. Il compte ce que le centre d'essai contient, table par table, et liste qui y est rattaché. On regarde ce qu'on s'apprête à perdre avant de le perdre.
+2. `supabase/provisioning/basculer-vers-un-vrai-centre.sql` — crée le vrai centre avec sa section, ses horaires et son catalogue de qualifications, y rattache les comptes que vous nommez, puis **efface le centre d'essai et tout ce qu'il contient**. Irréversible, et atomique : une erreur annule la création comme l'effacement.
+3. `supabase/provisioning/premiere-campagne.sql` — ouvre la première campagne du nouveau centre. Sans campagne, tous les écrans affichent celui qui l'explique.
+
+Trois points à connaître avant de lancer le second.
+
+**Les horaires du centre d'essai sont repris.** S'ils avaient été réglés pour de bon, les recréer à 8 h et 20 h serait une régression que personne ne remarquerait avant la première campagne.
+
+**Les comptes d'authentification ne sont jamais supprimés.** Ceux qui ne sont pas repris restent, sans rattachement : ils peuvent se connecter, et l'application leur dit qu'ils n'appartiennent à aucun centre. `retirer-un-compte.sql` puis Authentication → Users les font disparaître pour de bon. **Le compte de recette (`E2E_EMAIL`) doit figurer parmi les comptes repris**, sans quoi les parcours navigateur qui demandent une session se sauteront.
+
+**L'effacement suit l'ordre des dépendances, et il est vérifié.** Toutes les clés étrangères de ce schéma sont en `on delete restrict` : rien ne part en cascade, une table oubliée fait échouer la transaction entière. `tests/provisioning.test.ts` exécute **le fichier lui-même** contre un centre peuplé — campagne close et verrouillée, planning publié, désistement, appareil abonné, journal d'audit — et vérifie qu'il ne reste rien. Il vérifie aussi que le garde des disponibilités, mis en sommeil le temps de l'effacement (il refuse toute écriture sur une campagne close, y compris un effacement), est bien rendu ensuite.
+
 ## Références de mise en œuvre
 
 - [Installation Next.js](https://nextjs.org/docs/app/getting-started/installation)
