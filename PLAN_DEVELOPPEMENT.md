@@ -1,6 +1,6 @@
 # Plan de développement — DispoSP
 
-État au 21 septembre 2026. **Les seize premières migrations sont appliquées** sur le projet de développement, les deux du Web Push comprises ; le tableau des migrations du [README](README.md) fait foi. Une dix-septième attend : le verrou de publication issu de la revue du 21 septembre. Le reste tient à la configuration de l’hébergement et à la recette, pas au schéma. Les statuts ci-dessous distinguent les fonctionnalités implémentées des vérifications restant à effectuer sur le site hébergé.
+État au 21 septembre 2026. **Les seize premières migrations sont appliquées** sur le projet de développement, les deux du Web Push comprises ; le tableau des migrations du [README](README.md) fait foi. Deux attendent : le verrou de publication issu de la revue du 21 septembre, et les trois correctifs de droits de l’analyse du 22 septembre (`20260922100000`). Le reste tient à la configuration de l’hébergement et à la recette, pas au schéma. Les statuts ci-dessous distinguent les fonctionnalités implémentées des vérifications restant à effectuer sur le site hébergé.
 
 Ce document complète le cahier des charges V1.0 du 17 septembre 2026 et `DECISIONS_FONCTIONNELLES.md`, qui restent la référence fonctionnelle. La configuration et les commandes sont détaillées dans le [README](README.md). Les réserves techniques encore ouvertes — droits de lecture à trancher, écritures composées, découpage de `loadState()` — sont suivies dans [la revue technique](ANALYSE.md).
 
@@ -67,7 +67,7 @@ Le développement des lots 3 et 5 a avancé : la priorité porte désormais sur 
 
 ### Lot 0 — Socle ✅ implémenté
 
-Versionnement et outillage, authentification, lecture des données, intégration continue et virtualisation de la synthèse. Seize migrations sont appliquées et le verrou de publication reste à passer ; le schéma compte 22 tables.
+Versionnement et outillage, authentification, lecture des données, intégration continue et virtualisation de la synthèse. Seize migrations sont appliquées ; le verrou de publication et les correctifs du 22 septembre restent à passer ; le schéma compte 22 tables.
 
 ### Lot 1 — Écriture des données ✅ implémentée, déploiement à confirmer
 

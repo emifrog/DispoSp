@@ -400,9 +400,9 @@ export function PushNotifications() {
           <div className="install-app">
             <BellRing size={20} />
             <p>
-              Rappel avant clôture, publication du planning et désistements arrivent sur cet
-              appareil, même application fermée. Le message reste volontairement bref&nbsp;: un écran verrouillé se lit
-              par-dessus l’épaule, aucun nom ni détail de garde n’y figure.
+              Rappel avant clôture, publication du planning et désistements arrivent sur cet appareil, même application
+              fermée. Le message reste volontairement bref&nbsp;: un écran verrouillé se lit par-dessus l’épaule, aucun
+              nom ni détail de garde n’y figure.
             </p>
           </div>
           <div className="install-buttons">

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { assign, fillMonth, publish, sampleState, validate } from "./fixtures/centre";
 import {
   availableAgents,
+  defaultCampaign,
   entryKey,
   coverage,
   coverageLevel,
@@ -169,5 +170,39 @@ describe("Disponibilité habituelle", () => {
     expect(JSON.stringify(state.entries)).toBe(before);
     const monday = monthDays("2026-10").find(d => isoWeekday(d) === 1)!;
     expect(state.entries[entryKey(campaignId, julien, monday)]?.type).not.toBe("UNAVAILABLE");
+  });
+});
+
+describe("Campagne par défaut", () => {
+  const campaign = (month: string, closesOn: string, closed = false) => ({
+    ...sampleState(now).campaigns[0],
+    id: `campaign-${month}${closed ? "-close" : ""}`,
+    month,
+    closesOn,
+    closed,
+  });
+  // Le centre porte toutes ses campagnes, de la plus ancienne à la plus récente.
+  const centre = [
+    campaign("2026-08", "2026-07-31", true),
+    campaign("2026-09", "2026-08-31", true),
+    campaign("2026-10", "2026-09-30"),
+    campaign("2026-11", "2026-10-31"),
+  ];
+
+  it("ouvre sur la campagne qui attend une réponse, la première à clore", () => {
+    expect(defaultCampaign(centre, "2026-09-18")?.month).toBe("2026-10");
+    // Octobre est passée : novembre presse à son tour.
+    expect(defaultCampaign(centre, "2026-10-05")?.month).toBe("2026-11");
+  });
+
+  it("ouvre sur la plus récente quand plus rien n’attend de réponse", () => {
+    expect(defaultCampaign(centre, "2026-12-01")?.month).toBe("2026-11");
+    const allClosed = centre.map(c => ({ ...c, closed: true }));
+    expect(defaultCampaign(allClosed, "2026-09-18")?.month).toBe("2026-11");
+  });
+
+  it("ne retombe jamais sur la plus ancienne par le seul ordre de la liste", () => {
+    expect(defaultCampaign(centre, "2026-09-18")?.month).not.toBe("2026-08");
+    expect(defaultCampaign([], "2026-09-18")).toBeUndefined();
   });
 });

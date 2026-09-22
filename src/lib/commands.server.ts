@@ -391,6 +391,22 @@ async function writeMember(client: Client, session: AttachedSession, command: Of
   const organizationId = session.membership.organizationId;
   // The record and the membership are two tables with two policies. A partial
   // edit is visible and re-editable; nothing is derived from the other half.
+  //
+  // Le rattachement d'abord, la fiche ensuite. L'ordre inverse rendait la
+  // réactivation impossible : la fiche d'un membre désactivé n'était pas
+  // modifiable, la commande s'arrêtait là, et le rattachement — qui aurait
+  // rétabli l'accès — n'était jamais atteint. La migration du 22 septembre
+  // ouvre aussi la fiche des inactifs à l'encadrement ; l'ordre reste le bon
+  // pour une base qui ne l'aurait pas encore reçue.
+  const { data: membership, error: membershipFailure } = await client
+    .from("memberships")
+    .update({ team_id: command.teamId, role: command.role, active: command.active })
+    .eq("organization_id", organizationId)
+    .eq("user_id", command.userId)
+    .select("user_id");
+  if (membershipFailure) fail(membershipFailure);
+  if (!membership?.length) throw new Error("Vous n’avez pas le droit de modifier cette fiche.");
+
   const { data: profile, error: profileFailure } = await client
     .from("profiles")
     .update({
@@ -404,13 +420,6 @@ async function writeMember(client: Client, session: AttachedSession, command: Of
     .select("user_id");
   if (profileFailure) fail(profileFailure);
   if (!profile?.length) throw new Error("Vous n’avez pas le droit de modifier cette fiche.");
-
-  const { error: membershipFailure } = await client
-    .from("memberships")
-    .update({ team_id: command.teamId, role: command.role, active: command.active })
-    .eq("organization_id", organizationId)
-    .eq("user_id", command.userId);
-  if (membershipFailure) fail(membershipFailure);
 
   // The screen always sends the complete set, so the difference is computed here
   // rather than asking it to remember what it removed.

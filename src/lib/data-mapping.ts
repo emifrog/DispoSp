@@ -236,6 +236,7 @@ const auditLabels: Record<string, string> = {
   "availability_entry/SET": "Disponibilité renseignée",
   "availability_entry/CLEAR": "Disponibilité effacée",
   "campaign_participant/VALIDATE": "Réponse validée",
+  "campaign_participant/UNVALIDATE": "Validation retirée",
   "availability_campaign/CREATE": "Campagne ouverte",
   "availability_campaign/LOCK": "Campagne verrouillée",
   "availability_campaign/UNLOCK": "Campagne déverrouillée",

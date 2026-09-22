@@ -23,6 +23,15 @@ describe("Traduction des refus de la base", () => {
       "Qualifications non couvertes : Chef, SAP.",
     );
   });
+  it("traduit les refus du déclencheur de rattachement", () => {
+    expect(frenchMessage({ message: "Only an administrator can change a role" })).toContain("Seul un administrateur");
+    expect(frenchMessage({ message: "Cannot change your own role" })).toContain("propre rôle");
+    expect(frenchMessage({ message: "Cannot deactivate your own account" })).toContain("propre compte");
+    expect(frenchMessage({ message: "Only an administrator can deactivate an administrator" })).toContain(
+      "désactiver ou rétrograder un administrateur",
+    );
+    expect(frenchMessage({ message: "Cannot remove the last administrator" })).toContain("dernier administrateur");
+  });
   it("retombe sur le code SQL quand le message n’est pas reconnu", () => {
     expect(frenchMessage({ message: "permission denied for table teams", code: "42501" })).toContain(
       "n’avez pas le droit",

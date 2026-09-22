@@ -45,6 +45,24 @@ describe("Garde de session", () => {
     await expect(updateSession(ask("/tableau-de-bord"))).rejects.toThrow("Supabase");
   });
 
+  // Le rattrapage des envois poussés est appelé par un planificateur, sans
+  // cookie : c'est la route qui vérifie son jeton, pas le garde. Renvoyer cette
+  // requête vers la connexion rendait la route inaccessible — et la file ne se
+  // vidait plus qu'au rythme des clics des utilisateurs.
+  it("laisse passer le rattrapage des envois poussés sans session", async () => {
+    const updateSession = await middlewareWith({
+      NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test",
+    });
+    const request = new NextRequest(new URL("http://127.0.0.1:3000/api/push/dispatch"), {
+      method: "POST",
+      headers: { authorization: "Bearer 0123456789abcdef0123456789abcdef" },
+    });
+    const response = await updateSession(request);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+  });
+
   it("renvoie un visiteur sans session vers la connexion quand tout est configuré", async () => {
     const updateSession = await middlewareWith({
       NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",

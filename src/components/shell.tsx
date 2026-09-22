@@ -240,7 +240,11 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
               <select aria-label="Campagne active" value={campaignId} onChange={e => setCampaignId(e.target.value)}>
                 {state.campaigns.map(c => (
                   <option key={c.id} value={c.id}>
-                    {monthLabel(c.month)}
+                    {/* Le mois suffit, sauf quand deux campagnes le partagent —
+                        deux équipes, par exemple : le nom les distingue. */}
+                    {state.campaigns.some(o => o.id !== c.id && o.month === c.month)
+                      ? `${monthLabel(c.month)} · ${c.name}`
+                      : monthLabel(c.month)}
                   </option>
                 ))}
               </select>

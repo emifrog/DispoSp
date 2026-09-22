@@ -2476,3 +2476,190 @@ describe("Notifications poussées (Web Push)", () => {
     await expect(register("https://web.push.apple.com/appareil-etranger")).rejects.toThrow("aucun centre actif");
   });
 });
+
+describe("Correctifs du 22 septembre — réactivation, dernier administrateur, dévalidation", () => {
+  const org = "10000000-0000-0000-0000-0000000000c0";
+  const team = "20000000-0000-0000-0000-0000000000c0";
+  const admin = "30000000-0000-0000-0000-0000000000c0";
+  const second = "30000000-0000-0000-0000-0000000000c1";
+  const manager = "30000000-0000-0000-0000-0000000000c2";
+  const agent = "30000000-0000-0000-0000-0000000000c3";
+  const elsewhere = "30000000-0000-0000-0000-0000000000c9";
+  const campaign = "40000000-0000-0000-0000-0000000000c0";
+  let live: PGlite;
+  const be = async (id: string | null) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id ?? ""]);
+    if (id) await live.exec("set role authenticated");
+  };
+  const auditCount = async () =>
+    Number((await live.query<{ n: string }>("select count(*)::text n from public.audit_logs")).rows[0].n);
+
+  beforeAll(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const m of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    await live.exec(`insert into auth.users(id) values ('${admin}'), ('${second}'), ('${manager}'), ('${agent}'), ('${elsewhere}');
+      insert into public.profiles(user_id,display_name) values ('${admin}','Administratrice'), ('${second}','Second Admin'), ('${manager}','Gestionnaire'), ('${agent}','Agent'), ('${elsewhere}','Ailleurs');
+      insert into public.organizations(id,name) values ('${org}','Centre 22'), ('10000000-0000-0000-0000-0000000000c9','Centre voisin');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Golf'), ('20000000-0000-0000-0000-0000000000c9','10000000-0000-0000-0000-0000000000c9','Hotel');
+      insert into public.memberships values
+        ('${org}','${admin}','${team}','ADMIN',true),
+        ('${org}','${second}','${team}','ADMIN',true),
+        ('${org}','${manager}','${team}','GESTIONNAIRE',true),
+        ('${org}','${agent}','${team}','AGENT',true),
+        ('10000000-0000-0000-0000-0000000000c9','${elsewhere}','20000000-0000-0000-0000-0000000000c9','AGENT',false);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        values ('${campaign}','${org}','${team}','Octobre','2026-10-01','2026-10-01',now()-interval '1 day',now()+interval '1 day');
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values ('${org}','${campaign}','${agent}');`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  // B2 — la fiche d'un membre désactivé reste lisible et modifiable par
+  // l'encadrement, sans quoi « Réactiver » échouait avant d'atteindre le
+  // rattachement, et l'inactif s'affichait sous le nom « Agent ».
+  it("laisse l’encadrement lire et modifier la fiche d’un membre désactivé, puis le réactiver", async () => {
+    await be(manager);
+    await live.query("update public.memberships set active=false where organization_id=$1 and user_id=$2", [
+      org,
+      agent,
+    ]);
+    expect((await live.query("select display_name from public.profiles where user_id=$1", [agent])).rows).toEqual([
+      { display_name: "Agent" },
+    ]);
+    // L'ordre de writeMember : le rattachement d'abord, la fiche ensuite.
+    const back = await live.query(
+      "update public.memberships set active=true where organization_id=$1 and user_id=$2 returning active",
+      [org, agent],
+    );
+    expect(back.rows).toEqual([{ active: true }]);
+    const renamed = await live.query(
+      "update public.profiles set display_name='Agent Revenu' where user_id=$1 returning user_id",
+      [agent],
+    );
+    expect(renamed.rows).toEqual([{ user_id: agent }]);
+  });
+
+  it("ne laisse pas l’encadrement atteindre la fiche d’un membre d’un autre centre, actif ou non", async () => {
+    await be(admin);
+    expect((await live.query("select display_name from public.profiles where user_id=$1", [elsewhere])).rows).toEqual(
+      [],
+    );
+    const touched = await live.query("update public.profiles set display_name='X' where user_id=$1 returning user_id", [
+      elsewhere,
+    ]);
+    expect(touched.rows).toEqual([]);
+  });
+
+  // B5 — un gestionnaire pouvait désactiver le dernier administrateur et
+  // verrouiller le centre : plus personne ne changeait un rôle ni n'invitait
+  // un administrateur.
+  it("refuse à un gestionnaire de désactiver un administrateur", async () => {
+    await be(manager);
+    await expect(
+      live.query("update public.memberships set active=false where organization_id=$1 and user_id=$2", [org, admin]),
+    ).rejects.toThrow("Only an administrator can deactivate an administrator");
+    // Le déplacer d'équipe reste un geste de gestionnaire.
+    const moved = await live.query(
+      "update public.memberships set team_id=$3 where organization_id=$1 and user_id=$2 returning team_id",
+      [org, admin, team],
+    );
+    expect(moved.rows).toEqual([{ team_id: team }]);
+  });
+
+  it("laisse un administrateur en désactiver un autre, jamais le dernier", async () => {
+    await be(admin);
+    const off = await live.query(
+      "update public.memberships set active=false where organization_id=$1 and user_id=$2 returning active",
+      [org, second],
+    );
+    expect(off.rows).toEqual([{ active: false }]);
+    // Le second est inactif : l'administratrice est désormais la dernière, et
+    // personne — pas même une session sans identité — ne peut la retirer.
+    await be(null);
+    await expect(
+      live.query("update public.memberships set active=false where organization_id=$1 and user_id=$2", [org, admin]),
+    ).rejects.toThrow(/last administrator|Only an administrator/);
+    await be(admin);
+    await live.query("update public.memberships set active=true where organization_id=$1 and user_id=$2", [
+      org,
+      second,
+    ]);
+  });
+
+  // B6 — retirer sa validation obéit à la même fenêtre que la donner, et
+  // laisse une trace ; la dévalidation qui découle d'une saisie, elle, reste
+  // silencieuse dans le journal — la saisie y est déjà.
+  it("laisse l’agent retirer sa validation tant que la campagne est ouverte, et le journalise", async () => {
+    await be(agent);
+    await live.query(
+      "insert into public.availability_entries(campaign_id,user_id,date,availability_type) values ($1,$2,'2026-10-01','DAY')",
+      [campaign, agent],
+    );
+    await live.query("update public.campaign_participants set validated_at=now() where campaign_id=$1 and user_id=$2", [
+      campaign,
+      agent,
+    ]);
+    await be(null);
+    const before = await auditCount();
+    await be(agent);
+    await live.query("update public.campaign_participants set validated_at=null where campaign_id=$1 and user_id=$2", [
+      campaign,
+      agent,
+    ]);
+    await be(null);
+    expect(await auditCount()).toBe(before + 1);
+    expect((await live.query("select action, actor_id from public.audit_logs order by id desc limit 1")).rows).toEqual([
+      { action: "UNVALIDATE", actor_id: agent },
+    ]);
+  });
+
+  it("ne journalise pas deux fois la dévalidation qui découle d’une saisie", async () => {
+    await be(agent);
+    await live.query("update public.campaign_participants set validated_at=now() where campaign_id=$1 and user_id=$2", [
+      campaign,
+      agent,
+    ]);
+    await be(null);
+    const before = await auditCount();
+    await be(agent);
+    await live.query("update public.availability_entries set availability_type='NIGHT' where campaign_id=$1", [
+      campaign,
+    ]);
+    await be(null);
+    expect(
+      (await live.query("select validated_at from public.campaign_participants where campaign_id=$1", [campaign])).rows,
+    ).toEqual([{ validated_at: null }]);
+    // Une seule ligne : la saisie. Pas d'UNVALIDATE.
+    expect(await auditCount()).toBe(before + 1);
+    expect((await live.query("select action from public.audit_logs order by id desc limit 1")).rows).toEqual([
+      { action: "SET" },
+    ]);
+  });
+
+  it("refuse de retirer une validation après la clôture", async () => {
+    await be(agent);
+    await live.query("update public.campaign_participants set validated_at=now() where campaign_id=$1 and user_id=$2", [
+      campaign,
+      agent,
+    ]);
+    await be(manager);
+    await live.query("update public.availability_campaigns set locked=true where id=$1", [campaign]);
+    await be(agent);
+    await expect(
+      live.query("update public.campaign_participants set validated_at=null where campaign_id=$1 and user_id=$2", [
+        campaign,
+        agent,
+      ]),
+    ).rejects.toThrow("Campaign is closed");
+    await be(null);
+    const kept = await live.query(
+      "select validated_at is not null as kept from public.campaign_participants where campaign_id=$1",
+      [campaign],
+    );
+    expect(kept.rows).toEqual([{ kept: true }]);
+  });
+});

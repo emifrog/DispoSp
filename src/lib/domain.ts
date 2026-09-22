@@ -245,6 +245,23 @@ export function templateEntries(template: AppState["template"], month: string) {
 export const isAvailable = (type: Availability | undefined, shift: Shift) => type === shift || type === "FULL_24H";
 export const isOpen = (campaign: Campaign, today = localDate()) =>
   !campaign.closed && today >= campaign.opensOn && today <= campaign.closesOn;
+/**
+ * La campagne sur laquelle s'ouvre l'application quand rien n'a été choisi.
+ *
+ * Celle qui attend encore une réponse d'abord — non close, clôture à venir —,
+ * et parmi elles la première à clore : c'est celle qui presse. Sinon la plus
+ * récente : après la clôture, l'agent y lit son planning et l'encadrement y
+ * construit le sien. Prendre la première de la liste, triée par mois croissant,
+ * ouvrait chaque visite sur la campagne la plus ancienne du centre.
+ */
+export function defaultCampaign(campaigns: Campaign[], today = localDate()): Campaign | undefined {
+  const pending = campaigns.filter(c => !c.closed && c.closesOn >= today);
+  if (pending.length) return pending.reduce((soonest, c) => (c.closesOn < soonest.closesOn ? c : soonest));
+  return campaigns.reduce<Campaign | undefined>(
+    (latest, c) => (!latest || c.month > latest.month ? c : latest),
+    undefined,
+  );
+}
 export const isValidated = (state: AppState, campaignId: string, userId: string) =>
   Boolean(state.responses[responseKey(campaignId, userId)]);
 export const filledDays = (state: AppState, campaign: Campaign, userId: string) =>

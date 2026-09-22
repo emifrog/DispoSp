@@ -28,6 +28,10 @@ export const HOME_PATH = "/";
 // doivent passer le garde : on y arrive précisément sans session, et les y
 // soumettre renverrait l'agent vers la connexion — l'écran même qu'il ne peut
 // pas franchir.
+//
+// Le rattrapage des envois poussés, enfin : un planificateur externe n'a pas
+// de cookie, il porte un jeton. Le garde le renvoyait vers la connexion et la
+// route, avec sa vérification du jeton, ne s'exécutait jamais.
 export const publicPaths = [
   SIGN_IN_PATH,
   SIGN_OUT_PATH,
@@ -38,4 +42,5 @@ export const publicPaths = [
   "/manifest.webmanifest",
   "/sw.js",
   "/hors-ligne",
+  "/api/push/dispatch",
 ];

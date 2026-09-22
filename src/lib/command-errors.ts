@@ -42,6 +42,18 @@ const byMessage: [RegExp, (match: RegExpMatchArray) => string][] = [
       `Effectif non couvert : ${m[1]} ${plural(Number(m[1]), "agent")} ${plural(Number(m[1]), "affecté")} sur ${m[2]} requis.`,
   ],
   [/^Qualifications not covered: (.+)$/, m => `Qualifications non couvertes : ${m[1]}.`],
+  // Les refus du déclencheur de rattachement (0004 et 22 septembre).
+  [/^Only an administrator can change a role/, () => "Seul un administrateur peut changer un rôle."],
+  [/^Cannot change your own role/, () => "Personne ne change son propre rôle."],
+  [/^Cannot deactivate your own account/, () => "Vous ne pouvez pas désactiver votre propre compte."],
+  [
+    /^Only an administrator can deactivate an administrator/,
+    () => "Seul un administrateur peut désactiver ou rétrograder un administrateur.",
+  ],
+  [
+    /^Cannot remove the last administrator/,
+    () => "Ce compte est le dernier administrateur actif du centre : nommez-en un autre avant de le retirer.",
+  ],
 ];
 
 const byCode: Record<string, string> = {

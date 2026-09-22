@@ -1,9 +1,10 @@
 "use client";
 import { createContext, useContext, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { submitCommand } from "@/app/actions";
 import {
   administers,
+  defaultCampaign,
   type Actor,
   type Agent,
   type AppState,
@@ -11,6 +12,9 @@ import {
   type Command,
   type MemberRole,
 } from "@/lib/domain";
+
+/** Le paramètre d'adresse qui porte la campagne choisie. */
+export const CAMPAIGN_PARAM = "campagne";
 
 type Context = {
   state: AppState;
@@ -45,11 +49,32 @@ export function AppProvider({
   actor: Actor;
   memberRole: MemberRole;
 }) {
-  // Deliberately not held in useState: the initialiser never runs again, so
-  // everything router.refresh() brings back after a write would be ignored.
-  const [campaignId, setCampaignId] = useState(() => state.campaigns[0]?.id ?? "");
-  const [message, setMessage] = useState("");
+  // `state` itself is deliberately not held in useState: the initialiser never
+  // runs again, so everything router.refresh() brings back after a write would
+  // be ignored. Only the selection below is client state.
+  //
+  // La campagne choisie vit dans l'adresse (`?campagne=`), et c'est ce qui la
+  // fait survivre à un rechargement, à un lancement depuis l'écran d'accueil ou
+  // à une bulle de notification. Sans elle, on ne prend pas la première de la
+  // liste — la plus ancienne du centre — mais celle qui attend une réponse.
   const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const asked = params.get(CAMPAIGN_PARAM);
+  const [campaignId, setCampaignId] = useState(
+    () => (asked && state.campaigns.some(c => c.id === asked) ? asked : defaultCampaign(state.campaigns)?.id) ?? "",
+  );
+  // L'adresse suit la sélection, sur chaque écran : les liens internes ne la
+  // portent pas, et un rechargement depuis eux retomberait sinon sur le défaut.
+  // `replaceState` plutôt que le routeur : rien à recharger, la sélection est
+  // déjà là ; Next lit ce que l'historique reçoit et `useSearchParams` suit.
+  useEffect(() => {
+    if (!campaignId || params.get(CAMPAIGN_PARAM) === campaignId) return;
+    const next = new URLSearchParams(params);
+    next.set(CAMPAIGN_PARAM, campaignId);
+    window.history.replaceState(window.history.state, "", `${pathname}?${next}`);
+  }, [campaignId, pathname, params]);
+  const [message, setMessage] = useState("");
   useEffect(() => {
     if (!message) return;
     const timer = setTimeout(() => setMessage(""), 6500);
