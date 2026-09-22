@@ -72,10 +72,6 @@ export function SignInForm() {
         {mode === "password" && <PasswordForm router={router} onMode={setMode} />}
         {mode === "sso" && <SsoForm onBack={() => setMode("password")} />}
         {mode === "forgotten" && <ForgottenForm onBack={() => setMode("password")} />}
-        <p className="sign-in-footer">
-          DispoSP · Plus loin, ensemble.
-          <small>Les comptes sont créés par l’administrateur de votre centre.</small>
-        </p>
       </section>
     </main>
   );
@@ -132,7 +128,7 @@ function PasswordForm({
           Adresse électronique
           <span className="input-affix">
             <Mail size={17} />
-            <input type="email" autoComplete="email" placeholder="votre@email.fr" {...form.register("email")} />
+            <input type="email" autoComplete="email" placeholder="Votre email" {...form.register("email")} />
           </span>
         </label>
         {form.formState.errors.email && <p className="field-error">{form.formState.errors.email.message}</p>}
@@ -180,7 +176,7 @@ function PasswordForm({
         <Button type="submit" className="full-width" pending={form.formState.isSubmitting}>
           {!form.formState.isSubmitting && <LogIn size={17} />}
           {form.formState.isSubmitting ? "Connexion…" : "Se connecter"}
-          <ChevronRight size={17} />
+
         </Button>
       </form>
       <div className="sign-in-separator">

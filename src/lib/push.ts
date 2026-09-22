@@ -60,6 +60,64 @@ export function pushPayload(id: string, kind: string) {
  */
 export const vapidPublicKey = () => process.env.NEXT_PUBLIC_WEB_PUSH_PUBLIC_KEY ?? "";
 
+/* --- L'invitation faite à la connexion --------------------------------------
+ *
+ * Proposer les notifications une fois, à l'arrivée, puis ne plus revenir
+ * dessus : une application qui redemande à chaque connexion finit par être
+ * refusée par principe, et le navigateur ne rend jamais une autorisation
+ * refusée.
+ *
+ * La réponse est gardée **dans le navigateur**, et c'est la seule place juste :
+ * elle ne parle pas de l'agent mais de l'appareil qu'il tient, comme
+ * l'abonnement lui-même. Quelqu'un qui refuse sur l'ordinateur du centre doit
+ * pouvoir accepter sur son téléphone le soir même. C'est aussi la seule donnée
+ * que l'application conserve localement, et elle est sans danger : perdue, on
+ * repose la question ; fausse, on ne la pose pas — jamais un planning périmé.
+ *
+ * La clé porte l'identifiant du compte : sur un poste partagé, le refus de l'un
+ * ne doit pas répondre pour le suivant.
+ */
+export type PushAnswer = "oui" | "non";
+export const pushAnswerKey = (userId: string) => `disposp-push-invite:${userId}`;
+
+export function pushAnswer(userId: string): PushAnswer | null {
+  try {
+    const kept = localStorage.getItem(pushAnswerKey(userId));
+    return kept === "oui" || kept === "non" ? kept : null;
+  } catch {
+    // Navigation privée, stockage bloqué : on fait comme si rien n'était su.
+    return null;
+  }
+}
+
+export function rememberPushAnswer(userId: string, answer: PushAnswer): void {
+  try {
+    localStorage.setItem(pushAnswerKey(userId), answer);
+  } catch {
+    // Ne rien garder n'empêche pas d'activer : au pire, la question revient.
+  }
+}
+
+/**
+ * Faut-il proposer les notifications à cet agent, sur cet appareil ?
+ *
+ * Pure, et c'est voulu : la décision se lit et se teste sans navigateur.
+ *
+ * On ne propose pas ce qui ne mènerait nulle part — pas de clé publique, pas de
+ * gestionnaire de messages poussés, autorisation déjà refusée — ni ce qui est
+ * déjà fait, ni ce à quoi il a déjà été répondu.
+ */
+export function offersPush(device: {
+  configured: boolean;
+  supported: boolean;
+  permission: NotificationPermission;
+  subscribed: boolean;
+  answered: PushAnswer | null;
+}): boolean {
+  if (!device.configured || !device.supported || device.subscribed || device.answered) return false;
+  return device.permission !== "denied";
+}
+
 /** `pushManager.subscribe` n'accepte pas le base64url de la clé, mais ses octets. */
 export function applicationServerKey(base64url: string): Uint8Array<ArrayBuffer> {
   const base64 = (base64url + "=".repeat((4 - (base64url.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/");

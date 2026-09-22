@@ -45,7 +45,7 @@ Les redirections d’authentification, la configuration Resend et celle des noti
 
 La suite couvre les règles métier, les migrations et droits sur PostgreSQL embarqué via PGlite, les exports et des parcours navigateur sur ordinateur et mobile. Un scénario à 300 agents vérifie notamment la virtualisation de la synthèse. Deux tests gardent l’adaptation aux écrans : aucun débordement horizontal à 320 ni 768 px, et aucune commande sous 24 px de côté. Il ne remplace pas une mesure de charge du service hébergé avec plusieurs utilisateurs simultanés.
 
-Les six contrôles de l’intégration continue sont le formatage, le lint, les types, les tests unitaires et de base, la construction et les tests navigateur. Leurs résultats courants font foi. Au 21 septembre 2026 : 196 tests unitaires et de base, dont 114 sur PostgreSQL embarqué — les notifications poussées y ajoutent la liste des services de remise acceptés, le contenu envoyé, l’isolation des abonnements et la file d’envoi — et 22 parcours navigateur passés avec un compte d’essai. **Aucune vérification sur le projet hébergé n’est revendiquée ici** : la réception réelle sur un téléphone relève de la recette.
+Les six contrôles de l’intégration continue sont le formatage, le lint, les types, les tests unitaires et de base, la construction et les tests navigateur. Leurs résultats courants font foi. Au 22 septembre 2026 : 201 tests unitaires et de base, dont 114 sur PostgreSQL embarqué — les notifications poussées y ajoutent la liste des services de remise acceptés, le contenu envoyé, l’isolation des abonnements et la file d’envoi — et 22 parcours navigateur passés avec un compte d’essai. **Aucune vérification sur le projet hébergé n’est revendiquée ici** : la réception réelle sur un téléphone relève de la recette.
 
 ## 2. Priorités vers une première utilisation
 
@@ -114,6 +114,7 @@ L’envoi nécessite **les trois variables** `RESEND_API_KEY`, `RESEND_FROM` et 
 Un email se lit quand on ouvre sa boîte, le centre de messages quand on ouvre l’application. Ni l’un ni l’autre n’atteint l’agent qui n’a rien ouvert — celui-là même que vise une campagne qui s’ouvre ou un planning qui change. La notification poussée arrive sur l’écran verrouillé, application fermée.
 
 - **L’abonnement appartient à l’appareil, pas au compte.** Chaque téléphone s’active séparément, depuis **Mon profil** ou **Notifications**, et un bouton d’essai permet de le vérifier sur-le-champ.
+- **La question se pose d’elle-même à la connexion, une seule fois.** Une fenêtre s’ouvre à l’arrivée dans l’espace de travail ; la réponse est gardée sur l’appareil et ne revient pas à la connexion suivante, qu’elle soit oui ou non. Fermer la fenêtre vaut refus, et elle le dit.
 - La file des envois vit en base, comme celle des emails : un déclencheur inscrit un envoi par appareil abonné, le serveur réserve un lot de dix par bail de deux minutes, cinq tentatives espacées, abandon au-delà de vingt-quatre heures. Un 404 ou un 410 du service de remise efface l’abonnement.
 - **Le message est volontairement pauvre** : la nature de l’événement, rien d’autre. Ni nom, ni motif de désistement, ni date de garde — un écran verrouillé se lit par-dessus l’épaule.
 - Aucun rattrapage : activer les notifications ne fait pas remonter les messages écrits avant l’activation.

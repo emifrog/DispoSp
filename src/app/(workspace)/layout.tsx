@@ -1,6 +1,7 @@
 import { AppProvider } from "@/components/provider";
 import { Shell } from "@/components/shell";
 import { NoCampaign, UnattachedAccount } from "@/components/account";
+import { PushInvitation } from "@/components/pwa";
 import { readSession } from "@/lib/session.server";
 import { loadState } from "@/lib/data.server";
 import { SIGN_IN_PATH } from "@/lib/supabase/config";
@@ -39,6 +40,10 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
   return (
     <AppProvider state={state} actor={actor} memberRole={memberRoleOf(attached)}>
       <Shell session={attached}>{children}</Shell>
+      {/* Posée ici et non dans un écran : elle doit se présenter à l'arrivée,
+          quelle que soit la page où la connexion a mené, et ne pas reparaître à
+          chaque navigation — cette mise en page, elle, ne se remonte pas. */}
+      <PushInvitation userId={attached.userId} />
     </AppProvider>
   );
 }

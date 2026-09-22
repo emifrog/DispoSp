@@ -15,7 +15,7 @@ Ouvrir http://127.0.0.1:3000. Pour vérifier une version de production : `pnpm b
 
 **Les notifications poussées demandent une version de production.** En développement, l'agent de service n'est pas enregistré au chargement — il survivrait aux rechargements et brouillerait la lecture de ce qui vient du serveur ; le bouton d'activation l'enregistre alors à la demande. `127.0.0.1` est traité comme une origine sûre, donc l'essai fonctionne en local.
 
-L'application demande un compte. Sans session, toute adresse renvoie vers l'écran de connexion — hormis ce qu'un navigateur va chercher avant d'en avoir une : le manifeste, l'agent de service et la page hors ligne. Rien n'est conservé dans le navigateur : l'état vient du rendu serveur, relu à chaque navigation.
+L'application demande un compte. Sans session, toute adresse renvoie vers l'écran de connexion — hormis ce qu'un navigateur va chercher avant d'en avoir une : le manifeste, l'agent de service et la page hors ligne. Aucune donnée métier n'est conservée dans le navigateur : l'état vient du rendu serveur, relu à chaque navigation. Une seule chose y reste, et elle ne parle pas du centre : la réponse donnée à l'invitation d'activer les notifications sur cet appareil.
 
 ## Parcours livrés
 
@@ -52,7 +52,7 @@ Voir `DECISIONS_FONCTIONNELLES.md`. Jour 8 h–20 h, Nuit 20 h–8 h le lendemai
 - TanStack Table pour la synthèse, virtualisée par TanStack Virtual : à 300 agents, environ 25 lignes sont rendues au lieu de 300, et les totaux du pied de tableau portent toujours sur l'ensemble des agents filtrés.
 - React Hook Form et Zod pour les campagnes et la validation du stockage.
 - `src/lib/domain.ts` : règles métier pures, calculs de couverture et commandes testables.
-- `src/components/provider.tsx` : l'état vient du rendu serveur, relu à chaque navigation ; les commandes partent à l'action serveur. Rien n'est conservé dans le navigateur. **Les rôles affichés ne constituent pas un contrôle de sécurité** : la base décide.
+- `src/components/provider.tsx` : l'état vient du rendu serveur, relu à chaque navigation ; les commandes partent à l'action serveur. Aucune donnée métier n'est conservée dans le navigateur — la seule exception est la réponse à l'invitation d'activer les notifications, qui porte sur l'appareil et non sur le centre. **Les rôles affichés ne constituent pas un contrôle de sécurité** : la base décide.
 - `src/lib/exports.ts` : exports CSV et ICS ; `/api/export` : classeur Excel généré côté serveur en mode connecté.
 - `src/app/manifest.ts`, `public/sw.js` et `src/components/pwa.tsx` : installation sur l'écran d'accueil et activation des notifications poussées, appareil par appareil.
 - `src/lib/push.ts`, `src/lib/push.server.ts` et `src/app/api/push/` : contenu poussé, file d'envoi signée en VAPID, inscription d'un appareil et envoi d'essai.
@@ -175,6 +175,10 @@ Le rappel avant clôture est un geste, pas une horloge : personne ne fait tourne
 Un email se lit quand on ouvre sa boîte, et le centre de messages quand on ouvre l'application. Ni l'un ni l'autre ne prévient l'agent qui n'a rien ouvert — or c'est exactement lui que vise une campagne qui s'ouvre ou un planning qui change. La notification poussée arrive sur l'écran verrouillé, application fermée.
 
 **L'abonnement appartient à l'appareil, pas au compte.** Chaque téléphone s'active séparément, depuis « Mon profil ». C'est une conséquence du protocole — le navigateur crée l'abonnement, pas le serveur — et c'est aussi ce qu'on veut : le poste partagé du centre n'a pas à sonner la nuit parce qu'un agent a coché une case chez lui.
+
+**La question se pose d'elle-même, une fois, à la connexion.** Une case dans un écran de réglages n'est trouvée que par qui la cherche, or celui qu'il faut prévenir d'une campagne est justement celui qui n'ouvre pas l'application. Une fenêtre se présente donc à l'arrivée dans l'espace de travail — une seconde après l'affichage, pour ne pas récolter un geste destiné à autre chose — et **la réponse est gardée sur l'appareil** : elle ne revient pas à la connexion suivante. Fermer la fenêtre vaut refus, et la fenêtre le dit ; le profil garde le bouton pour revenir sur ce choix à tout moment.
+
+Cette réponse est la seule chose que l'application conserve dans le navigateur (`localStorage`, clé `disposp-push-invite:<compte>`). Elle y est à sa place : comme l'abonnement, elle parle de l'appareil. Quelqu'un qui refuse sur l'ordinateur du centre doit pouvoir accepter sur son téléphone le soir même, et l'identifiant dans la clé évite qu'un poste partagé réponde pour le suivant. Perdue — navigation privée, cache effacé —, la question se repose simplement ; elle ne peut jamais faire afficher un planning périmé. L'activation, le refus du système et la désactivation depuis le profil écrivent tous cette réponse : aucun de ces gestes ne se fait redemander.
 
 La chaîne, de bout en bout :
 

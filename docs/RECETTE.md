@@ -292,7 +292,15 @@ Ces vérifications ne sont pas du confort. Elles portent sur des données person
 
 **Sur iPhone, faites-le depuis l'application installée à l'étape 8.1**, pas depuis Safari : Apple ne permet les notifications que là. Sur Android, l'onglet suffit.
 
-**Faire** — **Mon profil → Notifications sur cet appareil → Activer les notifications**, et accepter la demande du téléphone. Puis **Envoyer un essai**.
+**Faire** — Se connecter avec le compte agent sur ce téléphone, et attendre une seconde.
+
+**Attendu** — Une fenêtre demande « Être prévenu sur cet appareil ? ». Elle ne se pose qu'une fois : c'est à elle que la plupart des agents répondront, le profil n'étant trouvé que par qui le cherche.
+
+**À vérifier, et c'est le cœur de l'étape** — Touchez « Non merci », puis déconnectez-vous et reconnectez-vous : **la fenêtre ne doit pas revenir**. Le bouton reste disponible dans **Mon profil**. Recommencez ensuite en acceptant : elle ne doit pas revenir non plus.
+
+**Sinon** — Si la fenêtre revient à chaque connexion, la réponse n'a pas pu être gardée : navigation privée, ou stockage du navigateur bloqué. L'application reste utilisable, mais l'agent sera sollicité à chaque fois — à signaler.
+
+**Faire** — Depuis la fenêtre, ou par **Mon profil → Notifications sur cet appareil → Activer les notifications**, accepter la demande du téléphone. Puis **Envoyer un essai**.
 
 **Attendu** — Le panneau annonce « Actives sur cet appareil. », et la bulle d'essai arrive en quelques secondes. Verrouillez l'écran et renvoyez un essai : elle doit arriver aussi.
 

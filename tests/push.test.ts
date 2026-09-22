@@ -1,6 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { authorizedPushWorker } from "../src/lib/push-auth";
-import { applicationServerKey, pushPayload, pushSubscriptionSchema, validPushEndpoint } from "../src/lib/push";
+import {
+  applicationServerKey,
+  offersPush,
+  pushAnswer,
+  pushAnswerKey,
+  pushPayload,
+  pushSubscriptionSchema,
+  rememberPushAnswer,
+  validPushEndpoint,
+  type PushAnswer,
+} from "../src/lib/push";
 
 const p256dh = "B".repeat(87);
 const auth = "A".repeat(22);
@@ -65,6 +75,73 @@ describe("Clé publique VAPID", () => {
     expect(
       applicationServerKey("BL02ZYTg9YQT0CoVBzU9IMHT8rvWQABwr0DzhDZ_1oF0nV-8PSz0aAchLostwzAJy5mvfbhM9kTVy36ezOwakqw"),
     ).toHaveLength(65);
+  });
+});
+
+describe("Invitation à la connexion", () => {
+  const device = {
+    configured: true,
+    supported: true,
+    permission: "default" as NotificationPermission,
+    subscribed: false,
+    answered: null as PushAnswer | null,
+  };
+
+  it("se pose une fois, à qui peut y répondre", () => {
+    expect(offersPush(device)).toBe(true);
+    // Une autorisation déjà accordée sans abonnement : un clic suffit, et le
+    // téléphone ne redemandera rien.
+    expect(offersPush({ ...device, permission: "granted" })).toBe(true);
+  });
+
+  it("ne se pose pas deux fois", () => {
+    // La réponse d'hier vaut pour aujourd'hui, quelle qu'elle soit : une
+    // application qui insiste à chaque connexion finit refusée par principe.
+    expect(offersPush({ ...device, answered: "non" })).toBe(false);
+    expect(offersPush({ ...device, answered: "oui" })).toBe(false);
+  });
+
+  it("ne se pose pas là où elle ne mènerait nulle part", () => {
+    expect(offersPush({ ...device, subscribed: true })).toBe(false);
+    // Refusée dans le navigateur : une page ne peut plus redemander, seuls les
+    // réglages du téléphone le peuvent.
+    expect(offersPush({ ...device, permission: "denied" })).toBe(false);
+    // Safari hors application installée, ou un navigateur sans messages poussés.
+    expect(offersPush({ ...device, supported: false })).toBe(false);
+    // Sans clé publique VAPID, l'activation échouerait sur place.
+    expect(offersPush({ ...device, configured: false })).toBe(false);
+  });
+
+  it("garde la réponse par compte, pas seulement par appareil", () => {
+    // Un poste partagé : le refus de l'un ne doit pas répondre pour le suivant.
+    expect(pushAnswerKey("alice")).not.toBe(pushAnswerKey("bob"));
+    const kept = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => kept.get(key) ?? null,
+      setItem: (key: string, value: string) => void kept.set(key, value),
+    });
+    rememberPushAnswer("alice", "non");
+    expect(pushAnswer("alice")).toBe("non");
+    expect(pushAnswer("bob")).toBe(null);
+    rememberPushAnswer("alice", "oui");
+    expect(pushAnswer("alice")).toBe("oui");
+    vi.unstubAllGlobals();
+  });
+
+  it("se passe d’un stockage qui refuse", () => {
+    // Navigation privée, stockage bloqué par une politique d'entreprise : la
+    // question se reposera, ce qui est préférable à un écran qui lève.
+    vi.stubGlobal("localStorage", {
+      getItem: () => {
+        throw new Error("stockage refusé");
+      },
+      setItem: () => {
+        throw new Error("stockage refusé");
+      },
+    });
+    expect(() => rememberPushAnswer("alice", "oui")).not.toThrow();
+    expect(pushAnswer("alice")).toBe(null);
+    vi.unstubAllGlobals();
   });
 });
 

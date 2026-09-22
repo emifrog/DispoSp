@@ -206,10 +206,10 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
             </form>
           </div>
         </header>
-        <div className="context-banner">
+        {/*<div className="context-banner">
           {session.membership.organizationName} · {session.membership.teamName} — vos saisies sont enregistrées en base,
           sous les droits de votre rôle.
-        </div>
+        </div>*/}
         <div className="print-header" aria-hidden="true">
           <Brand width={132} />
           <span>{state.organization.name}</span>

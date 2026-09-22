@@ -100,5 +100,9 @@ test.describe("Application installable", () => {
         .getByRole("button", { name: "Activer les notifications" })
         .or(page.getByText("Les notifications ont été refusées pour DispoSP")),
     ).toBeVisible();
+    // L'invitation de la connexion ne se pose qu'à qui peut y répondre : un
+    // navigateur qui a déjà refusé ne doit pas voir une fenêtre lui proposer ce
+    // que lui seul peut rouvrir dans ses réglages.
+    await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 });

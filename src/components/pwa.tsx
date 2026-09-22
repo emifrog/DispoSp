@@ -1,9 +1,18 @@
 "use client";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { BellOff, BellRing, Check, Send, Share, ShieldAlert, Smartphone } from "lucide-react";
-import { applicationServerKey, vapidPublicKey } from "@/lib/push";
+import {
+  applicationServerKey,
+  offersPush,
+  pushAnswer,
+  rememberPushAnswer,
+  vapidPublicKey,
+  type PushAnswer,
+} from "@/lib/push";
 import { Panel } from "./common";
+import { useApp } from "./provider";
 import { Button } from "./ui/button";
+import { Modal } from "./ui/dialog";
 
 /** Propre à Chrome et à ses dérivés : ni les types du DOM ni Safari ne le
     connaissent, d'où la déclaration locale plutôt qu'un cast au clic. */
@@ -147,11 +156,47 @@ const useApple = () =>
     () => false,
   );
 
-export function PushNotifications() {
+/*
+ * La réponse gardée sur l'appareil est une source extérieure à React — c'est
+ * exactement ce qu'elle est, et le serveur ne la connaît pas. Elle se lit donc
+ * comme la fenêtre ou le mode plein écran : un instantané, plus « non » au
+ * premier rendu, celui que le serveur a déjà écrit. L'écrire prévient les deux
+ * écrans qui en dépendent, sans quoi le panneau du profil et l'invitation
+ * pourraient se contredire dans la même page.
+ */
+const answerListeners = new Set<() => void>();
+function keepAnswer(userId: string, kept: PushAnswer) {
+  rememberPushAnswer(userId, kept);
+  for (const notify of answerListeners) notify();
+}
+const useRememberedAnswer = (userId: string) =>
+  useSyncExternalStore(
+    listener => {
+      answerListeners.add(listener);
+      return () => {
+        answerListeners.delete(listener);
+      };
+    },
+    () => pushAnswer(userId),
+    () => null,
+  );
+
+/**
+ * L'appareil, et ce qu'on peut en faire.
+ *
+ * Deux écrans s'en servent — le panneau du profil et l'invitation de la
+ * connexion — et il ne peut y en avoir qu'une version : l'ordre des gestes
+ * d'activation est ce qu'il y a de plus facile à défaire sans s'en apercevoir,
+ * puisqu'un navigateur qui refuse ne dit rien de plus qu'un navigateur lent.
+ *
+ * Chaque geste mémorise la réponse. Activer répond « oui », désactiver et
+ * décliner répondent « non » : l'invitation ne revient pas mendier à la
+ * connexion suivante ce qui vient d'être décidé.
+ */
+function usePushDevice(userId: string) {
   const key = vapidPublicKey();
-  const standalone = useStandalone();
-  const apple = useApple();
   const [state, setState] = useState<PushState>("checking");
+  const answered = useRememberedAnswer(userId);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -173,21 +218,23 @@ export function PushNotifications() {
     return () => {
       abandoned = true;
     };
-  }, []);
+  }, [userId]);
 
-  // Sans clé publique VAPID, aucun envoi n'est possible : proposer l'activation
-  // ne mènerait qu'à une erreur. L'application se tait, comme elle le fait déjà
-  // pour les emails quand Resend n'est pas configuré.
-  if (!key) return null;
+  const answer = (kept: PushAnswer) => keepAnswer(userId, kept);
 
-  async function enable() {
+  /** Rend ce qui s'est réellement passé : l'appelant ne doit annoncer une
+      activation que si elle a eu lieu, et la fenêtre d'invitation s'en sert. */
+  async function enable(): Promise<boolean> {
     setMessage("");
     // L'autorisation d'abord, avant toute attente : Safari ne l'accorde que si
     // la demande part du geste lui-même. Un `await` glissé avant la perdrait.
     const permission = await Notification.requestPermission();
     if (permission !== "granted") {
+      // Refuser la demande du système est une réponse, et elle est définitive
+      // tant que l'agent ne rouvre pas les réglages de son téléphone.
+      answer("non");
       setState(permission === "denied" ? "blocked" : "off");
-      return;
+      return false;
     }
     try {
       await navigator.serviceWorker.register("/sw.js");
@@ -197,9 +244,10 @@ export function PushNotifications() {
         applicationServerKey: applicationServerKey(key),
       });
       if (await tellServer("POST", subscription.toJSON())) {
+        answer("oui");
         setState("on");
         setMessage("");
-        return;
+        return true;
       }
       // Le navigateur est abonné mais le serveur l'ignore : le laisser ainsi
       // afficherait une case cochée qui n'apporterait jamais rien.
@@ -210,6 +258,8 @@ export function PushNotifications() {
       setState("off");
       setMessage("Ce navigateur n’a pas pu créer l’abonnement. Réessayez, ou depuis l’application installée.");
     }
+    // Ni acceptée ni refusée : rien n'est gardé, la question pourra se reposer.
+    return false;
   }
 
   async function disable() {
@@ -221,6 +271,7 @@ export function PushNotifications() {
       await tellServer("DELETE", { endpoint: subscription.endpoint });
       await subscription.unsubscribe();
     }
+    answer("non");
     setState("off");
   }
 
@@ -236,6 +287,104 @@ export function PushNotifications() {
         : "L’essai n’est pas parti. L’abonnement de cet appareil n’est peut-être plus valable : désactivez puis réactivez.",
     );
   }
+
+  return { key, state, answered, message, enable, disable, decline: () => answer("non"), test };
+}
+
+/**
+ * L'invitation, une fois, à l'arrivée dans l'application.
+ *
+ * Une case à cocher dans un écran de réglages n'est trouvée que par qui la
+ * cherche — or celui qu'il faut prévenir d'une campagne est justement celui qui
+ * n'ouvre pas l'application. La question se pose donc d'elle-même, une seule
+ * fois, et la réponse est gardée sur l'appareil.
+ *
+ * Fermer la fenêtre vaut refus, et c'est écrit dans la fenêtre : un agent qui
+ * la balaie sans lire ne doit pas la retrouver à chaque connexion. Rien n'est
+ * perdu pour autant — le profil garde le bouton, et la fenêtre le dit.
+ */
+export function PushInvitation({ userId }: { userId: string }) {
+  const { key, state, answered, enable, decline } = usePushDevice(userId);
+  const { notice } = useApp();
+  const [open, setOpen] = useState(false);
+  const offered = offersPush({
+    configured: Boolean(key),
+    supported: state !== "unsupported" && state !== "checking",
+    permission: state === "blocked" ? "denied" : "default",
+    subscribed: state === "on",
+    answered,
+  });
+
+  useEffect(() => {
+    if (!offered) return;
+    // Le temps que l'écran s'affiche : une fenêtre qui arrive avec la page se
+    // prend le geste destiné à autre chose, et se referme sans avoir été lue.
+    const timer = setTimeout(() => setOpen(true), 1200);
+    return () => clearTimeout(timer);
+  }, [offered]);
+
+  if (!offered && !open) return null;
+
+  async function accept() {
+    const activated = await enable();
+    setOpen(false);
+    notice(
+      activated
+        ? "Notifications activées sur cet appareil."
+        : "L’activation n’a pas abouti. Vous pouvez la reprendre depuis Mon profil.",
+    );
+  }
+
+  return (
+    <Modal
+      open={open}
+      onOpenChange={next => {
+        if (next) return;
+        // Fermer, c'est répondre non : sans cela la question reviendrait à
+        // chaque connexion, et une application qui insiste finit refusée.
+        decline();
+        setOpen(false);
+      }}
+      title="Être prévenu sur cet appareil ?"
+      description="Ouverture d’une campagne, rappel avant clôture, publication du planning, désistement : la notification arrive même application fermée."
+    >
+      <div className="install-app">
+        <BellRing size={20} />
+        <p>
+          Le message reste bref — la nature de l’événement, rien d’autre : un écran verrouillé se lit par-dessus
+          l’épaule. Chaque appareil s’active séparément, et vous pouvez revenir sur ce choix à tout moment depuis
+          <strong> Mon profil</strong>.
+        </p>
+      </div>
+      <div className="install-buttons">
+        <Button onClick={accept}>
+          <BellRing size={16} />
+          Activer les notifications
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            decline();
+            setOpen(false);
+          }}
+        >
+          Non merci
+        </Button>
+      </div>
+    </Modal>
+  );
+}
+
+export function PushNotifications() {
+  const { actor } = useApp();
+  const standalone = useStandalone();
+  const apple = useApple();
+  const { key, state, message, enable, disable, test } = usePushDevice(actor.id);
+
+  // Sans clé publique VAPID, aucun envoi n'est possible : proposer l'activation
+  // ne mènerait qu'à une erreur. L'application se tait, comme elle le fait déjà
+  // pour les emails quand Resend n'est pas configuré.
+  if (!key) return null;
 
   const subtitle = {
     checking: "Vérification de cet appareil…",
