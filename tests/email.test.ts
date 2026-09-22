@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { message, type Pending } from "../src/lib/email";
 
@@ -56,5 +57,41 @@ describe("Message envoyé à un agent", () => {
     expect(built.html).toContain("&amp;");
     // Le texte brut n’a rien à échapper : il n’est pas interprété.
     expect(built.text).toContain('Équipe "Alpha" & Bravo');
+  });
+});
+
+/**
+ * Les gabarits de Supabase Auth.
+ *
+ * Ils ne passent par aucun code d'ici : ils sont collés dans le tableau de bord,
+ * et Supabase y substitue lui-même `{{ .SiteURL }}` et `{{ .TokenHash }}`. Ce
+ * que ce fichier garde, c'est leur seule partie non décorative — le lien —,
+ * parce qu'une faute à cet endroit ne se voit qu'à l'arrivée, sur le téléphone
+ * d'un agent qui ne peut plus entrer.
+ */
+describe("Gabarits d’e-mail Supabase Auth", () => {
+  const gabarit = (name: string) => readFileSync(new URL(`../supabase/templates/${name}`, import.meta.url), "utf8");
+
+  it("mène l’invitation sur la route qui vérifie le jeton côté serveur", () => {
+    expect(gabarit("invitation.html")).toContain(
+      "{{ .SiteURL }}/auth/activation?token_hash={{ .TokenHash }}&amp;type=invite",
+    );
+  });
+
+  it("mène la réinitialisation sur la sienne", () => {
+    expect(gabarit("reinitialisation.html")).toContain(
+      "{{ .SiteURL }}/auth/recuperation?token_hash={{ .TokenHash }}&amp;type=recovery",
+    );
+  });
+
+  it("n’écrit aucune adresse en dur", () => {
+    for (const name of ["invitation.html", "reinitialisation.html"]) {
+      const html = gabarit(name);
+      // Une adresse figée là enverrait chaque agent ailleurs que sur le site du
+      // centre — et « localhost », sur son propre téléphone.
+      expect(html, name).not.toMatch(/https?:\/\/(?!\{\{)/);
+      // Y compris pour le logo : il se sert depuis l'application elle-même.
+      expect(html, name).toContain('src="{{ .SiteURL }}/logo-disposp.png"');
+    }
   });
 });

@@ -38,3 +38,31 @@ test.describe("Connexion", () => {
     expect(response.headers()["location"]).toContain("/connexion");
   });
 });
+
+/**
+ * Le lien mort, et ce que l'écran en dit.
+ *
+ * Hors du groupe ci-dessus : ce parcours ne demande aucune base. C'est la
+ * surface publique, celle que l'intégration continue vérifie pour de bon.
+ */
+test.describe("Lien d’activation ou de réinitialisation périmé", () => {
+  test("l’écran de connexion explique pourquoi on vient d’y atterrir", async ({ page }) => {
+    await page.goto("/connexion?lien=expire");
+    const message = page.getByRole("status");
+    await expect(message).toBeVisible();
+    await expect(message).toContainText("Ce lien n’est plus valable");
+    // Les deux chemins de renvoi, parce qu'on arrive ici par les deux : un
+    // agent invité n'a pas de mot de passe à réinitialiser, et l'écran ne doit
+    // pas l'y envoyer sans nuance.
+    await expect(message).toContainText("Mot de passe oublié");
+    await expect(message).toContainText("gestionnaire");
+  });
+
+  test("n’invente rien quand l’adresse ne porte pas de motif connu", async ({ page }) => {
+    // Ce qui vient de l'adresse ne s'affiche jamais tel quel : un paramètre
+    // fabriqué ne doit pas devenir un message signé DispoSP.
+    await page.goto("/connexion?lien=%3Cimg%20src=x%20onerror=alert(1)%3E");
+    await expect(page.getByRole("status")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Se connecter" })).toBeVisible();
+  });
+});

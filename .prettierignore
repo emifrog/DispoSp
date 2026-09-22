@@ -5,6 +5,11 @@ node_modules/
 test-results/
 playwright-report/
 supabase/.temp/
+# Les gabarits d'e-mail se collent tels quels dans Supabase et se lisent dans
+# des clients de messagerie, pas dans un navigateur : leurs styles restent en
+# ligne et compacts. Prettier les éclaterait sur plusieurs lignes, ce que les
+# plus anciens de ces clients ne pardonnent pas toujours.
+supabase/templates/
 maquettes/
 pnpm-lock.yaml
 *.tsbuildinfo

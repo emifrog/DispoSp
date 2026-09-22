@@ -4,7 +4,19 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { ArrowLeft, Building2, ChevronRight, Eye, EyeOff, Lock, LogIn, Mail, Send, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  Building2,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Lock,
+  LogIn,
+  Mail,
+  Send,
+  ShieldCheck,
+  TriangleAlert,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { HOME_PATH } from "@/lib/supabase/config";
 import { Brand } from "./brand";
@@ -48,7 +60,7 @@ const useRememberedEmail = () =>
     () => "",
   );
 
-export function SignInForm() {
+export function SignInForm({ notice }: { notice?: string }) {
   const router = useRouter();
   const [mode, setMode] = useState<"password" | "sso" | "forgotten">("password");
   return (
@@ -69,6 +81,15 @@ export function SignInForm() {
         <div className="sign-in-brand">
           <Brand width={168} />
         </div>
+        {/* Au-dessus du formulaire, et non dedans : ce message ne parle pas de
+            ce qui vient d'être saisi, mais de la façon dont on est arrivé ici.
+            `role="status"` l'annonce une fois, sans interrompre. */}
+        {notice && (
+          <div className="info-card horizontal" role="status">
+            <TriangleAlert size={22} />
+            <p>{notice}</p>
+          </div>
+        )}
         {mode === "password" && <PasswordForm router={router} onMode={setMode} />}
         {mode === "sso" && <SsoForm onBack={() => setMode("password")} />}
         {mode === "forgotten" && <ForgottenForm onBack={() => setMode("password")} />}
@@ -176,7 +197,6 @@ function PasswordForm({
         <Button type="submit" className="full-width" pending={form.formState.isSubmitting}>
           {!form.formState.isSubmitting && <LogIn size={17} />}
           {form.formState.isSubmitting ? "Connexion…" : "Se connecter"}
-
         </Button>
       </form>
       <div className="sign-in-separator">

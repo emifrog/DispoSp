@@ -57,7 +57,13 @@ Un domaine non validé donne pire : les messages partent et atterrissent en ind�
 
 **Attendu** — La clé présente, les deux gabarits modifiés.
 
+**Attendu, dans le message reçu** — Un lien qui commence par l'adresse publique et contient `/auth/activation?token_hash=`.
+
 **Sinon** — Sans la clé, aucune invitation ne part : la ligne est enregistrée et l'écran le dit, mais aucun agent ne peut entrer. Sans les gabarits, les liens ne fonctionnent que sur l'appareil qui a fait la demande — ce qui condamne l'activation, toujours demandée par une personne et ouverte par une autre.
+
+**Le symptôme, quand ces deux réglages manquent** : l'agent reçoit le message anglais d'origine, « You've been invited », dont le lien mène à `SiteURL` suivi d'un `#`. Si Site URL est resté sur `http://localhost:3000`, le téléphone affiche « Ce site est inaccessible » — il cherche un serveur sur le téléphone lui-même. Et même une fois Site URL corrigée, ce lien-là dépose son jeton **après le `#`**, où aucun serveur ne le lit : l'agent retomberait sur l'écran de connexion sans avoir choisi de mot de passe. Les deux réglages vont ensemble.
+
+**Les invitations déjà envoyées gardent le lien d'origine.** Après correction, les renvoyer depuis **Agents & équipes → Invitations en attente → Renvoyer**.
 
 ### 0.5 Le centre sur lequel se fait la recette
 

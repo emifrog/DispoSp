@@ -88,7 +88,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
           </span>
           <div>
             <strong>{state.organization.name}</strong>
-            <small>Centre de secours</small>
+            {/*<small>Centre de secours</small>*/}
           </div>
           <ChevronDown size={15} />
         </div>

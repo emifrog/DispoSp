@@ -242,7 +242,7 @@ Pour les agents suivants, envoyer une invitation depuis l’application : l’ag
 
 Deux chemins, et la base les tient tous les deux. Un compte neuf est rattaché à la confirmation de son adresse. Un compte **qui existe déjà** — agent retiré puis réinvité, ou venu d’un autre centre — est rattaché à l’enregistrement même de l’invitation : il ne repassera jamais par une confirmation, et son invitation serait autrement restée en attente pour toujours. Dans ce cas aucun message ne part, et l’écran le dit.
 
-Configurer l’adresse publique dans Supabase → Authentication → URL Configuration, et les deux gabarits d’e-mail ci-dessus.
+Configurer l’adresse publique dans Supabase → Authentication → URL Configuration, et les deux gabarits d’e-mail ci-dessus. **Site URL** doit porter l’adresse publique en `https://`, jamais `http://localhost:3000` : c’est elle que `{{ .SiteURL }}` écrit dans chaque message, et un agent qui ouvre le lien sur son téléphone y cherche alors un serveur… sur son téléphone. Le symptôme est sans ambiguïté : « Ce site est inaccessible », `ERR_CONNECTION_REFUSED`.
 
 Le schéma est testé avec PostgreSQL embarqué via PGlite et un schéma Auth simulé. Cela ne remplace pas une vérification de l’intégration Supabase hébergée. Les fonctions `security definer` couvrent notamment les lectures de droits, la publication, les déclencheurs d’administration et d’audit, ainsi que les opérations de notifications. Les fonctions exposées pour les rappels et l’envoi des emails contrôlent les droits du compte ; aucune clé de service Supabase n’est nécessaire dans le navigateur.
 
@@ -337,6 +337,19 @@ Les notifications poussées suivent le même principe : un lot de dix envois apr
 | ---------------- | ---------------------------------------------------------------------------- |
 | `Invite user`    | `{{ .SiteURL }}/auth/activation?token_hash={{ .TokenHash }}&type=invite`     |
 | `Reset password` | `{{ .SiteURL }}/auth/recuperation?token_hash={{ .TokenHash }}&type=recovery` |
+
+**Le corps de ces messages est modifiable, et il l’est.** Les gabarits d’origine sont en anglais et ne nomment pas le centre ; un agent qui reçoit « You've been invited » d’un expéditeur inconnu a toutes les raisons de le prendre pour du hameçonnage. `supabase/templates/` porte les deux corps français, dans le registre des emails que l’application envoie déjà — même police, même logo servi depuis l’application, même sobriété :
+
+| Gabarit          | Fichier à coller                           | Sujet à mettre                     |
+| ---------------- | ------------------------------------------ | ---------------------------------- |
+| `Invite user`    | `supabase/templates/invitation.html`       | `DispoSP — votre accès est ouvert` |
+| `Reset password` | `supabase/templates/reinitialisation.html` | `DispoSP — nouveau mot de passe`   |
+
+Ils vivent dans le dépôt et non seulement dans le tableau de bord : un gabarit qu’on ne peut pas relire est un gabarit que personne ne corrige. `tests/email.test.ts` vérifie qu’ils portent bien le lien attendu et **aucune adresse en dur** — un `localhost` oublié là enverrait chaque agent sur son propre téléphone.
+
+Le troisième gabarit, `Confirm signup`, garde sa version d’origine : il ne sert qu’au tout premier compte, celui qui s’inscrit lui-même avant qu’un centre existe, et son lien s’ouvre sur l’appareil qui vient de le demander.
+
+**L’expéditeur, lui, ne se change pas dans un gabarit.** `noreply@mail.app.supabase.io` est le relais intégré de Supabase, et il est aussi limité à quelques messages par heure — de quoi fausser une recette. Pour envoyer depuis votre domaine : Project Settings → Authentication → SMTP Settings, avec les coordonnées Resend (`smtp.resend.com`, port 465, utilisateur `resend`, mot de passe `RESEND_API_KEY`). L’adresse d’expédition doit appartenir à un domaine vérifié chez Resend ; tant qu’il ne l’est pas, le relais de Supabase reste le seul chemin.
 
 **L’authentification unique est écrite mais pas joignable.** `signInWithSSO()` route sur le domaine de l’adresse saisie ; tant qu’aucun fournisseur SAML n’est déclaré côté Supabase — ce qui suppose un plan payant et la CLI — l’écran affiche l’explication et renvoie au mot de passe.
 
