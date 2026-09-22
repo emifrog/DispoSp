@@ -52,7 +52,16 @@ test.describe("Application installable", () => {
     await context.setOffline(true);
     await page.goto("/hors-ligne");
     await expect(page.getByRole("heading", { name: "Pas de connexion." })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Réessayer" })).toBeVisible();
+    // Hors ligne, rien d'autre que le document ne se charge : la page doit
+    // porter ses propres styles, et son « Réessayer » doit marcher sans script.
+    // Elle s'affichait sans style, avec un bouton inerte.
+    const retry = page.getByRole("link", { name: "Réessayer" });
+    await expect(retry).toBeVisible();
+    expect(await page.locator("main.offline").evaluate(el => getComputedStyle(el).maxWidth)).not.toBe("none");
+    await retry.click();
+    // Toujours hors ligne : la navigation retombe sur la même page, servie par
+    // l'agent de service — et non sur une erreur du navigateur.
+    await expect(page.getByRole("heading", { name: "Pas de connexion." })).toBeVisible();
     await context.setOffline(false);
   });
 

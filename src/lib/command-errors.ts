@@ -54,6 +54,29 @@ const byMessage: [RegExp, (match: RegExpMatchArray) => string][] = [
     /^Cannot remove the last administrator/,
     () => "Ce compte est le dernier administrateur actif du centre : nommez-en un autre avant de le retirer.",
   ],
+  // Publication : ce que 20260921090000 ajoute aux contrôles de couverture.
+  [
+    /^Inactive members cannot be published: (.+)$/,
+    m => `Ce brouillon retient un agent désactivé : ${m[1]}. Retirez-le avant de publier.`,
+  ],
+  [
+    /^Accepted withdrawal still assigned: (.+)$/,
+    m => `Un désistement accepté n’a pas été retiré du brouillon : ${m[1]}. Remplacez-le avant de publier.`,
+  ],
+  // Rappel, besoins, modèle, invitation.
+  [/^Not allowed to remind this campaign/, () => "Vous n’avez pas le droit de relancer cette campagne."],
+  [/^Unknown campaign/, () => "Cette campagne n’existe pas, ou ne vous est pas accessible."],
+  [
+    /^Template must be an object keyed by weekday/,
+    () => "La disponibilité habituelle envoyée est mal formée. Rechargez l’écran et recommencez.",
+  ],
+  [
+    /^Account already belongs to another organisation/,
+    () => "Cette adresse appartient déjà à un compte actif dans un autre centre : elle ne peut pas être invitée ici.",
+  ],
+  // Déjà en français dans la base : les fonctions Web Push parlent à l'agent.
+  [/^Aucune session ouverte/, () => "Votre session a expiré. Reconnectez-vous."],
+  [/^Compte rattaché à aucun centre actif/, () => "Votre compte n’est rattaché à aucun centre actif."],
 ];
 
 const byCode: Record<string, string> = {

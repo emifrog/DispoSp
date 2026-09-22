@@ -24,6 +24,7 @@ declare
   compte constant text := 'agent.qui.part@exemple.fr';
   cible uuid;
   centre uuid;
+  releve uuid;
   affectations int;
   restants int;
 begin
@@ -49,12 +50,22 @@ begin
         compte;
     end if;
 
+    -- Ce que ce compte a fait pour les autres — affecter, trancher un
+    -- désistement, inviter — reste fait : ces lignes passent au nom d'un autre
+    -- membre de l'encadrement, un administrateur de préférence. Les effacer
+    -- aurait retiré du planning publié des gardes qui ne sont pas les siennes.
+    select user_id into releve
+      from public.memberships
+      where organization_id = centre and user_id <> cible and active
+        and role in ('GESTIONNAIRE', 'ADMIN')
+      order by case role when 'ADMIN' then 0 else 1 end, user_id
+      limit 1;
+
     -- Une affectation publiée engage un agent sur une garde. L'effacer en
     -- silence changerait un planning que des gens ont lu.
     select count(*) into affectations
       from public.schedule_assignments a
-      join public.schedule_shifts s on s.id = a.schedule_shift_id
-      where (a.user_id = cible or a.assigned_by = cible) and s.published_revision is not null;
+      where a.user_id = cible and a.revision > 0;
     if affectations > 0 then
       raise notice
         'Attention : % affectation(s) publiée(s) concernent ce compte et vont être effacées. Les plannings déjà consultés ne les montreront plus.',
@@ -63,13 +74,23 @@ begin
   end if;
 
   -- L'ordre suit les dépendances, du plus dépendant au plus porteur.
+  delete from public.push_deliveries d using public.push_subscriptions s
+    where d.subscription_id = s.id and s.user_id = cible;
+  delete from public.push_subscriptions where user_id = cible;
   delete from public.availability_entries where user_id = cible;
   delete from public.campaign_participants where user_id = cible;
   delete from public.availability_templates where user_id = cible;
   delete from public.user_qualifications where user_id = cible;
-  delete from public.schedule_assignments where user_id = cible or assigned_by = cible;
+  delete from public.shift_withdrawals where user_id = cible;
+  update public.shift_withdrawals set decided_by = releve where decided_by = cible;
+  delete from public.schedule_assignments where user_id = cible;
+  update public.schedule_assignments set assigned_by = releve where assigned_by = cible;
   delete from public.notifications where user_id = cible;
-  delete from public.invitations where invited_by = cible;
+  -- L'invitation qui l'a fait entrer part avec lui : sa clé accepted_by
+  -- empêcherait sinon de supprimer le compte, et son adresse ne pourrait plus
+  -- être réinvitée. Celles qu'il a faites passent au relais.
+  delete from public.invitations where accepted_by = cible;
+  update public.invitations set invited_by = releve where invited_by = cible;
   delete from public.memberships where user_id = cible;
   delete from public.profiles where user_id = cible;
 

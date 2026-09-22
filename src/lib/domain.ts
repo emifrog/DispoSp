@@ -366,10 +366,14 @@ export function coverage(
 ) {
   const key = shiftKey(campaignId, date, shift);
   const ids = mode === "published" ? (state.publications[key]?.agents ?? []) : (state.assignments[key] ?? []);
+  // Le brouillon et le publié peuvent retenir un agent devenu inactif : il
+  // compte dans ce qui est affiché, et la publication le refusera — il doit
+  // donc apparaître, et apparaître comme invalide, plutôt que disparaître en
+  // silence et laisser le créneau « couvert » jusqu'au refus.
+  const roster = mode === "potential" ? state.agents : [...state.agents, ...state.inactiveAgents];
   const agents =
-    mode === "potential"
-      ? availableAgents(state, campaignId, date, shift)
-      : state.agents.filter(a => ids.includes(a.id));
+    mode === "potential" ? availableAgents(state, campaignId, date, shift) : roster.filter(a => ids.includes(a.id));
+  const inactive = new Set(state.inactiveAgents.map(a => a.id));
   const need = requirement(state, campaignId, date, shift);
   const qualifications = Object.entries(need?.qualifications ?? {}).map(([name, count]) => ({
     name,
@@ -386,6 +390,7 @@ export function coverage(
       ? []
       : agents.filter(
           a =>
+            inactive.has(a.id) ||
             withdrawn.has(a.id) ||
             !isValidated(state, campaignId, a.id) ||
             !isAvailable(state.entries[entryKey(campaignId, a.id, date)]?.type, shift),
@@ -450,6 +455,8 @@ export const commandSchema = z.discriminatedUnion("type", [
     name: z.string().trim().min(3),
     month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
     closesOn: isoDate,
+    // L'équipe conviée ; celle de qui ouvre, sinon.
+    teamId: id.optional(),
   }),
   z.object({ type: z.literal("close"), campaignId: id, closed: z.boolean() }),
   z.object({

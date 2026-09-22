@@ -1,6 +1,7 @@
 "use client";
 import { createContext, useContext, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { TriangleAlert } from "lucide-react";
 import { submitCommand } from "@/app/actions";
 import {
   administers,
@@ -74,10 +75,15 @@ export function AppProvider({
     next.set(CAMPAIGN_PARAM, campaignId);
     window.history.replaceState(window.history.state, "", `${pathname}?${next}`);
   }, [campaignId, pathname, params]);
-  const [message, setMessage] = useState("");
+  // Un succès s'efface seul ; une erreur reste jusqu'à ce qu'on l'ait lue. Un
+  // refus de la base avec son explication disparaissait en six secondes, avec la
+  // même tête qu'une confirmation.
+  const [message, setMessage] = useState<{ text: string; kind: "ok" | "error" } | null>(null);
+  const notice = (text: string) => setMessage({ text, kind: "ok" });
+  const complain = (text: string) => setMessage({ text, kind: "error" });
   useEffect(() => {
-    if (!message) return;
-    const timer = setTimeout(() => setMessage(""), 6500);
+    if (!message || message.kind !== "ok") return;
+    const timer = setTimeout(() => setMessage(null), 6500);
     return () => clearTimeout(timer);
   }, [message]);
   /**
@@ -97,25 +103,36 @@ export function AppProvider({
   const running = useRef(false);
 
   async function run(command: Command): Promise<boolean> {
-    if (running.current) return false;
+    // Un second clic pendant une écriture n'en déclenche pas une seconde, et
+    // le dit : ignoré en silence, deux « + » rapides n'affectaient qu'un agent
+    // sans que rien ne le montre.
+    if (running.current) {
+      complain("Une action est déjà en cours. Attendez qu’elle se termine, puis recommencez.");
+      return false;
+    }
     running.current = true;
     setSubmitting(true);
     try {
       const result = await submitCommand(command);
       if (!result.ok) {
-        setMessage(result.message);
+        complain(result.message);
+        // L'écran se relit aussi après un refus : la base a souvent refusé
+        // parce que quelqu'un d'autre a changé ce que l'écran montre encore, et
+        // chaque nouvel essai échouerait à l'identique jusqu'à une navigation.
+        startRefresh(() => router.refresh());
         return false;
       }
       // The screens are built by the server render: re-read the database rather
       // than patch a local copy of what we believe was just written.
       startRefresh(() => router.refresh());
-      setMessage(result.label + ".");
+      notice(result.label + ".");
       return true;
     } catch {
       // L'action serveur n'a pas répondu — réseau coupé, déploiement en cours.
-      // On ignore si l'écriture a eu lieu, et le dire vaut mieux que de laisser
-      // l'écran figé sur une attente qui ne finira pas.
-      setMessage("La connexion a été interrompue. Vérifiez l’écran avant de recommencer.");
+      // On ignore si l'écriture a eu lieu : on relit, et on le dit — c'est
+      // mieux que de laisser l'écran figé sur une attente qui ne finira pas.
+      complain("La connexion a été interrompue. L’écran a été relu : vérifiez-le avant de recommencer.");
+      startRefresh(() => router.refresh());
       return false;
     } finally {
       running.current = false;
@@ -138,7 +155,7 @@ export function AppProvider({
         setCampaignId,
         run,
         busy,
-        notice: setMessage,
+        notice,
         memberRole,
         canAdminister: administers(memberRole),
       }}
@@ -152,10 +169,16 @@ export function AppProvider({
         </div>
       )}
       {children}
+      {/* `alert` pour une erreur : le lecteur d'écran l'annonce tout de suite ;
+          `status` pour une confirmation, qui peut attendre la fin de la phrase. */}
       {message && (
-        <div className="toast" role="status">
-          {message}
-          <button aria-label="Masquer le message" onClick={() => setMessage("")}>
+        <div
+          className={`toast ${message.kind === "error" ? "error" : ""}`}
+          role={message.kind === "error" ? "alert" : "status"}
+        >
+          {message.kind === "error" && <TriangleAlert size={18} aria-hidden="true" />}
+          {message.text}
+          <button aria-label="Masquer le message" onClick={() => setMessage(null)}>
             ×
           </button>
         </div>

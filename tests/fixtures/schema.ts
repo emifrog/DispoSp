@@ -27,6 +27,7 @@ export const MIGRATIONS = [
   "20260921130000_web_push_abonnement.sql",
   "20260921140000_verrou_publication.sql",
   "20260922100000_reactivation_administrateur_devalidation.sql",
+  "20260922150000_rattachement_retrait_file_email.sql",
 ];
 
 /**

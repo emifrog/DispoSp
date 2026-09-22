@@ -50,8 +50,11 @@ import { InstallApp, PushNotifications } from "./pwa";
 import { roleLabels } from "@/lib/session";
 
 export function Campaigns() {
-  const { state, run, setCampaignId } = useApp();
+  const { state, run, setCampaignId, agent } = useApp();
   const [open, setOpen] = useState(false);
+  // L'équipe conviée : celle de qui ouvre, par défaut — le choix ne se montre
+  // qu'à un centre qui en a plusieurs.
+  const [teamId, setTeamId] = useState(agent.teamId || state.teams[0]?.id || "");
   // Propose the first month no campaign covers yet, and collect responses during
   // the month before it, so the dialog never opens on a window already past.
   const nextMonth = state.campaigns.reduce(
@@ -135,8 +138,9 @@ export function Campaigns() {
       <div className="info-card horizontal">
         <Megaphone size={24} />
         <p>
-          La création ouvre la campagne à tous les agents de votre centre. Les emails et rappels automatiques seront
-          raccordés avec le service de notifications.
+          La création ouvre la campagne aux membres actifs de l’équipe choisie, qui en sont prévenus par message, par
+          email et par notification sur leur téléphone quand ils l’ont activée. Les autres équipes ne la voient pas :
+          ouvrez-leur la leur.
         </p>
       </div>
       <Modal
@@ -147,7 +151,7 @@ export function Campaigns() {
       >
         <form
           onSubmit={form.handleSubmit(async data => {
-            if (await run({ type: "campaign", ...data })) {
+            if (await run({ type: "campaign", ...data, teamId })) {
               setOpen(false);
               form.reset();
             }
@@ -158,6 +162,12 @@ export function Campaigns() {
             <input {...form.register("name")} placeholder="Disponibilités de novembre" />
           </label>
           {form.formState.errors.name && <p className="field-error">{form.formState.errors.name.message}</p>}
+          {/* Un centre à une seule équipe n'a rien à choisir : le champ ne se
+              montre qu'à partir de la seconde. La campagne s'ouvrait toujours
+              pour l'équipe de qui la créait, sans que l'écran le dise. */}
+          {state.teams.length > 1 && (
+            <TeamField teams={state.teams} teamId={teamId} onChange={next => setTeamId(next.teamId)} />
+          )}
           <div className="form-grid">
             <label>
               Mois concerné
@@ -443,29 +453,49 @@ function TeamField({
 function RoleField({
   role,
   granter,
+  frozen,
   onChange,
 }: {
   role: MemberRole;
   granter: MemberRole;
+  /** Seul un administrateur change un rôle, et personne le sien : figé sinon,
+      plutôt qu'offert puis refusé — avec toute la fiche — par la base. */
+  frozen?: string;
   onChange: (next: { role: MemberRole }) => void;
 }) {
   const offered = memberRoles.filter(r => r !== "ADMIN" || granter === "ADMIN");
   return (
     <label className="field">
       Rôle
-      <select value={role} onChange={e => onChange({ role: e.target.value as MemberRole })}>
+      <select
+        value={role}
+        disabled={Boolean(frozen)}
+        aria-describedby={frozen ? "role-frozen" : undefined}
+        onChange={e => onChange({ role: e.target.value as MemberRole })}
+      >
         {offered.map(r => (
           <option key={r} value={r}>
             {roleLabels[r]}
           </option>
         ))}
       </select>
+      {frozen && (
+        <small id="role-frozen" className="muted">
+          {frozen}
+        </small>
+      )}
     </label>
   );
 }
 
 function MemberDialog({ agent, onClose }: { agent: Agent; onClose: () => void }) {
-  const { state, run, memberRole } = useApp();
+  const { state, run, memberRole, actor } = useApp();
+  const self = agent.id === actor.id;
+  const roleFrozen = self
+    ? "Personne ne change son propre rôle."
+    : memberRole !== "ADMIN"
+      ? "Seul un administrateur change un rôle."
+      : undefined;
   const [form, setForm] = useState({
     name: agent.name,
     grade: agent.grade,
@@ -494,7 +524,12 @@ function MemberDialog({ agent, onClose }: { agent: Agent; onClose: () => void })
     <Modal open onOpenChange={open => !open && onClose()} title={agent.name} description="Fiche, équipe et rôle.">
       <RecordFields value={form} onChange={next => setForm(f => ({ ...f, ...next }))} />
       <TeamField teams={state.teams} teamId={form.teamId} onChange={next => setForm(f => ({ ...f, ...next }))} />
-      <RoleField role={form.role} granter={memberRole} onChange={next => setForm(f => ({ ...f, ...next }))} />
+      <RoleField
+        role={form.role}
+        granter={memberRole}
+        frozen={roleFrozen}
+        onChange={next => setForm(f => ({ ...f, ...next }))}
+      />
       <fieldset className="field">
         <legend>Qualifications</legend>
         <div className="qualification-choices">
@@ -528,13 +563,17 @@ function MemberDialog({ agent, onClose }: { agent: Agent; onClose: () => void })
           </Button>
         </div>
       </fieldset>
+      {/* On ne se désactive pas soi-même : la base le refuse, et refuserait
+          toute la fiche avec. */}
       <label className="field checkbox-field">
         <input
           type="checkbox"
           checked={form.active}
+          disabled={self}
           onChange={e => setForm(f => ({ ...f, active: e.target.checked }))}
         />
         Agent actif
+        {self && <small className="muted"> — votre propre compte</small>}
       </label>
       <Button
         className="full-width"

@@ -44,18 +44,22 @@ describe("Bascule du centre d’essai vers un vrai centre", () => {
     await live.exec(`
       insert into auth.users(id,email,email_confirmed_at) values
         ('${chef}','chef@essai.test',now()),
+        ('30000000-0000-0000-0000-0000000000c3','seul@essai.test',now()),
         ('${agent}','agent@essai.test',now()),
         ('${parti}','parti@essai.test',now());
       insert into public.profiles(user_id,display_name) values
-        ('${chef}','Chef'), ('${agent}','Agent'), ('${parti}','Parti');
+        ('${chef}','Chef'), ('${agent}','Agent'), ('${parti}','Parti'),
+        ('30000000-0000-0000-0000-0000000000c3','Seul');
       insert into public.organizations(id,name,day_start,night_start) values ('${org}','CIS Test',7,19);
       insert into public.teams(id,organization_id,name) values ('${team}','${org}','Section Nord');
       insert into public.memberships values
         ('${org}','${chef}','${team}','ADMIN',true),
         ('${org}','${agent}','${team}','AGENT',true),
         ('${org}','${parti}','${team}','AGENT',true);
+      -- Les horaires ont été réglés depuis l'application (organisations 7 h / 19 h) ;
+      -- shift_types, que seuls les scripts écrivent, est resté à 8 h / 20 h.
       insert into public.shift_types(organization_id,code,starts_at_hour,duration_hours) values
-        ('${org}','DAY',7,12), ('${org}','NIGHT',19,12);
+        ('${org}','DAY',8,12), ('${org}','NIGHT',20,12);
       insert into public.qualifications(id,organization_id,name) values ('${qualification}','${org}','Chef d''agrès');
       insert into public.user_qualifications(organization_id,user_id,qualification_id)
         values ('${org}','${agent}','${qualification}');
@@ -119,12 +123,23 @@ describe("Bascule du centre d’essai vers un vrai centre", () => {
     expect(await count("organizations")).toBe(1);
   });
 
+  it("refuse un compte encore actif dans un centre qu’on n’efface pas", async () => {
+    // Un compte n'est actif que dans un seul centre : le chef de l'essai ne peut
+    // pas administrer le nouveau centre tant que l'essai reste debout.
+    const garde = provisioningScript("basculer-vers-un-vrai-centre.sql")
+      .replace("'administrateur@exemple.fr'", "'chef@essai.test'")
+      .replace("array['agent.de.recette@exemple.fr']", "array[]::text[]")
+      .replace(":= 'CIS Test';", ":= null;");
+    await expect(live.exec(garde)).rejects.toThrow("encore actif dans un autre centre");
+    expect(await count("organizations")).toBe(1);
+  });
+
   it("accepte une liste vide : l’administrateur seul", async () => {
     // Le rattachement des autres se fait ensuite par invitation, depuis
     // l'application. Passer par le script n'est utile que pour les comptes qui
     // existent déjà, celui de la recette en tête.
     const seul = provisioningScript("basculer-vers-un-vrai-centre.sql")
-      .replace("'administrateur@exemple.fr'", "'chef@essai.test'")
+      .replace("'administrateur@exemple.fr'", "'seul@essai.test'")
       .replace("array['agent.de.recette@exemple.fr']", "array[]::text[]")
       .replace("'CIS Nice Bon Voyage'", "'CIS Essai à blanc'")
       // `essai_nom` à NULL : ce parcours ne vérifie que la création, et le
@@ -161,9 +176,10 @@ describe("Bascule du centre d’essai vers un vrai centre", () => {
       )
     ).rows;
     expect(centre).toHaveLength(1);
-    // Les horaires du centre d'essai avaient été réglés pour de bon : les
-    // recréer à 8 h et 20 h serait une régression que personne ne remarquerait
-    // avant la première campagne.
+    // Les horaires du centre d'essai avaient été réglés pour de bon, depuis
+    // l'application : les recréer à 8 h et 20 h — ce que shift_types disait
+    // encore — serait une régression que personne ne remarquerait avant la
+    // première campagne.
     expect(centre[0]).toMatchObject({ day_start: 7, night_start: 19 });
     expect((await live.query("select name from public.teams")).rows).toEqual([{ name: "Bon Voyage" }]);
     expect(
@@ -230,8 +246,8 @@ describe("Bascule du centre d’essai vers un vrai centre", () => {
     // Effacer une identité est un geste qui se fait à la main, en le regardant :
     // le compte non repris reste, simplement rattaché à rien — l'application lui
     // dira qu'il n'appartient à aucun centre.
-    expect(await count("profiles")).toBe(3);
-    expect(Number((await live.query<{ n: number }>("select count(*) as n from auth.users")).rows[0].n)).toBe(3);
+    expect(await count("profiles")).toBe(4);
+    expect(Number((await live.query<{ n: number }>("select count(*) as n from auth.users")).rows[0].n)).toBe(4);
     expect(await count("memberships", `where user_id='${parti}'`)).toBe(0);
   });
 

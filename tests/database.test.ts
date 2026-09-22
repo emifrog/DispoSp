@@ -1,7 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { readFileSync } from "node:fs";
 import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it } from "vitest";
-import { baseAuthSchema, MIGRATIONS } from "./fixtures/schema";
+import { baseAuthSchema, freshDatabase, MIGRATIONS, provisioningScript } from "./fixtures/schema";
 const db = new PGlite();
 // La liste des migrations et le schéma d'authentification vivent avec les
 // autres montages de test : les parcours de provisionnement s'en servent aussi,
@@ -2662,4 +2662,338 @@ describe("Correctifs du 22 septembre — réactivation, dernier administrateur, 
     );
     expect(kept.rows).toEqual([{ kept: true }]);
   });
+});
+
+// Correctifs C1 et C2 de l'analyse du 22 septembre : ce qu'une invitation fait
+// d'un compte qui existe déjà, et ce que le retrait d'un compte doit pouvoir
+// défaire — désistements, gardes affectées par un gestionnaire, invitation
+// acceptée, appareil abonné, puis la suppression du compte lui-même.
+describe("Invitation d’un compte existant — un seul centre actif", () => {
+  const orgA = "10000000-0000-0000-0000-0000000000d0";
+  const orgB = "10000000-0000-0000-0000-0000000000d1";
+  const teamA = "20000000-0000-0000-0000-0000000000d0";
+  const teamB = "20000000-0000-0000-0000-0000000000d1";
+  const managerA = "30000000-0000-0000-0000-0000000000d0";
+  const memberB = "30000000-0000-0000-0000-0000000000d1";
+  const dormant = "30000000-0000-0000-0000-0000000000d2";
+  let live: PGlite;
+  const be = async (id: string | null) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id ?? ""]);
+    if (id) await live.exec("set role authenticated");
+  };
+  const invite = (email: string, role = "AGENT") =>
+    live.query(
+      `insert into public.invitations(organization_id,team_id,email,display_name,role,invited_by)
+       values ($1,$2,$3,'Invité',$4,$5)`,
+      [orgA, teamA, email, role, managerA],
+    );
+
+  beforeAll(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const m of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    await live.exec(`
+      insert into auth.users(id,email,email_confirmed_at) values
+        ('${managerA}','chef@a.test',now()), ('${memberB}','membre@b.test',now()), ('${dormant}','ancien@a.test',now());
+      insert into public.profiles(user_id,display_name) values ('${managerA}','Chef'), ('${memberB}','Membre B'), ('${dormant}','Ancien');
+      insert into public.organizations(id,name) values ('${orgA}','Centre A'), ('${orgB}','Centre B');
+      insert into public.teams(id,organization_id,name) values ('${teamA}','${orgA}','Alpha'), ('${teamB}','${orgB}','Bravo');
+      insert into public.memberships values
+        ('${orgA}','${managerA}','${teamA}','GESTIONNAIRE',true),
+        ('${orgB}','${memberB}','${teamB}','AGENT',true),
+        ('${orgA}','${dormant}','${teamA}','AGENT',false);`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("refuse d’inviter une adresse encore active dans un autre centre", async () => {
+    await be(managerA);
+    await expect(invite("membre@b.test")).rejects.toThrow("Account already belongs to another organisation");
+    await be(null);
+    // Rien n'a bougé : ni rattachement en A, ni fiche lisible par A.
+    expect(
+      (await live.query("select organization_id from public.memberships where user_id=$1", [memberB])).rows,
+    ).toEqual([{ organization_id: orgB }]);
+    expect((await live.query("select id from public.invitations where email='membre@b.test'")).rows).toEqual([]);
+  });
+
+  it("réactive un membre désactivé du même centre au lieu de ne rien changer", async () => {
+    await be(managerA);
+    await invite("ancien@a.test");
+    await be(null);
+    expect(
+      (await live.query("select active, team_id from public.memberships where user_id=$1", [dormant])).rows,
+    ).toEqual([{ active: true, team_id: teamA }]);
+    expect((await live.query("select accepted_by from public.invitations where email='ancien@a.test'")).rows).toEqual([
+      { accepted_by: dormant },
+    ]);
+  });
+
+  it("interdit deux rattachements actifs pour un même compte, même par l’éditeur SQL", async () => {
+    await be(null);
+    await expect(
+      live.query("insert into public.memberships values ($1,$2,$3,'AGENT',true)", [orgA, memberB, teamA]),
+    ).rejects.toThrow("memberships_one_active_per_user");
+  });
+});
+
+describe("Retrait d’un compte — désistements, gardes affectées, invitation acceptée, appareil", () => {
+  const org = "10000000-0000-0000-0000-0000000000e0";
+  const team = "20000000-0000-0000-0000-0000000000e0";
+  const admin = "30000000-0000-0000-0000-0000000000e0";
+  const manager = "30000000-0000-0000-0000-0000000000e1";
+  const agent = "30000000-0000-0000-0000-0000000000e2";
+  const other = "30000000-0000-0000-0000-0000000000e3";
+  const campaign = "40000000-0000-0000-0000-0000000000e0";
+  const schedule = "60000000-0000-0000-0000-0000000000e0";
+  const shift = "70000000-0000-0000-0000-0000000000e0";
+  const script = readFileSync(new URL("../supabase/provisioning/retirer-un-compte.sql", import.meta.url), "utf8");
+  const remove = (email: string) => live.exec(script.replace("'agent.qui.part@exemple.fr'", `'${email}'`));
+  let live: PGlite;
+  const count = async (sql: string, params: unknown[] = []) =>
+    Number((await live.query<{ n: number }>(`select count(*)::int as n ${sql}`, params)).rows[0].n);
+
+  beforeEach(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const migration of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${migration}`, import.meta.url), "utf8"));
+    await live.exec(`
+      insert into auth.users(id,email,email_confirmed_at) values
+        ('${admin}','admin@example.org',now()), ('${manager}','chef@example.org',now()),
+        ('${agent}','agent@example.org',now()), ('${other}','autre@example.org',now());
+      insert into public.profiles(user_id,display_name) values
+        ('${admin}','Admin'), ('${manager}','Chef'), ('${agent}','Agent'), ('${other}','Autre');
+      insert into public.organizations(id,name) values ('${org}','Centre retrait 2');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values
+        ('${org}','${admin}','${team}','ADMIN',true),
+        ('${org}','${manager}','${team}','GESTIONNAIRE',true),
+        ('${org}','${agent}','${team}','AGENT',true),
+        ('${org}','${other}','${team}','AGENT',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        values ('${campaign}','${org}','${team}','Octobre','2026-10-01','2026-10-01',now()-interval '1 day',now()+interval '9 days');
+      insert into public.schedules(id,organization_id,campaign_id,team_id) values ('${schedule}','${org}','${campaign}','${team}');
+      insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code,published_revision,published_at)
+        values ('${shift}','${org}','${schedule}','2026-10-01','DAY',1,now());
+      -- Le gestionnaire a affecté l'agent ET un autre agent, et publié.
+      insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,revision,status,assigned_by) values
+        ('${org}','${shift}','${agent}',1,'CONFIRMED','${manager}'),
+        ('${org}','${shift}','${other}',1,'CONFIRMED','${manager}');
+      -- L'agent s'est désisté, le gestionnaire a tranché.
+      insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id,reason,state,decided_at,decided_by)
+        values ('${org}','${shift}','${agent}','Empêché','REFUSED',now(),'${manager}');
+      -- L'agent est arrivé par invitation, et son téléphone est abonné.
+      insert into public.invitations(organization_id,team_id,email,display_name,role,invited_by,accepted_at,accepted_by)
+        values ('${org}','${team}','agent@example.org','Agent','AGENT','${manager}',now(),'${agent}');
+      insert into public.push_subscriptions(organization_id,user_id,endpoint,p256dh,auth)
+        values ('${org}','${agent}','https://fcm.googleapis.com/fcm/send/retrait','${"B".repeat(87)}','${"A".repeat(22)}');
+      insert into public.notifications(organization_id,user_id,kind,subject)
+        values ('${org}','${agent}','SCHEDULE_PUBLISHED','Publié');`);
+  }, 30000);
+  afterEach(async () => {
+    await live.close();
+  });
+
+  it("retire un agent qui s’est désisté et dont le téléphone est abonné, puis laisse supprimer son compte", async () => {
+    await remove("agent@example.org");
+    expect(await count("from public.shift_withdrawals where user_id=$1", [agent])).toBe(0);
+    expect(await count("from public.push_subscriptions where user_id=$1", [agent])).toBe(0);
+    expect(await count("from public.push_deliveries")).toBe(0);
+    expect(await count("from public.memberships where user_id=$1", [agent])).toBe(0);
+    // L'invitation qui l'a fait entrer est partie avec lui : le compte se
+    // supprime, et l'adresse peut être réinvitée.
+    expect(await count("from public.invitations where accepted_by=$1", [agent])).toBe(0);
+    await live.query("delete from auth.users where id=$1", [agent]);
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [manager]);
+    await live.exec("set role authenticated");
+    await live.query(
+      `insert into public.invitations(organization_id,team_id,email,display_name,role,invited_by)
+       values ($1,$2,'agent@example.org','Agent de retour','AGENT',$3)`,
+      [org, team, manager],
+    );
+    await live.exec("reset role");
+    expect(await count("from public.invitations where email='agent@example.org' and accepted_at is null")).toBe(1);
+  });
+
+  it("retire un gestionnaire sans effacer les gardes des autres : ses gestes passent au relais", async () => {
+    await remove("chef@example.org");
+    expect(await count("from public.memberships where user_id=$1", [manager])).toBe(0);
+    // La garde publiée de l'autre agent est toujours là, affectée au nom de
+    // l'administrateur restant ; la décision de désistement aussi.
+    expect(
+      (await live.query("select user_id, assigned_by from public.schedule_assignments order by user_id")).rows,
+    ).toEqual([
+      { user_id: agent, assigned_by: admin },
+      { user_id: other, assigned_by: admin },
+    ]);
+    expect((await live.query("select decided_by from public.shift_withdrawals")).rows).toEqual([{ decided_by: admin }]);
+    expect((await live.query("select invited_by from public.invitations")).rows).toEqual([{ invited_by: admin }]);
+    await live.query("delete from auth.users where id=$1", [manager]);
+  });
+
+  it("refuse une invitation en double tant que la première attend, pas au-delà", async () => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [manager]);
+    await live.exec("set role authenticated");
+    await live.query(
+      `insert into public.invitations(organization_id,team_id,email,display_name,role,invited_by)
+       values ($1,$2,'nouveau@example.org','Nouveau','AGENT',$3)`,
+      [org, team, manager],
+    );
+    await expect(
+      live.query(
+        `insert into public.invitations(organization_id,team_id,email,display_name,role,invited_by)
+         values ($1,$2,'nouveau@example.org','Nouveau','AGENT',$3)`,
+        [org, team, manager],
+      ),
+    ).rejects.toThrow("invitations_pending_email_key");
+  });
+});
+
+// La file d'emails, sur le modèle de la file poussée : réservée sous verrou par
+// le serveur, avec bail et tentatives, hors de portée d'une session.
+describe("File d’emails réservée par le serveur", () => {
+  const org = "10000000-0000-0000-0000-0000000000f0";
+  const team = "20000000-0000-0000-0000-0000000000f0";
+  const manager = "30000000-0000-0000-0000-0000000000f0";
+  const agent = "30000000-0000-0000-0000-0000000000f1";
+  const mute = "30000000-0000-0000-0000-0000000000f2";
+  let live: PGlite;
+  const be = async (id: string | null, role: "authenticated" | "service_role" = "authenticated") => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id ?? ""]);
+    await live.exec(`set role ${role}`);
+  };
+  const claim = async (batch = 50) => {
+    await be(null, "service_role");
+    return (
+      await live.query<{ id: string; lease: string; email: string; kind: string }>(
+        "select id, lease, email, kind from public.claim_email_deliveries($1)",
+        [batch],
+      )
+    ).rows;
+  };
+  const statuses = async () => {
+    await live.exec("reset role");
+    return (
+      await live.query<{ email_status: string; email_attempts: number }>(
+        "select email_status, email_attempts from public.notifications order by created_at, user_id",
+      )
+    ).rows;
+  };
+
+  beforeAll(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const m of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    await live.exec(`
+      insert into auth.users(id,email) values ('${manager}','chef@example.org'), ('${agent}','agent@example.org'), ('${mute}', null);
+      insert into public.profiles(user_id,display_name) values ('${manager}','Chef'), ('${agent}','Agent'), ('${mute}','Sans adresse');
+      insert into public.organizations(id,name) values ('${org}','Centre file');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values
+        ('${org}','${manager}','${team}','GESTIONNAIRE',true),
+        ('${org}','${agent}','${team}','AGENT',true),
+        ('${org}','${mute}','${team}','AGENT',true);
+      insert into public.notifications(organization_id,user_id,kind,subject) values
+        ('${org}','${agent}','CAMPAIGN_OPENED','Ouverte'),
+        ('${org}','${mute}','CAMPAIGN_OPENED','Ouverte');`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("n’est réservable que par le serveur", async () => {
+    await be(manager);
+    await expect(live.query("select * from public.claim_email_deliveries(10)")).rejects.toThrow(/permission denied/);
+    await be(agent);
+    await expect(
+      live.query("select public.finish_email_delivery(gen_random_uuid(), gen_random_uuid(), 200)"),
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it("réserve avec un bail, écarte ce qui n’a pas d’adresse, et ne rend pas deux fois la même ligne", async () => {
+    const first = await claim();
+    expect(first).toHaveLength(1);
+    expect(first[0]).toMatchObject({ email: "agent@example.org", kind: "CAMPAIGN_OPENED" });
+    expect(first[0].lease).toBeTruthy();
+    // Le second passage ne voit rien : la ligne est en cours d'envoi, sous bail.
+    expect(await claim()).toHaveLength(0);
+    expect(await statuses()).toEqual([
+      { email_status: "sending", email_attempts: 1 },
+      { email_status: "skipped", email_attempts: 0 },
+    ]);
+    // Une session d'encadrement ne voit plus la ligne en cours d'envoi non plus.
+    await be(manager);
+    expect((await live.query("select id from public.pending_notifications($1)", [org])).rows).toHaveLength(0);
+  });
+
+  it("marque envoyé sur 2xx, reprend sur 5xx, abandonne sur 4xx", async () => {
+    await live.exec("reset role");
+    await live.query(
+      "update public.notifications set email_status='pending', email_available_at=now(), email_attempts=0",
+    );
+    let [job] = await claim();
+    await be(null, "service_role");
+    await live.query("select public.finish_email_delivery($1,$2,503)", [job.id, job.lease]);
+    expect((await statuses())[0]).toEqual({ email_status: "pending", email_attempts: 1 });
+    // Le délai a été posé : rien n'est réservable tout de suite.
+    expect(await claim()).toHaveLength(0);
+    await live.exec("reset role");
+    await live.query("update public.notifications set email_available_at=now()");
+    [job] = await claim();
+    await be(null, "service_role");
+    // Un mauvais jeton ne finit rien.
+    await live.query("select public.finish_email_delivery($1,gen_random_uuid(),200)", [job.id]);
+    expect((await statuses())[0]).toEqual({ email_status: "sending", email_attempts: 2 });
+    await be(null, "service_role");
+    await live.query("select public.finish_email_delivery($1,$2,200)", [job.id, job.lease]);
+    await live.exec("reset role");
+    expect(
+      (
+        await live.query(
+          "select email_status, sent_at is not null as sent from public.notifications where user_id=$1",
+          [agent],
+        )
+      ).rows,
+    ).toEqual([{ email_status: "sent", sent: true }]);
+    // Un refus définitif du service d'envoi n'est pas réessayé.
+    await live.query(
+      "insert into public.notifications(organization_id,user_id,kind,subject) values ($1,$2,'CAMPAIGN_REMINDER','Rappel')",
+      [org, agent],
+    );
+    [job] = await claim();
+    await be(null, "service_role");
+    await live.query("select public.finish_email_delivery($1,$2,422)", [job.id, job.lease]);
+    expect((await statuses()).map(s => s.email_status)).toEqual(["sent", "skipped", "failed"]);
+  });
+});
+
+describe("Première campagne — les horaires viennent de l’organisation", () => {
+  it("reprend les horaires réglés depuis l’application, pas ceux des créneaux types", async () => {
+    const fresh = await freshDatabase();
+    const org = "10000000-0000-0000-0000-0000000000f9";
+    const team = "20000000-0000-0000-0000-0000000000f9";
+    const chief = "30000000-0000-0000-0000-0000000000f9";
+    await fresh.exec(`
+      insert into auth.users(id,email,email_confirmed_at) values ('${chief}','chef@example.org',now());
+      insert into public.profiles(user_id,display_name) values ('${chief}','Chef');
+      insert into public.organizations(id,name,day_start,night_start) values ('${org}','CIS Nice Bon Voyage',7,19);
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Bon Voyage');
+      insert into public.memberships values ('${org}','${chief}','${team}','ADMIN',true);
+      -- Les créneaux types disent encore 8 h et 20 h : personne ne les met à jour.
+      insert into public.shift_types(organization_id,code,starts_at_hour,duration_hours)
+        values ('${org}','DAY',8,12), ('${org}','NIGHT',20,12);`);
+    await fresh.exec(provisioningScript("premiere-campagne.sql"));
+    expect((await fresh.query("select day_start, night_start from public.availability_campaigns")).rows).toEqual([
+      { day_start: 7, night_start: 19 },
+    ]);
+    await fresh.close();
+  }, 30000);
 });

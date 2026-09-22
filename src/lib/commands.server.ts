@@ -1,6 +1,5 @@
 import "server-only";
 import { frenchMessage, type DatabaseFailure } from "./command-errors";
-import { dispatch } from "./mailer.server";
 import type { Command, Shift } from "./domain";
 import type { AttachedSession } from "./session";
 import { createActionClient } from "./supabase/server";
@@ -26,7 +25,7 @@ export async function runCommand(session: AttachedSession, command: Command): Pr
     case "assign":
       return writeAssignment(client, session, command);
     case "publish":
-      return publishShift(client, session.membership.organizationId, command);
+      return publishShift(client, command);
     case "requirement":
       return writeRequirement(client, command);
     case "requirements":
@@ -56,7 +55,7 @@ export async function runCommand(session: AttachedSession, command: Command): Pr
     case "readNotifications":
       return markNotificationsRead(client, command);
     case "remind":
-      return remindCampaign(client, session, command);
+      return remindCampaign(client, command);
     case "template":
       return writeTemplate(client, session, command);
     case "applyTemplate":
@@ -90,11 +89,11 @@ async function applyTemplate(client: Client, command: Of<"applyTemplate">) {
 
 // Nobody runs a clock, so a reminder is an act a manager takes. The database
 // picks the targets — those who have not validated — and refuses a second
-// pending reminder for the same campaign.
-async function remindCampaign(client: Client, session: AttachedSession, command: Of<"remind">) {
+// pending reminder for the same campaign. L'envoi, lui, n'est plus déclenché
+// ici : les deux files se vident après chaque commande, depuis l'action.
+async function remindCampaign(client: Client, command: Of<"remind">) {
   const { error } = await client.rpc("remind_campaign", { campaign: command.campaignId });
   if (error) fail(error);
-  await dispatch(client, session.membership.organizationId);
 }
 
 // The only column a session may write on its own notices. Marking one already
@@ -221,13 +220,12 @@ async function writeAssignment(client: Client, session: AttachedSession, command
   if (error) fail(error);
 }
 
-async function publishShift(client: Client, organizationId: string, command: Of<"publish">) {
+async function publishShift(client: Client, command: Of<"publish">) {
   const shiftId = await shiftIdFor(client, command.campaignId, command.date, command.shift);
   // public.publish_shift() is the only door to the private definer function,
   // which re-checks headcount, qualifications and eligibility in one transaction.
   const { error } = await client.rpc("publish_shift", { shift: shiftId });
   if (error) fail(error);
-  await dispatch(client, organizationId);
 }
 
 async function writeRequirement(client: Client, command: Of<"requirement">) {
@@ -315,16 +313,17 @@ async function qualificationIds(client: Client, organizationId: string, names: s
 
 async function openCampaign(client: Client, session: AttachedSession, command: Of<"campaign">) {
   const { organizationId, teamId } = session.membership;
+  // L'équipe du formulaire, sinon celle de qui ouvre : un gestionnaire gère tout
+  // son centre, et une campagne s'ouvre pour l'équipe qu'elle concerne. La base
+  // vérifie que l'équipe est bien du centre — clé composée — et le droit.
   const { error } = await client.rpc("create_campaign", {
     org: organizationId,
-    team: teamId,
+    team: command.teamId ?? teamId,
     campaign_name: command.name,
     campaign_month: `${command.month}-01`,
     closes_on: command.closesOn,
   });
   if (error) fail(error);
-  // Only send after the campaign, planning, participants and notices commit.
-  await dispatch(client, organizationId);
 }
 
 async function lockCampaign(client: Client, command: Of<"close">) {

@@ -46,11 +46,14 @@ begin
     raise exception 'Une campagne existe déjà pour %.', to_char(v_first, 'MM/YYYY');
   end if;
 
-  select coalesce(max(st.starts_at_hour) filter (where st.code = 'DAY'), 8),
-         coalesce(max(st.starts_at_hour) filter (where st.code = 'NIGHT'), 20)
+  -- Les horaires du centre, tels que l'application les tient (écran
+  -- Paramètres) : c'est aussi ce que create_campaign() fige dans une campagne.
+  -- shift_types n'est écrite que par les scripts et ne suit pas un réglage
+  -- fait depuis l'application.
+  select coalesce(o.day_start, 8), coalesce(o.night_start, 20)
     into v_day, v_night
-    from public.shift_types st
-   where st.organization_id = v_org;
+    from public.organizations o
+   where o.id = v_org;
 
   -- « de septembre » mais « d'octobre » : avril, août et octobre prennent l'élision.
   v_month := months[extract(month from v_first)::int];

@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
@@ -41,14 +42,12 @@ import {
 export function Planning() {
   const { state, campaignId, campaign, run } = useApp();
   const days = monthDays(campaign.month);
-  const [selectedDate, setDate] = useState(() =>
-    typeof window === "undefined" ? days[14] : (new URLSearchParams(window.location.search).get("date") ?? days[14]),
-  );
-  const [shift, setShift] = useState<Shift>(() =>
-    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("shift") === "NIGHT"
-      ? "NIGHT"
-      : "DAY",
-  );
+  // L'adresse se lit par le routeur, des deux côtés : lue dans `window` au
+  // premier rendu, elle différait entre le serveur et le navigateur, et chaque
+  // ouverture depuis une notification hydratait avec un décalage.
+  const params = useSearchParams();
+  const [selectedDate, setDate] = useState(() => params.get("date") ?? days[14]);
+  const [shift, setShift] = useState<Shift>(() => (params.get("shift") === "NIGHT" ? "NIGHT" : "DAY"));
   const [search, setSearch] = useState("");
   const [gradeFilter, setGradeFilter] = useState("");
   const [needsOpen, setNeedsOpen] = useState(false);
@@ -419,18 +418,24 @@ export function Planning() {
             onChange={e => setTotal(Number(e.target.value))}
           />
         </label>
-        {["Chef", "Conducteur PL", "SAP", "Équipier INC"].map(q => (
-          <label key={q} className="field">
-            {q}
-            <input
-              type="number"
-              min={0}
-              max={total}
-              value={qualifications[q] ?? 0}
-              onChange={e => setQualifications(v => ({ ...v, [q]: Number(e.target.value) }))}
-            />
-          </label>
-        ))}
+        {/* Le catalogue du centre, plus ce que ce créneau exige déjà : une
+            qualification retirée du catalogue reste éditable ici, et une
+            posée en lot n'est plus invisible. Quatre noms figés ne parlaient
+            que d'un centre. */}
+        {[...new Set([...state.qualificationCatalogue, ...Object.keys(qualifications)])]
+          .sort((a, b) => a.localeCompare(b, "fr"))
+          .map(q => (
+            <label key={q} className="field">
+              {q}
+              <input
+                type="number"
+                min={0}
+                max={total}
+                value={qualifications[q] ?? 0}
+                onChange={e => setQualifications(v => ({ ...v, [q]: Number(e.target.value) }))}
+              />
+            </label>
+          ))}
         <Button
           className="full-width"
           onClick={async () => {

@@ -1667,6 +1667,17 @@ label {
   align-items: center;
   gap: 20px;
 }
+/* Une erreur ne ressemble pas à une confirmation : bordure et icône rouges,
+   et elle ne s'efface pas d'elle-même. */
+.toast.error {
+  background: #3a1518;
+  border: 1px solid #b42318;
+  gap: 12px;
+}
+.toast.error > svg {
+  color: #fda29b;
+  flex-shrink: 0;
+}
 /* Le « × » ne mesure que onze pixels de large : sans dimension imposée, la
    seule façon de faire taire le message demandait de viser. */
 .toast button {

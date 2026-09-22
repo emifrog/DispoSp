@@ -84,16 +84,31 @@ begin
       raise exception 'Le compte % n''existe pas, ou son adresse n''est pas confirmée.', compte;
     end if;
   end loop;
+  -- Un compte n'est actif que dans un seul centre à la fois : la lecture de
+  -- session refuse deux rattachements actifs, et le schéma le garantit depuis
+  -- le 22 septembre. Ceux du centre d'essai partent avec lui ; un compte actif
+  -- dans un autre centre — ou dans l'essai qu'on ne veut pas effacer — doit y
+  -- être désactivé d'abord.
+  foreach compte in array suivent || admin_email loop
+    if exists (
+      select 1 from public.memberships m join auth.users u on u.id = m.user_id
+       where u.email = compte and m.active and m.organization_id is distinct from essai_id
+    ) then
+      raise exception 'Le compte % est encore actif dans un autre centre : désactivez-l''y avant de le rattacher ici.', compte;
+    end if;
+  end loop;
 
   -- 2. Le vrai centre.
 
   -- Les horaires du centre d'essai, s'il en avait : ils ont sans doute été
   -- réglés pour de bon, et les recréer par défaut serait une régression muette.
+  -- Lus sur l'organisation, la seule ligne que l'application écrit (écran
+  -- Paramètres) : shift_types n'est renseignée que par les scripts, et ne suit
+  -- pas un réglage fait depuis l'application.
   if essai_id is not null then
-    select coalesce(max(case when code = 'DAY' then starts_at_hour end), 8),
-           coalesce(max(case when code = 'NIGHT' then starts_at_hour end), 20)
+    select coalesce(o.day_start, 8), coalesce(o.night_start, 20)
       into jour, nuit
-      from public.shift_types where organization_id = essai_id;
+      from public.organizations o where o.id = essai_id;
   end if;
 
   insert into public.organizations (name, day_start, night_start) values (centre_nom, jour, nuit)

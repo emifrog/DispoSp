@@ -12,11 +12,19 @@
  * Une seule exception, et elle ne contient rien : la page qui annonce la perte
  * de connexion. Par construction, elle ne peut pas être périmée.
  */
-const SHELL = "disposp-hors-ligne-v1";
+const SHELL = "disposp-hors-ligne-v2";
 const OFFLINE = "/hors-ligne";
 
+// Toujours depuis le réseau, jamais depuis le cache HTTP du navigateur : la
+// copie gardée ici doit être celle du déploiement en cours.
+const refreshOffline = () =>
+  caches
+    .open(SHELL)
+    .then(cache => cache.add(new Request(OFFLINE, { cache: "reload" })))
+    .catch(() => {});
+
 self.addEventListener("install", event => {
-  event.waitUntil(caches.open(SHELL).then(cache => cache.add(OFFLINE)));
+  event.waitUntil(refreshOffline());
   self.skipWaiting();
 });
 
@@ -29,11 +37,25 @@ self.addEventListener("activate", event => {
   );
 });
 
+let lastRefresh = 0;
 self.addEventListener("fetch", event => {
   // Tout le reste — données, actions, ressources — passe au réseau sans
   // interception. Ce gestionnaire n'existe que pour les navigations.
   if (event.request.mode !== "navigate") return;
-  event.respondWith(fetch(event.request).catch(() => caches.match(OFFLINE)));
+  event.respondWith(
+    fetch(event.request)
+      .then(response => {
+        // Le réseau est là : la page hors ligne se remet à jour en passant, sans
+        // attendre une réinstallation que rien ne déclenche entre deux
+        // déploiements. Une fois par heure suffit.
+        if (Date.now() - lastRefresh > 3600000) {
+          lastRefresh = Date.now();
+          event.waitUntil(refreshOffline());
+        }
+        return response;
+      })
+      .catch(() => caches.match(OFFLINE)),
+  );
 });
 
 /* --- Notifications poussées -------------------------------------------------

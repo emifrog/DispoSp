@@ -41,6 +41,24 @@ describe("Couverture", () => {
     expect(coverage(state, campaignId, "2026-10-15", "DAY", "planned").actual).toBe(0);
   });
 
+  // Un agent désactivé après avoir été affecté ne disparaît pas du brouillon :
+  // la base refusera la publication, l'écran doit le montrer comme invalide au
+  // lieu d'annoncer « couvert » jusqu'au refus.
+  it("montre un agent désactivé du brouillon comme invalide, sans le faire disparaître", () => {
+    const state = validate(answered(), campaignId, julien, now);
+    assign(state, campaignId, "2026-10-15", "DAY", [julien]);
+    expect(coverage(state, campaignId, "2026-10-15", "DAY", "planned").invalid).toHaveLength(0);
+    const record = state.agents.find(a => a.id === julien)!;
+    state.agents = state.agents.filter(a => a.id !== julien);
+    state.inactiveAgents.push(record);
+    const planned = coverage(state, campaignId, "2026-10-15", "DAY", "planned");
+    expect(planned.actual).toBe(1);
+    expect(planned.invalid.map(a => a.id)).toEqual([julien]);
+    expect(planned.covered).toBe(false);
+    // Le potentiel, lui, ne compte que l'effectif actif.
+    expect(availableAgents(state, campaignId, "2026-10-15", "DAY").map(a => a.id)).not.toContain(julien);
+  });
+
   it("ne mesure pas un créneau dont les besoins ne sont pas définis", () => {
     const state = validate(answered(), campaignId, julien, now);
     const key = shiftKey(campaignId, "2026-10-15", "DAY");

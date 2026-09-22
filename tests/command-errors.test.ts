@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { frenchMessage } from "../src/lib/command-errors";
 
@@ -38,6 +39,26 @@ describe("Traduction des refus de la base", () => {
     );
     expect(frenchMessage({ code: "PGRST301" })).toContain("session a expiré");
   });
+  // Chaque `raise exception` des migrations doit avoir sa phrase : un refus
+  // qui tombe sur « Réessayez dans un instant » fait recommencer l'agent
+  // contre une règle qu'on lui cache. Les gardes de migration — « Apply …
+  // first », « déjà appliquée » — ne s'adressent pas à lui.
+  it("traduit chaque refus que les migrations peuvent lever", () => {
+    const dir = new URL("../supabase/migrations/", import.meta.url);
+    const raised = new Set<string>();
+    for (const file of readdirSync(dir))
+      for (const match of readFileSync(new URL(file, dir), "utf8").matchAll(/raise exception '((?:[^']|'')+)'/g))
+        raised.add(match[1].replace(/''/g, "'"));
+    const guard = /^(Apply |Appliquez |\d{4} has already|Cette migration a déjà)/;
+    const generic = frenchMessage({ message: "Simulated" });
+    const untranslated = [...raised]
+      .filter(text => !guard.test(text))
+      // Les paramètres « % » prennent une valeur plausible.
+      .map(text => text.replace(/%/g, "2"))
+      .filter(text => frenchMessage({ message: text }) === generic);
+    expect(untranslated).toEqual([]);
+  });
+
   it("ne laisse jamais fuiter un message de base de données", () => {
     for (const failure of [
       null,
