@@ -99,8 +99,8 @@ Le schéma est découpé en migrations successives, à appliquer dans l'ordre et
 | `supabase/migrations/20260921090000_eligibilite_publication.sql`                  | Contrôle d'éligibilité à la publication d'une garde                                                                                                      | Appliquée — confirmation du porteur du projet |
 | `supabase/migrations/20260921100156_web_push_notifications.sql`                   | Abonnements des appareils, file des envois poussés et son traitement                                                                                     | Appliquée — confirmation du porteur du projet |
 | `supabase/migrations/20260921130000_web_push_abonnement.sql`                      | Inscription d'un appareil par la session qui le tient                                                                                                    | Appliquée — confirmation du porteur du projet |
-| `supabase/migrations/20260921140000_verrou_publication.sql`                       | Verrou de ligne sur le créneau publié, contre deux publications simultanées                                                                              | **À appliquer**                               |
-| `supabase/migrations/20260922100000_reactivation_administrateur_devalidation.sql` | Fiche des membres désactivés ouverte à l'encadrement ; dernier administrateur protégé ; dévalidation sous la même fenêtre que la validation, journalisée | **À appliquer**                               |
+| `supabase/migrations/20260921140000_verrou_publication.sql`                       | Verrou de ligne sur le créneau publié, contre deux publications simultanées                                                                              | Appliquée le 22 septembre 2026                |
+| `supabase/migrations/20260922100000_reactivation_administrateur_devalidation.sql` | Fiche des membres désactivés ouverte à l'encadrement ; dernier administrateur protégé ; dévalidation sous la même fenêtre que la validation, journalisée | Appliquée le 22 septembre 2026                |
 
 Les deux migrations du 18 septembre n’ajoutent que des fonctions : `public.create_campaign()` pour la première, `public.save_availability_template()` et `public.apply_availability_template()` pour la seconde. Elles ne modifient aucune donnée existante.
 
@@ -322,7 +322,7 @@ Les deux règles correspondantes mesurent, l'une la position des liens du menu a
 
 ## Limites et prochaines étapes
 
-Les seize premières migrations sont appliquées — les deux du Web Push comprises — et l’application lit et écrit les données en mode connecté. **`20260921140000_verrou_publication.sql` reste à passer** : elle verrouille le créneau pendant sa publication, pour que deux responsables qui publient au même instant ne calculent pas la même révision. Les étapes restantes sont suivies dans [le plan de développement](PLAN_DEVELOPPEMENT.md), et la vérification avant mise en service dans [la recette](RECETTE.md) :
+Les dix-huit migrations sont appliquées — le verrou de publication et les correctifs du 22 septembre compris — et l’application lit et écrit les données en mode connecté. Les étapes restantes sont suivies dans [le plan de développement](PLAN_DEVELOPPEMENT.md), et la vérification avant mise en service dans [la recette](RECETTE.md) :
 
 - Confirmer la configuration du site hébergé et effectuer une recette avec plusieurs comptes : invitation, confirmation d’adresse, disponibilités habituelles, validation, publication, réception des emails et des notifications poussées sur un téléphone.
 - Déployer la version qui appelle `public.create_campaign()`, `public.save_availability_template()` et `public.apply_availability_template()`, puis vérifier ces parcours en mode connecté : les migrations sont appliquées, le comportement hébergé reste à observer.

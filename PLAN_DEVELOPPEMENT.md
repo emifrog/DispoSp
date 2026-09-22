@@ -1,6 +1,6 @@
 # Plan de développement — DispoSP
 
-État au 21 septembre 2026. **Les seize premières migrations sont appliquées** sur le projet de développement, les deux du Web Push comprises ; le tableau des migrations du [README](README.md) fait foi. Deux attendent : le verrou de publication issu de la revue du 21 septembre, et les trois correctifs de droits de l’analyse du 22 septembre (`20260922100000`). Le reste tient à la configuration de l’hébergement et à la recette, pas au schéma. Les statuts ci-dessous distinguent les fonctionnalités implémentées des vérifications restant à effectuer sur le site hébergé.
+État au 22 septembre 2026. **Les dix-huit migrations sont appliquées** sur le projet de développement, le verrou de publication et les correctifs du 22 septembre compris ; le tableau des migrations du [README](README.md) fait foi. Le reste tient à la configuration de l’hébergement et à la recette, pas au schéma. Les statuts ci-dessous distinguent les fonctionnalités implémentées des vérifications restant à effectuer sur le site hébergé.
 
 Ce document complète le cahier des charges V1.0 du 17 septembre 2026 et `DECISIONS_FONCTIONNELLES.md`, qui restent la référence fonctionnelle. La configuration et les commandes sont détaillées dans le [README](README.md). Les réserves techniques encore ouvertes — droits de lecture à trancher, écritures composées, découpage de `loadState()` — sont suivies dans [la revue technique](ANALYSE.md).
 
@@ -14,23 +14,23 @@ Les redirections d’authentification, la configuration Resend et celle des noti
 
 ### Avancement par domaine
 
-| Domaine                     | État                      | Détail                                                                                                                               |
-| --------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Socle technique             | ✅ implémenté             | Versionnement, formatage, lint, types et intégration continue                                                                        |
-| Base de données             | 🟡 une migration à passer | 22 tables, seize migrations appliquées et le verrou de publication à passer, isolation RLS et règles métier                          |
-| Authentification            | 🟡 SSO à configurer       | Inscription, confirmation d’adresse, connexion, mot de passe oublié, session et déconnexion ; SSO SAML écrit, fournisseur à déclarer |
-| Lecture et écriture         | ✅ implémentées           | Données et commandes métier raccordées à Supabase                                                                                    |
-| Administration              | ✅ implémentée            | Fiches agents avec grade et fonction, invitations, équipes, trois rôles et qualifications                                            |
-| Besoins et statistiques     | ✅ implémentés            | Besoins du mois en lot ; statistiques par mois, par jour de semaine et par agent                                                     |
-| Désistements                | ✅ implémentés            | L’agent signale, l’encadrement tranche ; la réaffectation reste au planning                                                          |
-| Disponibilités habituelles  | ✅ implémentées           | Modèle personnel par jour de semaine ; enregistrement et application atomiques                                                       |
-| Synthèse et couverture      | ✅ implémentées           | Matrice virtualisée, vue nominative par journée, niveaux de couverture et distinction potentiel/planifié                             |
-| Planning et équité          | ✅ implémentés            | Brouillon, publication contrôlée, répartition Jour/Nuit/24 h                                                                         |
-| Historique et audit         | ✅ implémentés            | Journal, filtres sujet/auteur/période/recherche et export du journal                                                                 |
-| Notifications               | 🟡 recette à compléter    | Centre interne, rappels manuels, emails Resend et notifications poussées implémentés ; clés VAPID et réception à vérifier            |
-| Exports                     | ✅ implémentés            | CSV, ICS, Excel, journal d’audit et impression PDF, matrice mensuelle comprise                                                       |
-| Application installable     | ✅ implémentée            | Interface adaptée au mobile, manifeste, icônes, installation sur l’écran d’accueil et notifications poussées                         |
-| Hébergement et exploitation | 🟡 à confirmer            | Configuration connectée, emails, sauvegardes et recette à plusieurs comptes                                                          |
+| Domaine                     | État                   | Détail                                                                                                                               |
+| --------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Socle technique             | ✅ implémenté          | Versionnement, formatage, lint, types et intégration continue                                                                        |
+| Base de données             | ✅ implémentée         | 22 tables, dix-huit migrations appliquées, isolation RLS et règles métier                                                            |
+| Authentification            | 🟡 SSO à configurer    | Inscription, confirmation d’adresse, connexion, mot de passe oublié, session et déconnexion ; SSO SAML écrit, fournisseur à déclarer |
+| Lecture et écriture         | ✅ implémentées        | Données et commandes métier raccordées à Supabase                                                                                    |
+| Administration              | ✅ implémentée         | Fiches agents avec grade et fonction, invitations, équipes, trois rôles et qualifications                                            |
+| Besoins et statistiques     | ✅ implémentés         | Besoins du mois en lot ; statistiques par mois, par jour de semaine et par agent                                                     |
+| Désistements                | ✅ implémentés         | L’agent signale, l’encadrement tranche ; la réaffectation reste au planning                                                          |
+| Disponibilités habituelles  | ✅ implémentées        | Modèle personnel par jour de semaine ; enregistrement et application atomiques                                                       |
+| Synthèse et couverture      | ✅ implémentées        | Matrice virtualisée, vue nominative par journée, niveaux de couverture et distinction potentiel/planifié                             |
+| Planning et équité          | ✅ implémentés         | Brouillon, publication contrôlée, répartition Jour/Nuit/24 h                                                                         |
+| Historique et audit         | ✅ implémentés         | Journal, filtres sujet/auteur/période/recherche et export du journal                                                                 |
+| Notifications               | 🟡 recette à compléter | Centre interne, rappels manuels, emails Resend et notifications poussées implémentés ; clés VAPID et réception à vérifier            |
+| Exports                     | ✅ implémentés         | CSV, ICS, Excel, journal d’audit et impression PDF, matrice mensuelle comprise                                                       |
+| Application installable     | ✅ implémentée         | Interface adaptée au mobile, manifeste, icônes, installation sur l’écran d’accueil et notifications poussées                         |
+| Hébergement et exploitation | 🟡 à confirmer         | Configuration connectée, emails, sauvegardes et recette à plusieurs comptes                                                          |
 
 ### Garanties métier
 
@@ -67,7 +67,7 @@ Le développement des lots 3 et 5 a avancé : la priorité porte désormais sur 
 
 ### Lot 0 — Socle ✅ implémenté
 
-Versionnement et outillage, authentification, lecture des données, intégration continue et virtualisation de la synthèse. Seize migrations sont appliquées ; le verrou de publication et les correctifs du 22 septembre restent à passer ; le schéma compte 22 tables.
+Versionnement et outillage, authentification, lecture des données, intégration continue et virtualisation de la synthèse. Les dix-huit migrations sont appliquées ; le schéma compte 22 tables.
 
 ### Lot 1 — Écriture des données ✅ implémentée, déploiement à confirmer
 
@@ -187,7 +187,7 @@ La consultation hors ligne reste une extension à cadrer. **À confirmer :** ins
 | Notifications (§10)                            | 🟡   | Centre interne, Resend et Web Push implémentés ; migrations et réception à vérifier, rappel manuel |
 | Exports (§11)                                  | ✅   | CSV, ICS, Excel et journal ; PDF par impression, matrice comprise                                  |
 | Historique et audit (§12)                      | ✅   | Journal, filtres sujet/auteur/période/recherche et export CSV                                      |
-| Modèle de données (§14)                        | ✅   | 22 tables ; seize migrations appliquées, une à passer                                              |
+| Modèle de données (§14)                        | ✅   | 22 tables ; dix-huit migrations appliquées                                                         |
 | Sécurité et RGPD (§16)                         | 🟡   | Contrôles techniques présents ; dispositions d’exploitation à compléter                            |
 | Responsive et installable (§17)                | ✅   | De 320 px au grand écran ; manifeste, icônes, agent et notifications poussées                      |
 | Interface à plusieurs centaines d’agents (§21) | 🟡   | Scénario de virtualisation à 300 agents ; charge hébergée à mesurer                                |
@@ -207,7 +207,7 @@ La consultation hors ligne reste une extension à cadrer. **À confirmer :** ins
 | Risque                                              | Portée                                              | Réduction                                                                                        |
 | --------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | Échec pendant la création d’une campagne            | Campagne incomplète                                 | Transaction testée, migration appliquée ; déployer et vérifier le parcours                       |
-| Deux responsables publient le même créneau ensemble | Échec brutal sur violation de contrainte            | Verrou de ligne écrit (`20260921140000`), à appliquer                                            |
+| Deux responsables publient le même créneau ensemble | Échec brutal sur violation de contrainte            | Verrou de ligne appliqué (`20260921140000`)                                                      |
 | Deux responsables modifient le même brouillon       | Conflit de modification, dernier écrivain gagnant   | Vérifier la concurrence et signaler les conflits dans l’interface                                |
 | Mode public ou URL Auth mal configurés              | Démonstration affichée ou confirmation inaccessible | Recette depuis l’URL publique avec un second compte                                              |
 | Invitation non éprouvée sur le projet hébergé       | Arrivée d’un agent bloquée                          | Vérifier inscription, confirmation, rattachement et droits                                       |
