@@ -9,6 +9,7 @@ import {
   entryKey,
   isValidated,
   labels,
+  LOADED_MONTHS,
   monthDays,
   monthLabel,
   plural,
@@ -28,9 +29,10 @@ const pct = (part: number, whole: number) => (whole ? Math.round((part / whole) 
  * Ce que les mois écoulés disent du centre.
  *
  * Tout est déjà en mémoire : l'état porte les saisies, les besoins et les
- * publications de **toutes** les campagnes, pas seulement de celle qu'on
- * regarde. Cet écran ne fait donc aucune requête de plus — il relit ce que les
- * autres écrans montrent un mois à la fois.
+ * publications des campagnes des LOADED_MONTHS derniers mois, pas seulement de
+ * celle qu'on regarde. Cet écran ne fait donc aucune requête de plus — il
+ * relit ce que les autres écrans montrent un mois à la fois. Les archives, plus
+ * anciennes, n'y entrent pas.
  *
  * Une réserve, et elle vaut pour tout ce qui suit : les taux se calculent sur
  * l'effectif d'aujourd'hui. Un agent parti ne compte plus dans les mois où il
@@ -74,30 +76,34 @@ export function Statistics() {
 
 /** Une ligne par campagne : qui a répondu, et ce que ça a couvert. */
 function ByMonth({ state }: { state: AppState }) {
-  const rows = state.campaigns.map(c => {
-    const days = monthDays(c.month);
-    // Chaque campagne a son propre périmètre : comparer des mois ouverts à des
-    // équipes différentes sur l'effectif du centre rendait la colonne illisible.
-    const concerned = campaignAgents(state, c.id);
-    const validated = concerned.filter(a => state.responses[responseKey(c.id, a.id)]).length;
-    const slots = days.flatMap(date => SHIFTS.map(shift => coverage(state, c.id, date, shift, "potential")));
-    const measured = slots.filter(s => s.defined);
-    const covered = measured.filter(s => s.covered).length;
-    const published = days.flatMap(date =>
-      SHIFTS.filter(shift => state.publications[shiftKey(c.id, date, shift)]),
-    ).length;
-    return {
-      id: c.id,
-      name: c.name,
-      month: c.month,
-      response: pct(validated, concerned.length),
-      concerned: concerned.length,
-      coverage: measured.length ? pct(covered, measured.length) : null,
-      measured: measured.length,
-      published,
-      slots: days.length * 2,
-    };
-  });
+  // Les archives n'ont pas leur détail chargé : les compter mettrait des zéros
+  // là où il y a eu des réponses.
+  const rows = state.campaigns
+    .filter(c => !c.archived)
+    .map(c => {
+      const days = monthDays(c.month);
+      // Chaque campagne a son propre périmètre : comparer des mois ouverts à des
+      // équipes différentes sur l'effectif du centre rendait la colonne illisible.
+      const concerned = campaignAgents(state, c.id);
+      const validated = concerned.filter(a => state.responses[responseKey(c.id, a.id)]).length;
+      const slots = days.flatMap(date => SHIFTS.map(shift => coverage(state, c.id, date, shift, "potential")));
+      const measured = slots.filter(s => s.defined);
+      const covered = measured.filter(s => s.covered).length;
+      const published = days.flatMap(date =>
+        SHIFTS.filter(shift => state.publications[shiftKey(c.id, date, shift)]),
+      ).length;
+      return {
+        id: c.id,
+        name: c.name,
+        month: c.month,
+        response: pct(validated, concerned.length),
+        concerned: concerned.length,
+        coverage: measured.length ? pct(covered, measured.length) : null,
+        measured: measured.length,
+        published,
+        slots: days.length * 2,
+      };
+    });
   const average = rows.length ? Math.round(rows.reduce((t, r) => t + r.response, 0) / rows.length) : 0;
 
   return (
@@ -106,11 +112,11 @@ function ByMonth({ state }: { state: AppState }) {
         <ProgressRing percent={average} caption="de réponses" />
         <div className="stats-highlight-body">
           <strong>
-            {rows.length} {plural(rows.length, "campagne")} {plural(rows.length, "enregistrée")}
+            {rows.length} {plural(rows.length, "campagne")} sur {LOADED_MONTHS} mois
           </strong>
           <p className="muted">
-            Taux de réponse moyen sur l’ensemble des campagnes du centre, calculé sur les réponses explicitement
-            validées.
+            Taux de réponse moyen sur les campagnes des {LOADED_MONTHS} derniers mois, calculé sur les réponses
+            explicitement validées. Les campagnes plus anciennes restent consultables une à une depuis le sélecteur.
           </p>
         </div>
       </div>
@@ -268,16 +274,20 @@ function ByAgent({ state, campaignId }: { state: AppState; campaignId: string })
   const rows = campaignAgents(state, campaignId)
     .map(agent => {
       const filled = days.filter(d => state.entries[entryKey(campaignId, agent.id, d)]).length;
-      // Les gardes effectuées se comptent sur toutes les campagnes, pas sur le
-      // seul mois affiché : c'est l'engagement dans la durée qui se lit ici.
-      const shifts = state.campaigns.reduce(
-        (total, c) =>
-          total +
-          monthDays(c.month).flatMap(date =>
-            SHIFTS.filter(shift => state.publications[shiftKey(c.id, date, shift)]?.agents.includes(agent.id)),
-          ).length,
-        0,
-      );
+      // Les gardes effectuées se comptent sur toutes les campagnes de la
+      // fenêtre, pas sur le seul mois affiché : c'est l'engagement dans la
+      // durée qui se lit ici. Une archive chargée à la demande n'y entre pas,
+      // sans quoi le total changerait selon ce qu'on vient de consulter.
+      const shifts = state.campaigns
+        .filter(c => !c.archived)
+        .reduce(
+          (total, c) =>
+            total +
+            monthDays(c.month).flatMap(date =>
+              SHIFTS.filter(shift => state.publications[shiftKey(c.id, date, shift)]?.agents.includes(agent.id)),
+            ).length,
+          0,
+        );
       return { agent, filled, shifts, validated: isValidated(state, campaignId, agent.id) };
     })
     .sort((a, b) => b.shifts - a.shifts || a.agent.name.localeCompare(b.agent.name, "fr"));
@@ -286,7 +296,7 @@ function ByAgent({ state, campaignId }: { state: AppState; campaignId: string })
   return (
     <Panel
       title="Par agent"
-      subtitle="Saisie du mois affiché, gardes effectuées sur l’ensemble des campagnes."
+      subtitle={`Saisie du mois affiché, gardes effectuées sur les ${LOADED_MONTHS} derniers mois.`}
       action={
         <span className="pill pill-gray">
           {rows.length} {plural(rows.length, "agent")}

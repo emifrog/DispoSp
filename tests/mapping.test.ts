@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildState, taken, READ_FAILED, type Raw } from "../src/lib/data-mapping";
+import { buildState, campaignsToLoad, taken, READ_FAILED, type Raw } from "../src/lib/data-mapping";
 import {
   campaignAgents,
   coverage,
@@ -513,5 +513,31 @@ describe("Construction de l’état depuis la base", () => {
   it("retombe sur le nom de la session si l’organisation n’est pas lisible", () => {
     const state = buildState(raw({ organization: null }), "Secours");
     expect(state.organization).toEqual({ name: "Secours", dayStart: 8, nightStart: 20 });
+  });
+});
+
+// Point 7 de l'audit de déployabilité : le détail ne se lit que sur une fenêtre.
+describe("Fenêtre de chargement", () => {
+  const campaigns = [
+    { id: "ancienne", starts_on: "2024-03-01" },
+    { id: "limite", starts_on: "2025-10-01" },
+    { id: "courante", starts_on: "2026-09-01" },
+    { id: "a-venir", starts_on: "2026-11-01" },
+  ];
+
+  it("lit la fenêtre, et l’archive que l’adresse demande", () => {
+    expect(campaignsToLoad(campaigns, "2025-10-01")).toEqual(["limite", "courante", "a-venir"]);
+    expect(campaignsToLoad(campaigns, "2025-10-01", "ancienne")).toEqual(["ancienne", "limite", "courante", "a-venir"]);
+    // Une campagne inconnue demandée par l'adresse n'ajoute rien.
+    expect(campaignsToLoad(campaigns, "2025-10-01", "inconnue")).toHaveLength(3);
+  });
+
+  it("marque les archives et ce qui a été lu, sans rien marquer hors fenêtre", () => {
+    const [plain] = buildState(raw(), "Secours").campaigns;
+    expect(plain).toMatchObject({ archived: false, loaded: true });
+    const [archived] = buildState(raw(), "Secours", { since: "2099-01-01", loaded: [] }).campaigns;
+    expect(archived).toMatchObject({ archived: true, loaded: false });
+    const [asked] = buildState(raw(), "Secours", { since: "2099-01-01", loaded: [CAMPAIGN] }).campaigns;
+    expect(asked).toMatchObject({ archived: true, loaded: true });
   });
 });

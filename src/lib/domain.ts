@@ -169,6 +169,12 @@ export const stateSchema = z.object({
           d'une autre équipe comptait comme non-répondant à une campagne où il
           n'avait jamais été invité. */
       participants: z.array(z.string()).default([]),
+      /** Plus ancienne que la fenêtre chargée d'office (LOADED_MONTHS). Elle reste
+          au sélecteur, mais les statistiques ne la comptent pas. */
+      archived: z.boolean().default(false),
+      /** Ses disponibilités, besoins et planning sont-ils chargés ? Une archive
+          ne l'est que lorsqu'on la choisit. */
+      loaded: z.boolean().default(true),
     }),
   ),
   entries: z.record(z.string(), z.object({ type: availabilitySchema, comment: z.string() })),
@@ -228,6 +234,16 @@ export const shiftMonth = (month: string, delta: number) => {
   const index = Number(month.slice(0, 4)) * 12 + Number(month.slice(5)) - 1 + delta;
   return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`;
 };
+/**
+ * Combien de mois de campagnes l'application charge en détail.
+ *
+ * Chaque écriture relit tout ce qui est chargé ; sans borne, un centre relisait
+ * chaque disponibilité depuis sa création, à chaque clic. Douze mois couvrent
+ * un bilan annuel. Une campagne plus ancienne se charge quand on la choisit.
+ */
+export const LOADED_MONTHS = 12;
+/** Le premier jour du plus ancien mois chargé d'office : « 2025-10-01 ». */
+export const loadedSince = (today = new Date()) => `${shiftMonth(localMonth(today), 1 - LOADED_MONTHS)}-01`;
 /** L'heure d'un instant, lue à Paris : « 14:05 ». */
 export const localTime = (d: Date) => formatInTimeZone(d, PARIS, "HH:mm");
 /** Un horodatage lisible, lu à Paris : « 23 sept. 2026, 14:05 ». */

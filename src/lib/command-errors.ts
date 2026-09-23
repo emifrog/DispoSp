@@ -66,14 +66,34 @@ const byMessage: [RegExp, (match: RegExpMatchArray) => string][] = [
   ],
   // Rappel, besoins, modèle, invitation.
   [/^Not allowed to remind this campaign/, () => "Vous n’avez pas le droit de relancer cette campagne."],
+  // Les limites d'envoi (23 septembre).
+  [
+    /^Campaign reminded too recently/,
+    () => "Un rappel est déjà parti pour cette campagne il y a moins de douze heures.",
+  ],
+  [/^Unknown invitation/, () => "Cette invitation n’existe plus, ou ne vous est pas accessible."],
+  [
+    /^Invitation sent too recently/,
+    () => "Ce message est parti il y a moins d’un quart d’heure : laissez-lui le temps d’arriver.",
+  ],
+  [
+    /^Invitation send limit reached/,
+    () => "Cette invitation a déjà été envoyée cinq fois. Vérifiez l’adresse, puis supprimez-la et refaites-la.",
+  ],
+  [
+    /^Too many invitations sent/,
+    () => "Plus de cinquante invitations sont parties dans l’heure pour ce centre. Réessayez un peu plus tard.",
+  ],
   [/^Unknown campaign/, () => "Cette campagne n’existe pas, ou ne vous est pas accessible."],
   [
     /^Template must be an object keyed by weekday/,
     () => "La disponibilité habituelle envoyée est mal formée. Rechargez l’écran et recommencez.",
   ],
+  // Volontairement vague : dire « actif dans un autre centre » apprenait à un
+  // gestionnaire l'existence d'un compte hors de son périmètre (RGPD, 23 sept.).
   [
     /^Account already belongs to another organisation/,
-    () => "Cette adresse appartient déjà à un compte actif dans un autre centre : elle ne peut pas être invitée ici.",
+    () => "Cette adresse ne peut pas être invitée ici. Vérifiez-la, ou voyez avec l’administrateur de DispoSP.",
   ],
   // Déjà en français dans la base : les fonctions Web Push parlent à l'agent.
   [/^Aucune session ouverte/, () => "Votre session a expiré. Reconnectez-vous."],

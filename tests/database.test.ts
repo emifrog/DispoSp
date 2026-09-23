@@ -1062,14 +1062,15 @@ describe("File d’envoi ouverte par 0006", () => {
       (await live.query<{ remind_campaign: number }>("select public.remind_campaign($1)", [campaign])).rows[0]
         .remind_campaign,
     ).toBe(1);
-    // Le rappel en attente vaut pour toute la période : le répéter n’ajoute rien.
-    expect(
-      (await live.query<{ remind_campaign: number }>("select public.remind_campaign($1)", [campaign])).rows[0]
-        .remind_campaign,
-    ).toBe(0);
+    // Depuis 20260923140000, le répéter dans les douze heures est refusé
+    // (voir « Limites d’envoi »).
+    await expect(live.query("select public.remind_campaign($1)", [campaign])).rejects.toThrow(
+      "Campaign reminded too recently",
+    );
     // Une réponse validée sort l’agent de la liste des relances.
     await live.exec("reset role");
     await live.query("delete from public.notifications where kind='CAMPAIGN_REMINDER'");
+    await live.query("delete from private.campaign_reminders");
     await live.query(
       "insert into public.availability_entries(campaign_id,user_id,date,availability_type) values ($1,$2,'2026-11-01','DAY')",
       [campaign, agent],
@@ -2836,6 +2837,50 @@ describe("Retrait d’un compte — désistements, gardes affectées, invitation
     await live.query("delete from auth.users where id=$1", [manager]);
   });
 
+  // RGPD, 23 septembre : le déclencheur de saisie refuse toute suppression sur
+  // une campagne close — y compris celle du script. Un agent qui avait répondu
+  // à une campagne passée, soit presque tous, ne pouvait pas être retiré.
+  it("retire un agent qui a répondu à une campagne aujourd’hui close", async () => {
+    await live.exec(`
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values ('${org}','${campaign}','${agent}');
+      insert into public.availability_entries(campaign_id,user_id,date,availability_type) values ('${campaign}','${agent}','2026-10-01','DAY');
+      update public.availability_campaigns set locked = true where id = '${campaign}';`);
+    await remove("agent@example.org");
+    expect(await count("from public.availability_entries where user_id=$1", [agent])).toBe(0);
+    expect(await count("from public.memberships where user_id=$1", [agent])).toBe(0);
+    // Le déclencheur est rétabli : la campagne close refuse toujours une saisie.
+    await expect(
+      live.query(
+        "insert into public.availability_entries(campaign_id,user_id,date,availability_type) values ($1,$2,'2026-10-01','DAY')",
+        [campaign, other],
+      ),
+    ).rejects.toThrow("Campaign is closed");
+  });
+
+  // Le journal garde les actions d'un agent retiré, mais pas ses coordonnées :
+  // chaque modification de sa fiche y avait recopié nom, téléphone, matricule.
+  it("efface du journal les coordonnées de l’agent retiré, pas les actions", async () => {
+    await live.exec(`update public.profiles set phone = '0600000000', matricule = 'M-77' where user_id = '${agent}';`);
+    const before = await count("from public.audit_logs");
+    expect(
+      await count(
+        "from public.audit_logs where old_value::text like '%0600000000%' or new_value::text like '%0600000000%'",
+      ),
+    ).toBeGreaterThan(0);
+    await remove("agent@example.org");
+    expect(
+      await count(
+        "from public.audit_logs where old_value::text like '%0600000000%' or new_value::text like '%0600000000%'",
+      ),
+    ).toBe(0);
+    expect(
+      await count("from public.audit_logs where old_value::text like '%M-77%' or new_value::text like '%M-77%'"),
+    ).toBe(0);
+    expect(await count("from public.audit_logs where entity_id = 'agent@example.org'")).toBe(0);
+    // Rien n'a disparu du journal : les lignes restent, anonymisées.
+    expect(await count("from public.audit_logs")).toBeGreaterThanOrEqual(before);
+  });
+
   it("refuse une invitation en double tant que la première attend, pas au-delà", async () => {
     await live.exec("reset role");
     await live.query("select set_config('request.jwt.claim.sub', $1, false)", [manager]);
@@ -3092,5 +3137,257 @@ describe("Fiche d’agent atomique", () => {
     await expect(save(stranger, golf, "Capturé", [])).rejects.toThrow("Not allowed to edit this member");
     await be(agent);
     await expect(save(manager, golf, "Usurpé", [])).rejects.toThrow("Not allowed to edit this member");
+  });
+});
+
+// Point 6 de l'audit de déployabilité : ce qui envoie des emails a des limites.
+describe("Limites d’envoi", () => {
+  const org = "10000000-0000-0000-0000-0000000000f0";
+  const other = "10000000-0000-0000-0000-0000000000f9";
+  const team = "20000000-0000-0000-0000-0000000000f0";
+  const away = "20000000-0000-0000-0000-0000000000f9";
+  const manager = "30000000-0000-0000-0000-0000000000f0";
+  const agent = "30000000-0000-0000-0000-0000000000f1";
+  const outsider = "30000000-0000-0000-0000-0000000000f9";
+  const invitation = "50000000-0000-0000-0000-0000000000f0";
+  const campaign = "40000000-0000-0000-0000-0000000000f0";
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+  const reserve = async (id = invitation) =>
+    (await live.query<{ email: string | null }>("select public.reserve_invitation_send($1) as email", [id])).rows[0]
+      .email;
+  const remind = async () =>
+    (await live.query<{ n: number }>("select public.remind_campaign($1) as n", [campaign])).rows[0].n;
+  // Fait vieillir les journaux, comme si le temps avait passé.
+  const age = async (sql: string) => {
+    await live.exec("reset role");
+    await live.exec(sql);
+  };
+
+  beforeAll(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const m of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    await live.exec(`insert into auth.users(id) values ('${manager}'), ('${agent}'), ('${outsider}');
+      insert into public.profiles(user_id,display_name) values ('${manager}','Gestionnaire'), ('${agent}','Agent'), ('${outsider}','Voisin');
+      insert into public.organizations(id,name) values ('${org}','Centre F'), ('${other}','Centre voisin');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Golf'), ('${away}','${other}','India');
+      insert into public.memberships values
+        ('${org}','${manager}','${team}','GESTIONNAIRE',true),
+        ('${org}','${agent}','${team}','AGENT',true),
+        ('${other}','${outsider}','${away}','GESTIONNAIRE',true);
+      insert into public.invitations(id,organization_id,team_id,email,display_name,role,invited_by)
+        values ('${invitation}','${org}','${team}','recrue@example.org','Recrue','AGENT','${manager}');
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        values ('${campaign}','${org}','${team}','Décembre','2026-12-01','2026-12-01',now()-interval '1 day',now()+interval '10 days');
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values ('${org}','${campaign}','${agent}');`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("espace les envois d’une invitation d’un quart d’heure, et en permet cinq", async () => {
+    await be(manager);
+    expect(await reserve()).toBe("recrue@example.org");
+    await expect(reserve()).rejects.toThrow("Invitation sent too recently");
+    for (let sent = 1; sent < 5; sent++) {
+      await age("update private.invitation_sends set sent_at = sent_at - interval '20 minutes'");
+      await be(manager);
+      expect(await reserve()).toBe("recrue@example.org");
+    }
+    await age("update private.invitation_sends set sent_at = sent_at - interval '20 minutes'");
+    await be(manager);
+    await expect(reserve()).rejects.toThrow("Invitation send limit reached");
+    // Réserver n'a rien modifié de l'invitation : l'historique n'en dit rien.
+    await live.exec("reset role");
+    expect(
+      (await live.query("select action from public.audit_logs where entity='invitation' and action <> 'CREATE'")).rows,
+    ).toEqual([]);
+  });
+
+  it("ne réserve rien pour qui n’administre pas le centre de l’invitation", async () => {
+    await be(outsider);
+    await expect(reserve()).rejects.toThrow("Unknown invitation");
+    await be(agent);
+    await expect(reserve()).rejects.toThrow("Unknown invitation");
+  });
+
+  it("ne rend aucune adresse pour une invitation déjà acceptée", async () => {
+    const accepted = "50000000-0000-0000-0000-0000000000f1";
+    await live.exec("reset role");
+    await live.query(
+      `insert into public.invitations(id,organization_id,team_id,email,display_name,role,invited_by,accepted_at,accepted_by)
+       values ($1,$2,$3,'deja@example.org','Déjà','AGENT',$4,now(),$5)`,
+      [accepted, org, team, manager, agent],
+    );
+    await be(manager);
+    expect(await reserve(accepted)).toBeNull();
+  });
+
+  it("plafonne un centre à cinquante invitations envoyées par heure", async () => {
+    await live.exec("reset role");
+    await live.query(
+      `with made as (
+         insert into public.invitations(organization_id,team_id,email,display_name,role,invited_by)
+           select $1,$2,'lot'||g||'@example.org','Lot '||g,'AGENT',$3 from generate_series(1,51) g
+         returning id)
+       insert into private.invitation_sends(invitation_id,organization_id)
+         select id,$1 from made order by id limit 50`,
+      [org, team, manager],
+    );
+    const spare = (
+      await live.query<{ id: string }>(
+        `select i.id from public.invitations i
+          where i.email like 'lot%' and not exists (select 1 from private.invitation_sends s where s.invitation_id=i.id)`,
+      )
+    ).rows[0].id;
+    await be(manager);
+    await expect(reserve(spare)).rejects.toThrow("Too many invitations sent");
+    await age("update private.invitation_sends set sent_at = sent_at - interval '2 hours'");
+    await be(manager);
+    expect(await reserve(spare)).toMatch(/^lot\d+@example\.org$/);
+  });
+
+  it("n’accepte qu’un rappel de campagne toutes les douze heures", async () => {
+    await be(manager);
+    expect(await remind()).toBe(1);
+    // La file a vidé le rappel : l'ancienne règle ne l'aurait plus vu.
+    await age("update public.notifications set sent_at = now() where kind = 'CAMPAIGN_REMINDER'");
+    await be(manager);
+    await expect(remind()).rejects.toThrow("Campaign reminded too recently");
+    await age("update private.campaign_reminders set reminded_at = reminded_at - interval '13 hours'");
+    await be(manager);
+    expect(await remind()).toBe(1);
+  });
+
+  it("ne compte pas un rappel qui ne touchait personne", async () => {
+    await age(`delete from private.campaign_reminders;
+      insert into public.availability_entries(campaign_id,user_id,date,availability_type) values ('${campaign}','${agent}','2026-12-01','DAY');
+      update public.campaign_participants set validated_at = now() where campaign_id = '${campaign}';`);
+    await be(manager);
+    expect(await remind()).toBe(0);
+    expect(await remind()).toBe(0);
+  });
+});
+
+// RGPD, 23 septembre : conservation limitée et droit d'accès, en procédures.
+describe("Purge des données anciennes et export d’un compte", () => {
+  const org = "10000000-0000-0000-0000-0000000000a7";
+  const team = "20000000-0000-0000-0000-0000000000a7";
+  const manager = "30000000-0000-0000-0000-0000000000a7";
+  const agent = "30000000-0000-0000-0000-0000000000a8";
+  const old = "40000000-0000-0000-0000-0000000000a7";
+  const recent = "40000000-0000-0000-0000-0000000000a8";
+  const schedule = "60000000-0000-0000-0000-0000000000a7";
+  const shift = "70000000-0000-0000-0000-0000000000a7";
+  const script = (name: string) => readFileSync(new URL(`../supabase/provisioning/${name}`, import.meta.url), "utf8");
+  let live: PGlite;
+  const count = async (sql: string) =>
+    Number((await live.query<{ n: number }>(`select count(*)::int as n ${sql}`)).rows[0].n);
+
+  beforeEach(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    // Deux colonnes que Supabase fournit et que l'export lit.
+    await live.exec(
+      "alter table auth.users add column created_at timestamptz default now(), add column last_sign_in_at timestamptz",
+    );
+    for (const migration of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${migration}`, import.meta.url), "utf8"));
+    await live.exec(`
+      insert into auth.users(id,email,email_confirmed_at) values ('${manager}','chef@example.org',now()), ('${agent}','agent@example.org',now());
+      insert into public.profiles(user_id,display_name,phone) values ('${manager}','Chef',null), ('${agent}','Agent Export','0611111111');
+      insert into public.organizations(id,name) values ('${org}','Centre RGPD');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values ('${org}','${manager}','${team}','GESTIONNAIRE',true), ('${org}','${agent}','${team}','AGENT',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at) values
+        ('${old}','${org}','${team}','Ancienne','2023-01-01','2023-01-01',now()-interval '1 day',now()+interval '1 day'),
+        ('${recent}','${org}','${team}','Récente','2026-10-01','2026-10-01',now()-interval '1 day',now()+interval '1 day');
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values
+        ('${org}','${old}','${agent}'), ('${org}','${recent}','${agent}');
+      insert into public.availability_entries(campaign_id,user_id,date,availability_type,comment) values
+        ('${old}','${agent}','2023-01-01','DAY','ancien'), ('${recent}','${agent}','2026-10-01','NIGHT','récent');
+      insert into public.qualifications(organization_id,name) values ('${org}','INC1');
+      insert into public.staffing_requirements(organization_id,campaign_id,date,shift_code,headcount)
+        values ('${org}','${old}','2023-01-01','DAY',1);
+      insert into public.staffing_requirement_qualifications(organization_id,requirement_id,qualification_id,minimum)
+        select '${org}', r.id, q.id, 1 from public.staffing_requirements r, public.qualifications q where r.campaign_id='${old}';
+      insert into public.schedules(id,organization_id,campaign_id,team_id) values ('${schedule}','${org}','${old}','${team}');
+      insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code,published_revision,published_at)
+        values ('${shift}','${org}','${schedule}','2023-01-01','DAY',1,now());
+      insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,revision,status,assigned_by)
+        values ('${org}','${shift}','${agent}',1,'CONFIRMED','${manager}');
+      insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id,reason,state,decided_at,decided_by)
+        values ('${org}','${shift}','${agent}','Empêché','REFUSED',now(),'${manager}');
+      update public.availability_campaigns set locked = true;
+      insert into public.invitations(organization_id,team_id,email,display_name,role,invited_by,created_at) values
+        ('${org}','${team}','vieille@example.org','Vieille','AGENT','${manager}',now()-interval '4 months'),
+        ('${org}','${team}','neuve@example.org','Neuve','AGENT','${manager}',now());
+      insert into public.notifications(organization_id,user_id,kind,subject,created_at) values
+        ('${org}','${agent}','SCHEDULE_PUBLISHED','Vieux',now()-interval '7 months'),
+        ('${org}','${agent}','SCHEDULE_PUBLISHED','Neuf',now());
+      update public.audit_logs set occurred_at = now() - interval '2 years';
+      insert into public.audit_logs(organization_id,entity,entity_id,action,occurred_at)
+        values ('${org}','team','${team}','RENAME',now());`);
+  }, 30000);
+  afterEach(async () => {
+    await live.close();
+  });
+
+  it("efface ce qui a dépassé sa durée, et rien d’autre", async () => {
+    await live.exec(script("purger-les-donnees-anciennes.sql"));
+    // La campagne ancienne est partie, avec tout ce qui en dépendait.
+    expect(await count(`from public.availability_campaigns where id='${old}'`)).toBe(0);
+    for (const table of [
+      "schedules",
+      "schedule_shifts",
+      "schedule_assignments",
+      "shift_withdrawals",
+      "staffing_requirements",
+      "staffing_requirement_qualifications",
+    ])
+      expect(await count(`from public.${table}`), table).toBe(0);
+    // La récente reste entière.
+    expect(await count(`from public.availability_entries where campaign_id='${recent}'`)).toBe(1);
+    expect(await count(`from public.campaign_participants where campaign_id='${recent}'`)).toBe(1);
+    expect((await live.query("select email from public.invitations")).rows).toEqual([{ email: "neuve@example.org" }]);
+    // Les participants ajoutés plus haut ont reçu leurs avis d'ouverture,
+    // récents : seul l'ancien part.
+    const subjects = (await live.query<{ subject: string }>("select subject from public.notifications")).rows;
+    expect(subjects.map(r => r.subject)).toContain("Neuf");
+    expect(subjects.map(r => r.subject)).not.toContain("Vieux");
+    // Le journal ne garde que la ligne récente : la purge n'y a rien réécrit.
+    expect((await live.query("select action from public.audit_logs")).rows).toEqual([{ action: "RENAME" }]);
+    // Les déclencheurs sont rétablis : la campagne close refuse une saisie.
+    await expect(
+      live.query(
+        "insert into public.availability_entries(campaign_id,user_id,date,availability_type) values ($1,$2,'2026-10-01','DAY')",
+        [recent, manager],
+      ),
+    ).rejects.toThrow("Campaign is closed");
+  });
+
+  it("rend en une valeur JSON tout ce que la base garde d’un compte", async () => {
+    const sql = script("exporter-les-donnees-d-un-compte.sql").replace("'agent@exemple.fr'", "'agent@example.org'");
+    const { rows } = await live.query<{ donnees: string }>(sql);
+    const data = JSON.parse(rows[0].donnees);
+    expect(data.compte.email).toBe("agent@example.org");
+    expect(data.fiche).toMatchObject({ display_name: "Agent Export", phone: "0611111111" });
+    expect(data.rattachements).toEqual([{ centre: "Centre RGPD", equipe: "Alpha", role: "AGENT", actif: true }]);
+    expect(data.campagnes.map((c: { campagne: string }) => c.campagne)).toEqual(["Ancienne", "Récente"]);
+    expect(data.campagnes[1].disponibilites).toEqual([
+      { date: "2026-10-01", disponibilite: "NIGHT", commentaire: "récent" },
+    ]);
+    expect(data.gardes).toHaveLength(1);
+    expect(data.desistements[0]).toMatchObject({ motif: "Empêché", etat: "REFUSED" });
+    expect(data.notifications.map((n: { sujet: string }) => n.sujet)).toEqual(
+      expect.arrayContaining(["Vieux", "Neuf"]),
+    );
+    expect(data.journal.length).toBeGreaterThan(0);
   });
 });

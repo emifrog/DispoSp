@@ -13,9 +13,7 @@ import {
   type Command,
   type MemberRole,
 } from "@/lib/domain";
-
-/** Le paramètre d'adresse qui porte la campagne choisie. */
-export const CAMPAIGN_PARAM = "campagne";
+import { CAMPAIGN_PARAM } from "@/lib/campaign-param";
 
 type Context = {
   state: AppState;
@@ -97,6 +95,24 @@ export function AppProvider({
    */
   const [submitting, setSubmitting] = useState(false);
   const [refreshing, startRefresh] = useTransition();
+  // Une campagne archivée n'arrive qu'avec sa liste de participants : son
+  // détail ne se lit que si l'adresse la demande. Une fois l'adresse à jour —
+  // `params` le dit —, on relit l'état. Une seule demande en attente par
+  // campagne : si la relecture ne l'apportait pas, on ne bouclerait pas. La
+  // demande s'efface quand la campagne arrive chargée, pour qu'un retour vers
+  // elle, après qu'une écriture l'a déchargée, la relise.
+  const requested = useRef(new Set<string>());
+  useEffect(() => {
+    const selected = state.campaigns.find(c => c.id === campaignId);
+    if (!selected) return;
+    if (selected.loaded) {
+      requested.current.delete(campaignId);
+      return;
+    }
+    if (params.get(CAMPAIGN_PARAM) !== campaignId || requested.current.has(campaignId)) return;
+    requested.current.add(campaignId);
+    startRefresh(() => router.refresh());
+  }, [campaignId, params, state.campaigns, router]);
   // Un état plutôt qu'une simple lecture de `submitting` : deux clics dans le
   // même cycle de rendu liraient tous deux « faux » et enverraient deux
   // commandes, dont la seconde buterait sur ce que la première a changé.

@@ -207,6 +207,8 @@ export function sampleState(now = new Date()): AppState {
         dayStart: 8,
         nightStart: 20,
         teamId: "",
+        archived: false,
+        loaded: true,
         // Renseignée juste après : l'objet ne peut pas se lire lui-même.
         participants: [],
       },

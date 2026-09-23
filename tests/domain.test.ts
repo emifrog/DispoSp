@@ -9,6 +9,7 @@ import {
   isoWeekday,
   isOpen,
   isValidated,
+  loadedSince,
   localDate,
   localMonth,
   localTime,
@@ -255,6 +256,12 @@ describe("Dates de référence", () => {
       },
     ] as Parameters<typeof auditCsv>[0]);
     expect(csv).toContain('"2026-10-01";"00:15"');
+  });
+
+  it("fait commencer la fenêtre chargée douze mois en arrière, mois courant compris", () => {
+    expect(loadedSince(new Date("2026-09-23T10:00:00Z"))).toBe("2025-10-01");
+    // Le 1er janvier à 0 h 30 à Paris, c'est encore décembre en UTC.
+    expect(loadedSince(new Date("2026-12-31T23:30:00Z"))).toBe("2026-02-01");
   });
 
   it("décale un mois sans passer par un fuseau", () => {

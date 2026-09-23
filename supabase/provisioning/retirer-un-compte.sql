@@ -8,10 +8,19 @@
 -- ne part en cascade, et c'est voulu : on efface dans l'ordre, explicitement, ou
 -- la transaction échoue. Elle échoue en entier, sans état partiel.
 --
--- Ce que ce script NE fait PAS disparaître : le journal d'audit. La colonne
--- actor_id est en « on delete set null » — les actions restent, leur auteur
--- devient anonyme. C'est la traçabilité du §12 : elle survit au départ de la
--- personne, sans conserver son identité.
+-- Ce que ce script NE fait PAS disparaître : les lignes du journal d'audit. La
+-- colonne actor_id est en « on delete set null » — les actions restent, leur
+-- auteur devient anonyme. C'est la traçabilité du §12 : elle survit au départ de
+-- la personne, sans conserver son identité.
+--
+-- Ce qu'il en retire, en revanche : les coordonnées que le journal avait
+-- recopiées. Chaque modification d'une fiche y inscrit l'avant et l'après —
+-- nom, téléphone, matricule —, chaque saisie son commentaire, chaque
+-- désistement son motif, et une invitation y est désignée par son adresse. Ces
+-- valeurs sont effacées des lignes qui concernent le compte ; l'action, la
+-- date et l'entité restent.
+--
+-- C'est la procédure d'effacement (RGPD, art. 17) : voir docs/RGPD.md.
 --
 -- Adaptez l'adresse, puis exécutez le fichier entier.
 --
@@ -77,7 +86,13 @@ begin
   delete from public.push_deliveries d using public.push_subscriptions s
     where d.subscription_id = s.id and s.user_id = cible;
   delete from public.push_subscriptions where user_id = cible;
+  -- Le déclencheur de saisie refuse toute suppression sur une campagne close,
+  -- et celle d'un mois passé l'est toujours : le retrait échouait pour presque
+  -- tout agent. Il est suspendu le temps de cet effacement seulement ; un échec
+  -- plus loin annule le bloc entier, suspension comprise.
+  alter table public.availability_entries disable trigger availability_write;
   delete from public.availability_entries where user_id = cible;
+  alter table public.availability_entries enable trigger availability_write;
   delete from public.campaign_participants where user_id = cible;
   delete from public.availability_templates where user_id = cible;
   delete from public.user_qualifications where user_id = cible;
@@ -93,6 +108,18 @@ begin
   update public.invitations set invited_by = releve where invited_by = cible;
   delete from public.memberships where user_id = cible;
   delete from public.profiles where user_id = cible;
+
+  -- Le journal, en dernier : les suppressions ci-dessus y ont elles-mêmes
+  -- inscrit des lignes, qui recopient ce qui vient d'être effacé.
+  update public.audit_logs l set
+    entity_id = case when l.entity_id = compte then 'compte retiré' else l.entity_id end,
+    old_value = l.old_value - array['display_name', 'phone', 'matricule', 'grade', 'fonction', 'email', 'comment', 'reason'],
+    new_value = l.new_value - array['display_name', 'phone', 'matricule', 'grade', 'fonction', 'email', 'comment', 'reason']
+   where l.entity_id in (cible::text, compte)
+      or l.old_value ->> 'user_id' = cible::text
+      or l.new_value ->> 'user_id' = cible::text
+      or l.old_value ->> 'accepted_by' = cible::text
+      or l.new_value ->> 'accepted_by' = cible::text;
 
   raise notice 'Données retirées pour %. Supprimez maintenant le compte lui-même dans Authentication → Users.', compte;
 end

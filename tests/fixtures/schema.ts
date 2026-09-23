@@ -29,6 +29,7 @@ export const MIGRATIONS = [
   "20260922100000_reactivation_administrateur_devalidation.sql",
   "20260922150000_rattachement_retrait_file_email.sql",
   "20260923090000_fiche_agent_atomique.sql",
+  "20260923140000_limites_envois.sql",
 ];
 
 /**

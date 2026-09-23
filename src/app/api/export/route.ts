@@ -11,8 +11,9 @@ export async function GET(request: NextRequest) {
   const session = await readSession();
   if (!session?.membership) return new NextResponse("Non authentifié", { status: 401 });
 
-  const state = await loadState({ ...session, membership: session.membership } as AttachedSession);
   const wanted = request.nextUrl.searchParams.get("campagne");
+  // La campagne demandée, même archivée : son détail se lit avec le reste.
+  const state = await loadState({ ...session, membership: session.membership } as AttachedSession, wanted);
   const campaign = state.campaigns.find(c => c.id === wanted) ?? state.campaigns[0];
   if (!campaign) return new NextResponse("Aucune campagne", { status: 404 });
 

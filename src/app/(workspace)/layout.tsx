@@ -6,6 +6,8 @@ import { readSession } from "@/lib/session.server";
 import { loadState } from "@/lib/data.server";
 import { SIGN_IN_PATH } from "@/lib/supabase/config";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
+import { CAMPAIGN_HEADER } from "@/lib/campaign-param";
 import type { AttachedSession } from "@/lib/session";
 import { memberRoles, visibleCampaigns, type Actor, type MemberRole } from "@/lib/domain";
 
@@ -26,7 +28,9 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
   if (!session) redirect(SIGN_IN_PATH);
   if (!session.membership) return <UnattachedAccount session={session} />;
   const attached: AttachedSession = { ...session, membership: session.membership };
-  const loaded = await loadState(attached);
+  // Une campagne archivée ne se charge que si l'adresse la demande ; le proxy
+  // la relaie ici, où les paramètres de l'adresse n'arrivent pas.
+  const loaded = await loadState(attached, (await headers()).get(CAMPAIGN_HEADER));
   const actor = actorFor(attached);
   // Les policies laissent un agent lire les campagnes de son centre, ce qui est
   // juste : il doit pouvoir voir que le mois existe. Mais les lui proposer dans

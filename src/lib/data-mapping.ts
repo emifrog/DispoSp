@@ -227,6 +227,22 @@ export type Raw = {
   }[];
 };
 
+/** Ce que loadState a choisi de lire. Absent : tout a été lu, rien n'est archivé. */
+export type LoadWindow = {
+  /** Le début de la fenêtre chargée d'office. */
+  since: string;
+  /** Les campagnes dont le détail a été lu. */
+  loaded: string[];
+};
+
+/**
+ * Les campagnes dont on lit le détail : celles de la fenêtre, plus celle que
+ * l'adresse demande, si elle est plus ancienne. La liste des campagnes, elle,
+ * se lit toujours en entier : une ligne par mois, et le sélecteur en a besoin.
+ */
+export const campaignsToLoad = (campaigns: { id: string; starts_on: string }[], since: string, asked?: string | null) =>
+  campaigns.filter(c => c.starts_on >= since || c.id === asked).map(c => c.id);
+
 // The trail is written by database triggers, in a deliberately stable English
 // vocabulary: those codes are a contract with the migration's own tests. The
 // French belongs here, beside the rest of the mapping, and not in the migration
@@ -337,7 +353,7 @@ function auditDetail(entity: string, previous: Values, after: Values, nameById: 
 
 // Pure on purpose: this is where the mapping bugs would live, and it can be
 // tested against rows shaped like the real ones without a database round trip.
-export function buildState(raw: Raw, fallbackOrganizationName: string): AppState {
+export function buildState(raw: Raw, fallbackOrganizationName: string, window?: LoadWindow): AppState {
   const qualificationsByUser = new Map<string, string[]>();
   for (const row of raw.memberQualifications) {
     const name = row.qualifications?.name;
@@ -418,6 +434,8 @@ export function buildState(raw: Raw, fallbackOrganizationName: string): AppState
       teamId: c.team_id,
       // Rempli plus bas, une fois les participants regroupés.
       participants: [] as string[],
+      archived: window ? c.starts_on < window.since : false,
+      loaded: window ? window.loaded.includes(c.id) : true,
     })),
     entries: {},
     responses: {},

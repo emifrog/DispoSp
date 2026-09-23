@@ -401,11 +401,21 @@ async function writeMember(client: Client, session: AttachedSession, command: Of
  *   l'invitation (déclencheur `accept_invitation_now`), rien à envoyer ;
  * — l'envoi n'est pas configuré ou a échoué, l'invitation reste en attente et
  *   se renvoie.
+ *
+ * Chaque envoi est d'abord réservé en base, qui tient les limites : un quart
+ * d'heure entre deux envois d'une invitation, cinq au plus, cinquante
+ * invitations par heure et par centre. La réservation passe par la session de
+ * l'appelant — un gestionnaire d'un autre centre n'obtient rien à envoyer.
  */
-async function sendInvitationEmail(email: string): Promise<"sent" | "exists" | "unsent"> {
+async function sendInvitationEmail(client: Client, invitationId: string): Promise<"sent" | "exists" | "unsent"> {
+  // Avant la réservation : un envoi qui ne peut pas partir ne doit pas user
+  // le quota ni imposer le quart d'heure d'attente.
   if (!canInvite()) return "unsent";
+  const { data: email, error: refused } = await client.rpc("reserve_invitation_send", { invitation: invitationId });
+  if (refused) fail(refused);
+  if (!email) return "exists";
   const redirectTo = process.env.APP_URL ? `${process.env.APP_URL.replace(/\/+$/, "")}/activation` : undefined;
-  const { error } = await createAdminClient().auth.admin.inviteUserByEmail(email, { redirectTo });
+  const { error } = await createAdminClient().auth.admin.inviteUserByEmail(email as string, { redirectTo });
   if (!error) return "sent";
   // Supabase refuse d'inviter une adresse déjà enregistrée. Ce n'est pas un
   // échec : le déclencheur a rattaché l'agent, il se connecte comme d'habitude.
@@ -423,24 +433,28 @@ async function writeInvitation(client: Client, session: AttachedSession, command
   // L'équipe ne se demande plus à l'invitation, mais la colonne reste
   // obligatoire : l'invité rejoint celle de l'invitant. Un gestionnaire qui
   // veut l'affecter ailleurs le fait depuis sa fiche, une fois le compte créé.
-  const { error } = await client.from("invitations").insert({
-    organization_id: session.membership.organizationId,
-    team_id: session.membership.teamId,
-    email: command.email,
-    display_name: command.name,
-    role: command.role,
-    grade: command.grade || null,
-    fonction: command.fonction || null,
-    matricule: command.matricule || null,
-    phone: command.phone || null,
-    invited_by: session.userId,
-  });
+  const { data, error } = await client
+    .from("invitations")
+    .insert({
+      organization_id: session.membership.organizationId,
+      team_id: session.membership.teamId,
+      email: command.email,
+      display_name: command.name,
+      role: command.role,
+      grade: command.grade || null,
+      fonction: command.fonction || null,
+      matricule: command.matricule || null,
+      phone: command.phone || null,
+      invited_by: session.userId,
+    })
+    .select("id")
+    .single();
   if (error) fail(error);
 
   // L'écriture d'abord, l'envoi ensuite : le déclencheur d'insertion rattache
   // un agent dont le compte existe déjà, et il faut le laisser trancher avant
   // de demander à Supabase de créer un compte qu'il refusera.
-  const outcome = await sendInvitationEmail(command.email);
+  const outcome = await sendInvitationEmail(client, data.id as string);
   if (outcome === "unsent")
     throw new Error(
       "L’invitation est enregistrée, mais le message n’a pas pu partir. Renvoyez-la depuis la liste des invitations.",
@@ -451,21 +465,11 @@ async function writeInvitation(client: Client, session: AttachedSession, command
  * Renvoyer le message d'activation.
  *
  * L'invitation existe déjà : on ne la réécrit pas, on redemande seulement à
- * Supabase d'envoyer le lien. La lecture préalable passe par la session de
- * l'appelant, donc par la policy — un gestionnaire d'un autre centre n'obtient
- * rien à renvoyer.
+ * Supabase d'envoyer le lien. La réservation vérifie l'accès et les limites.
  */
 async function resendInvitation(client: Client, command: Of<"resendInvitation">) {
-  const { data, error } = await client
-    .from("invitations")
-    .select("email")
-    .eq("id", command.invitationId)
-    .is("accepted_at", null)
-    .maybeSingle();
-  if (error) fail(error);
-  if (!data) throw new Error("Cette invitation n’existe plus, ou a déjà été acceptée.");
-
-  const outcome = await sendInvitationEmail(data.email as string);
+  const outcome = await sendInvitationEmail(client, command.invitationId);
+  if (outcome === "exists") throw new Error("Cette invitation n’existe plus, ou a déjà été acceptée.");
   if (outcome === "unsent") throw new Error("Le message n’a pas pu partir. Vérifiez la configuration de l’envoi.");
 }
 

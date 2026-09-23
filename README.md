@@ -102,7 +102,8 @@ Le schéma est découpé en migrations successives, à appliquer dans l'ordre et
 | `supabase/migrations/20260921140000_verrou_publication.sql`                       | Verrou de ligne sur le créneau publié, contre deux publications simultanées                                                                                                                                   | Appliquée le 22 septembre 2026                |
 | `supabase/migrations/20260922100000_reactivation_administrateur_devalidation.sql` | Fiche des membres désactivés ouverte à l'encadrement ; dernier administrateur protégé ; dévalidation sous la même fenêtre que la validation, journalisée                                                      | Appliquée le 22 septembre 2026                |
 | `supabase/migrations/20260922150000_rattachement_retrait_file_email.sql`          | Un seul centre actif par compte, invitation d'un compte actif ailleurs refusée, membre désactivé réinvité réactivé ; retrait d'un compte possible (invitations) ; file d'emails avec bail, tentatives et état | Appliquée le 22 septembre 2026                |
-| `supabase/migrations/20260923090000_fiche_agent_atomique.sql`                     | `public.save_member()` : rattachement, profil et qualifications d'un agent écrits en une seule transaction                                                                                                    | **À appliquer avant de déployer le code**     |
+| `supabase/migrations/20260923090000_fiche_agent_atomique.sql`                     | `public.save_member()` : rattachement, profil et qualifications d'un agent écrits en une seule transaction                                                                                                    | Appliquée le 23 septembre 2026                |
+| `supabase/migrations/20260923140000_limites_envois.sql`                           | Limites d'envoi : un rappel par campagne toutes les 12 h ; invitations espacées d'un quart d'heure, cinq envois au plus, cinquante par heure et par centre                                                    | **À appliquer avant de déployer le code**     |
 
 Les deux migrations du 18 septembre n’ajoutent que des fonctions : `public.create_campaign()` pour la première, `public.save_availability_template()` et `public.apply_availability_template()` pour la seconde. Elles ne modifient aucune donnée existante.
 
@@ -358,7 +359,9 @@ Le troisième gabarit, `Confirm signup`, garde sa version d’origine : il ne se
 
 Les désistements sont implémentés ; les **échanges nommés** entre agents — « je te donne ma garde, tu prends la mienne » — ne le sont pas : un agent signale qu’il ne peut plus tenir une garde, l’encadrement réaffecte.
 
-Le retrait d'un compte et de ses données se fait par `supabase/provisioning/retirer-un-compte.sql`, dans l'éditeur SQL du tableau de bord. Il efface dans l'ordre des dépendances, refuse de laisser un centre sans administrateur actif, et ne touche pas au journal d'audit : c'est la suppression du compte lui-même, à la main, qui en anonymise l'auteur.
+Le retrait d'un compte et de ses données se fait par `supabase/provisioning/retirer-un-compte.sql`, dans l'éditeur SQL du tableau de bord. Il efface dans l'ordre des dépendances, refuse de laisser un centre sans administrateur actif, et garde les lignes du journal d'audit en retirant les coordonnées qu'elles avaient recopiées ; c'est la suppression du compte lui-même, à la main, qui en anonymise l'auteur.
+
+Les autres procédures liées aux données personnelles — export des données d'un compte, purge des données arrivées au terme de leur durée de conservation — et ce qu'il reste à valider avec le DPO sont dans [docs/RGPD.md](docs/RGPD.md).
 
 ### Quitter le centre d'essai
 

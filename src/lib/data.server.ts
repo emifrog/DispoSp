@@ -1,6 +1,6 @@
 import "server-only";
-import type { AppState } from "./domain";
-import { buildState, paged as pagedRows, taken, type Raw } from "./data-mapping";
+import { loadedSince, type AppState } from "./domain";
+import { buildState, campaignsToLoad, paged as pagedRows, taken, type Raw } from "./data-mapping";
 import type { AttachedSession } from "./session";
 import { createReadClient } from "./supabase/server";
 
@@ -38,7 +38,11 @@ const paged = <K extends ListKey>(what: string, page: (from: number, to: number)
 
 // Everything below runs under RLS as the signed-in user: an agent legitimately
 // sees only their own membership and entries, a manager sees their team's.
-export async function loadState(session: AttachedSession): Promise<AppState> {
+//
+// Le détail — disponibilités, besoins, planning — ne se lit que pour les
+// campagnes des LOADED_MONTHS derniers mois, plus `asked` si l'adresse en
+// demande une plus ancienne. Voir `campaignsToLoad`.
+export async function loadState(session: AttachedSession, asked?: string | null): Promise<AppState> {
   const supabase = await createReadClient();
   const organizationId = session.membership.organizationId;
   const exact = { count: "exact" as const };
@@ -128,13 +132,17 @@ export async function loadState(session: AttachedSession): Promise<AppState> {
     ),
   ]);
 
-  const campaignIds = (campaigns as { id: string }[]).map(c => c.id);
-  const [participants, entries, requirements, schedules, shifts, assignments, withdrawals, audit] = await Promise.all([
+  const since = loadedSince();
+  const campaignIds = campaignsToLoad(campaigns, since, asked);
+  const [participants, entries, requirements, schedules, audit] = await Promise.all([
+    // Tous les participants, archives comprises : une ligne par agent et par
+    // mois, que l'écran des campagnes compte et que le sélecteur d'un agent
+    // filtre. C'est le détail jour par jour qui pèse, pas eux.
     paged<"participants">("participants aux campagnes", (from, to) =>
       supabase
         .from("campaign_participants")
         .select("campaign_id, user_id, validated_at", exact)
-        .in("campaign_id", campaignIds)
+        .eq("organization_id", organizationId)
         .order("campaign_id")
         .order("user_id")
         .range(from, to),
@@ -171,22 +179,38 @@ export async function loadState(session: AttachedSession): Promise<AppState> {
         .order("id")
         .range(from, to),
     ),
-    // Le filtre par centre était absent : seule RLS retenait les créneaux des
-    // autres organisations. Le dire explicitement ne change pas le résultat,
-    // mais évite de compter puis de jeter ce qui ne nous regarde pas.
+    // Plafonné aussi, et l'écran d'historique le signale quand la période
+    // demandée précède les deux cents actions chargées.
+    supabase
+      .from("audit_logs")
+      .select("id, occurred_at, action, entity, actor_id, old_value, new_value")
+      .eq("organization_id", organizationId)
+      .order("occurred_at", { ascending: false })
+      .limit(200),
+  ]);
+
+  // Un créneau ne connaît que son planning, et une affectation ou un
+  // désistement que son créneau : il faut les plannings pour les borner. Les
+  // identifiants de créneaux, eux, se comptent par centaines — trop pour une
+  // adresse — d'où le filtre sur le créneau joint (`!inner`), qui ne garde que
+  // les lignes dont le créneau appartient à l'un de ces plannings.
+  const scheduleIds = (schedules as { id: string }[]).map(s => s.id);
+  const [shifts, assignments, withdrawals] = await Promise.all([
     paged<"shifts">("créneaux", (from, to) =>
       supabase
         .from("schedule_shifts")
         .select("id, schedule_id, date, shift_code, published_revision, published_at", exact)
         .eq("organization_id", organizationId)
+        .in("schedule_id", scheduleIds)
         .order("id")
         .range(from, to),
     ),
     paged<"assignments">("affectations", (from, to) =>
       supabase
         .from("schedule_assignments")
-        .select("schedule_shift_id, user_id, revision, status, assigned_at", exact)
+        .select("schedule_shift_id, user_id, revision, status, assigned_at, schedule_shifts!inner(schedule_id)", exact)
         .eq("organization_id", organizationId)
+        .in("schedule_shifts.schedule_id", scheduleIds)
         .order("schedule_shift_id")
         .order("user_id")
         .order("revision")
@@ -197,20 +221,16 @@ export async function loadState(session: AttachedSession): Promise<AppState> {
     paged<"withdrawals">("désistements", (from, to) =>
       supabase
         .from("shift_withdrawals")
-        .select("id, schedule_shift_id, user_id, reason, state, created_at, decided_at", exact)
+        .select(
+          "id, schedule_shift_id, user_id, reason, state, created_at, decided_at, schedule_shifts!inner(schedule_id)",
+          exact,
+        )
         .eq("organization_id", organizationId)
+        .in("schedule_shifts.schedule_id", scheduleIds)
         .order("created_at", { ascending: false })
         .order("id")
         .range(from, to),
     ),
-    // Plafonné aussi, et l'écran d'historique le signale quand la période
-    // demandée précède les deux cents actions chargées.
-    supabase
-      .from("audit_logs")
-      .select("id, occurred_at, action, entity, actor_id, old_value, new_value")
-      .eq("organization_id", organizationId)
-      .order("occurred_at", { ascending: false })
-      .limit(200),
   ]);
 
   const raw: Raw = {
@@ -234,5 +254,5 @@ export async function loadState(session: AttachedSession): Promise<AppState> {
     withdrawals,
     audit: rows<"audit">("journal d’audit", audit),
   };
-  return buildState(raw, session.membership.organizationName);
+  return buildState(raw, session.membership.organizationName, { since, loaded: campaignIds });
 }

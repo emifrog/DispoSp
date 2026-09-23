@@ -245,6 +245,9 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
                     {state.campaigns.some(o => o.id !== c.id && o.month === c.month)
                       ? `${monthLabel(c.month)} · ${c.name}`
                       : monthLabel(c.month)}
+                    {/* Plus ancienne que la fenêtre chargée : elle se charge
+                        quand on la choisit, et l'écran le montre un instant. */}
+                    {c.archived ? " (archive)" : ""}
                   </option>
                 ))}
               </select>
