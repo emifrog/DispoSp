@@ -27,7 +27,7 @@ import { useState, type ReactNode } from "react";
 import { Brand, BrandMark } from "./brand";
 import { useApp } from "./provider";
 import { Button } from "./ui/button";
-import { monthLabel } from "@/lib/domain";
+import { defaultCampaign, monthLabel } from "@/lib/domain";
 import { roleLabels, type AttachedSession } from "@/lib/session";
 const managerNav = [
   { href: "/tableau-de-bord", label: "Tableau de bord", icon: LayoutDashboard },
@@ -67,7 +67,7 @@ const initials = (name: string) =>
 const roleTones: Record<string, string> = { ADMIN: "is-admin", GESTIONNAIRE: "is-gestionnaire" };
 
 export function Shell({ children, session }: { children: ReactNode; session: AttachedSession }) {
-  const { state, actor, campaignId, setCampaignId, memberRole, canAdminister } = useApp();
+  const { state, actor, campaign, campaignId, setCampaignId, memberRole, canAdminister, busy, reload } = useApp();
   const path = usePathname();
   const [menu, setMenu] = useState(false);
   const nav = actor.role === "MANAGER" ? managerNav : agentNav;
@@ -261,6 +261,28 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
               <Button asChild>
                 <Link href="/mes-disponibilites">Mes disponibilités</Link>
               </Button>
+            </div>
+          ) : !campaign.loaded ? (
+            // Le détail d'une archive n'arrive qu'une fois demandé. En attendant,
+            // les écrans auraient montré des besoins, des disponibilités et un
+            // planning vides, faux mais plausibles : on dit qu'on charge.
+            <div className="empty-state" role="status" aria-live="polite">
+              <CalendarDays />
+              <h1>Chargement de l’archive</h1>
+              <p>
+                {monthLabel(campaign.month)} est plus ancienne que les douze derniers mois : son détail se charge à la
+                demande.
+              </p>
+              {!busy && (
+                <div className="empty-state-actions">
+                  <Button variant="secondary" onClick={reload}>
+                    Relancer le chargement
+                  </Button>
+                  <Button variant="ghost" onClick={() => setCampaignId(defaultCampaign(state.campaigns)?.id ?? "")}>
+                    Revenir à la campagne en cours
+                  </Button>
+                </div>
+              )}
             </div>
           ) : (
             children

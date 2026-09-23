@@ -34,6 +34,7 @@ import {
   shiftKey,
   suggestedRequirement,
   withdrawnFrom,
+  draftAgents,
   workload,
   type Agent,
   type Shift,
@@ -63,7 +64,8 @@ export function Planning() {
   });
   const pool = availableAgents(state, campaignId, date, shift);
   const assignedIds = state.assignments[key] ?? [];
-  const assigned = state.agents.filter(a => assignedIds.includes(a.id));
+  const inactive = new Set(state.inactiveAgents.map(a => a.id));
+  const assigned = draftAgents(state, campaignId, date, shift);
   // Les grades réellement présents dans le vivier, dans l'ordre hiérarchique de
   // la liste de saisie, suivis de ce qui n'y figure pas — une fiche ancienne
   // peut porter un grade hors catalogue, et elle ne doit pas disparaître.
@@ -84,6 +86,8 @@ export function Planning() {
   );
   const result = coverage(state, campaignId, date, shift, "planned");
   const withdrawn = withdrawnFrom(state, campaignId, date, shift);
+  const deactivated = result.invalid.filter(a => inactive.has(a.id));
+  const unavailable = result.invalid.filter(a => !inactive.has(a.id) && !withdrawn.has(a.id));
   const published = state.publications[key];
   const changed = published && JSON.stringify([...published.agents].sort()) !== JSON.stringify([...assignedIds].sort());
   function openNeeds() {
@@ -91,18 +95,27 @@ export function Planning() {
     setQualifications({ ...(need ?? suggestedRequirement).qualifications });
     setNeedsOpen(true);
   }
+  // Pourquoi une affectation ne passera pas la publication, en un mot : la
+  // bordure seule ne le disait qu'à qui distingue les couleurs.
+  const invalidReason = (agent: Agent) =>
+    !result.invalid.some(a => a.id === agent.id)
+      ? null
+      : inactive.has(agent.id)
+        ? "Agent désactivé"
+        : withdrawn.has(agent.id)
+          ? "Désistement accepté"
+          : "Plus disponible sur ce créneau";
   function agentCard(agent: Agent, retained: boolean) {
+    const reason = retained ? invalidReason(agent) : null;
     return (
-      <div
-        className={`agent-card ${result.invalid.some(a => a.id === agent.id) && retained ? "invalid-assignment" : ""}`}
-        key={agent.id}
-      >
+      <div className={`agent-card ${reason ? "invalid-assignment" : ""}`} key={agent.id}>
         <Avatar agent={agent} />
         <div className="agent-info">
           <strong>{agent.name}</strong>
           <small>
             {gradeLabel(agent)} · {agent.team.replace("Équipe ", "")}
           </small>
+          {reason && <small className="text-red">{reason}</small>}
           <div className="qualification-tags">
             {agent.qualifications.map(q => (
               <span key={q} className={q === "Chef" ? "chief" : q === "Conducteur PL" ? "driver" : ""}>
@@ -343,12 +356,20 @@ export function Planning() {
               acceptée. Retirez-{plural(withdrawn.size, "le", "les")} et trouvez un remplaçant : la publication refuse.
             </p>
           )}
-          {result.invalid.filter(a => !withdrawn.has(a.id)).length > 0 && (
+          {/* Nommés, et par cause : « 1 affectation ne correspond plus » ne
+              disait ni qui retirer, ni pourquoi. */}
+          {deactivated.length > 0 && (
             <p className="text-red small">
-              {result.invalid.filter(a => !withdrawn.has(a.id)).length}{" "}
-              {plural(result.invalid.filter(a => !withdrawn.has(a.id)).length, "affectation")}{" "}
-              {plural(result.invalid.filter(a => !withdrawn.has(a.id)).length, "ne correspond", "ne correspondent")}{" "}
-              plus à une disponibilité validée.
+              {plural(deactivated.length, "Agent désactivé", "Agents désactivés")} :{" "}
+              {deactivated.map(a => a.name).join(", ")}. Retirez-{plural(deactivated.length, "le", "les")} du brouillon
+              avant de publier.
+            </p>
+          )}
+          {unavailable.length > 0 && (
+            <p className="text-red small">
+              Plus {plural(unavailable.length, "disponible", "disponibles")} sur ce créneau :{" "}
+              {unavailable.map(a => a.name).join(", ")} — réponse non validée ou disponibilité modifiée depuis
+              l’affectation.
             </p>
           )}
           <p className="small muted">

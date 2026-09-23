@@ -3,6 +3,7 @@ import { assign, fillMonth, publish, sampleState, validate } from "./fixtures/ce
 import {
   availableAgents,
   defaultCampaign,
+  draftAgents,
   entryKey,
   coverage,
   coverageLevel,
@@ -64,6 +65,18 @@ describe("Couverture", () => {
     expect(planned.covered).toBe(false);
     // Le potentiel, lui, ne compte que l'effectif actif.
     expect(availableAgents(state, campaignId, "2026-10-15", "DAY").map(a => a.id)).not.toContain(julien);
+  });
+
+  // C1 de l'analyse du 23 septembre : l'écran Planning doit pouvoir le retirer.
+  it("garde au brouillon affiché un agent désactivé, pour qu’on puisse l’en retirer", () => {
+    const state = validate(answered(), campaignId, julien, now);
+    assign(state, campaignId, "2026-10-15", "DAY", [julien]);
+    assign(state, campaignId, "2026-10-15", "NIGHT", []);
+    const record = state.agents.find(a => a.id === julien)!;
+    state.agents = state.agents.filter(a => a.id !== julien);
+    state.inactiveAgents.push(record);
+    expect(draftAgents(state, campaignId, "2026-10-15", "DAY").map(a => a.id)).toEqual([julien]);
+    expect(draftAgents(state, campaignId, "2026-10-15", "NIGHT")).toEqual([]);
   });
 
   it("ne mesure pas un créneau dont les besoins ne sont pas définis", () => {

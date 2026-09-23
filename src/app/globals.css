@@ -2476,6 +2476,13 @@ fieldset.field legend {
 .empty-state > svg {
   color: #a2b9d9;
 }
+/* Deux issues côte à côte, qui passent l'une sous l'autre sur un téléphone. */
+.empty-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
 .empty-state h1,
 .empty-state h2 {
   font-size: 20px;

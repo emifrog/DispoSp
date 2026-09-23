@@ -417,6 +417,18 @@ export function availableAgents(state: AppState, campaignId: string, date: strin
       isValidated(state, campaignId, a.id) && isAvailable(state.entries[entryKey(campaignId, a.id, date)]?.type, shift),
   );
 }
+/**
+ * Les agents du brouillon d'un créneau, désactivés compris.
+ *
+ * Un agent désactivé après avoir été affecté reste au brouillon : la couverture
+ * le compte, et la publication le refuse. L'écran Planning ne montrait que
+ * l'effectif actif — pas de carte, donc pas de « Retirer » —, et le créneau ne
+ * pouvait plus être publié.
+ */
+export function draftAgents(state: AppState, campaignId: string, date: string, shift: Shift) {
+  const ids = state.assignments[shiftKey(campaignId, date, shift)] ?? [];
+  return [...state.agents, ...state.inactiveAgents].filter(a => ids.includes(a.id));
+}
 export function coverage(
   state: AppState,
   campaignId: string,

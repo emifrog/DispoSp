@@ -28,6 +28,8 @@ type Context = {
   run: (command: Command) => Promise<boolean>;
   /** Une écriture est en cours, ou l'écran se relit après elle. */
   busy: boolean;
+  /** Relire l'état depuis le serveur, sans écrire : l'archive qui tarde. */
+  reload: () => void;
   notice: (text: string) => void;
   /** The §2 role as the database holds it. */
   memberRole: MemberRole;
@@ -67,12 +69,33 @@ export function AppProvider({
   // portent pas, et un rechargement depuis eux retomberait sinon sur le défaut.
   // `replaceState` plutôt que le routeur : rien à recharger, la sélection est
   // déjà là ; Next lit ce que l'historique reçoit et `useSearchParams` suit.
+  //
+  // Sauf quand c'est l'adresse qui vient de changer : un lien qui porte
+  // `?campagne=` — « Ouvrir la garde » depuis l'écran Demandes — désigne une
+  // campagne, et c'est elle qui fait foi. Sans cette distinction, l'adresse était
+  // aussitôt réécrite avec la campagne d'avant, et le lien ouvrait le mauvais
+  // mois. Un seul effet pour les deux sens : séparés, ils se contredisaient
+  // dans le même rendu.
+  const lastAsked = useRef(asked);
   useEffect(() => {
-    if (!campaignId || params.get(CAMPAIGN_PARAM) === campaignId) return;
+    const navigated = asked !== lastAsked.current;
+    lastAsked.current = asked;
+    if (navigated && asked && asked !== campaignId && state.campaigns.some(c => c.id === asked)) {
+      setCampaignId(asked);
+      return;
+    }
+    if (!campaignId || asked === campaignId) return;
     const next = new URLSearchParams(params);
     next.set(CAMPAIGN_PARAM, campaignId);
-    window.history.replaceState(window.history.state, "", `${pathname}?${next}`);
-  }, [campaignId, pathname, params]);
+    // `null`, et non `window.history.state` : Next ignore un `replaceState`
+    // dont l'état porte déjà son marqueur interne (`__NA`), le prenant pour le
+    // sien, et ne met alors à jour ni `useSearchParams` ni l'adresse de ses
+    // relectures. L'adresse visible changeait, le routeur non : le chargement
+    // d'une archive n'aboutissait jamais. Next recopie lui-même son état
+    // (node_modules/next/dist/client/components/app-router.js, et
+    // docs/01-app/01-getting-started/04-linking-and-navigating.md).
+    window.history.replaceState(null, "", `${pathname}?${next}`);
+  }, [asked, campaignId, pathname, params, state.campaigns]);
   // Un succès s'efface seul ; une erreur reste jusqu'à ce qu'on l'ait lue. Un
   // refus de la base avec son explication disparaissait en six secondes, avec la
   // même tête qu'une confirmation.
@@ -101,8 +124,13 @@ export function AppProvider({
   // campagne : si la relecture ne l'apportait pas, on ne bouclerait pas. La
   // demande s'efface quand la campagne arrive chargée, pour qu'un retour vers
   // elle, après qu'une écriture l'a déchargée, la relise.
+  //
+  // Et elle s'efface aussi dès qu'on quitte la campagne : parcourir le sélecteur
+  // au clavier inscrivait chaque archive traversée, seule la dernière était
+  // relue, et revenir sur une autre ne relançait plus rien — elle restait vide.
   const requested = useRef(new Set<string>());
   useEffect(() => {
+    for (const id of requested.current) if (id !== campaignId) requested.current.delete(id);
     const selected = state.campaigns.find(c => c.id === campaignId);
     if (!selected) return;
     if (selected.loaded) {
@@ -124,6 +152,14 @@ export function AppProvider({
     // sans que rien ne le montre.
     if (running.current) {
       complain("Une action est déjà en cours. Attendez qu’elle se termine, puis recommencez.");
+      return false;
+    }
+    // Une archive dont le détail n'est pas encore arrivé montre des besoins,
+    // des disponibilités et un planning vides : écrire dessus écraserait ce
+    // qu'on n'a pas encore lu — les besoins suggérés par défaut, par exemple.
+    const target = "campaignId" in command ? state.campaigns.find(c => c.id === command.campaignId) : undefined;
+    if (target && !target.loaded) {
+      complain("Cette campagne archivée est en cours de chargement. Attendez qu’elle s’affiche, puis recommencez.");
       return false;
     }
     running.current = true;
@@ -171,6 +207,7 @@ export function AppProvider({
         setCampaignId,
         run,
         busy,
+        reload: () => startRefresh(() => router.refresh()),
         notice,
         memberRole,
         canAdminister: administers(memberRole),
@@ -181,7 +218,9 @@ export function AppProvider({
           l'annonce une fois, sans répéter à chaque rendu. */}
       {busy && (
         <div className="busy-bar" role="status" aria-live="polite">
-          <span className="sr-only">Enregistrement en cours…</span>
+          {/* Une relecture sans écriture — l'archive qu'on charge — n'est pas
+              un enregistrement : le lecteur d'écran l'annonçait comme tel. */}
+          <span className="sr-only">{submitting ? "Enregistrement en cours…" : "Chargement en cours…"}</span>
         </div>
       )}
       {children}

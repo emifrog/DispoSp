@@ -5,6 +5,7 @@ import { useApp } from "./provider";
 import { AdministrationOnly, Avatar, PageTitle, Panel } from "./common";
 import { Button } from "./ui/button";
 import { dateLabel, hours, plural, shiftKey, type AppState } from "@/lib/domain";
+import { CAMPAIGN_PARAM } from "@/lib/campaign-param";
 
 type Withdrawal = AppState["withdrawals"][number];
 
@@ -125,7 +126,11 @@ function Row({
           <p className="withdrawal-todo">
             <CircleAlert size={15} />
             Toujours au planning publié — le remplacement reste à faire.
-            <Link href={`/planning?date=${withdrawal.date}&shift=${withdrawal.shift}`}>
+            {/* La campagne de la garde, et non celle du sélecteur : sans elle, le
+                Planning ouvrait le premier jour du mois sélectionné. */}
+            <Link
+              href={`/planning?${CAMPAIGN_PARAM}=${withdrawal.campaignId}&date=${withdrawal.date}&shift=${withdrawal.shift}`}
+            >
               Ouvrir la garde
               <ArrowRight size={14} />
             </Link>
