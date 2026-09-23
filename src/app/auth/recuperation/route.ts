@@ -1,6 +1,5 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { createActionClient } from "@/lib/supabase/server";
-import { SIGN_IN_PATH } from "@/lib/supabase/config";
+import { type NextRequest } from "next/server";
+import { confirmLink, showConfirmation } from "@/lib/auth-link";
 
 /**
  * Le lien de réinitialisation, vérifié côté serveur.
@@ -15,26 +14,17 @@ import { SIGN_IN_PATH } from "@/lib/supabase/config";
  * personnalisé, le vérifie ici, pose les cookies, et laisse repartir. Elle
  * fonctionne quel que soit l'appareil qui ouvre le message.
  *
+ * L'ouverture (`GET`) ne consomme pas le jeton : elle mène à une page qui
+ * demande de continuer, et c'est ce bouton (`POST`) qui le vérifie. Voir
+ * `src/lib/auth-link.ts`.
+ *
  * Elle suppose le gabarit « Reset password » réglé sur :
  *   {{ .SiteURL }}/auth/recuperation?token_hash={{ .TokenHash }}&type=recovery
  */
-export async function GET(request: NextRequest) {
-  const { searchParams, origin } = request.nextUrl;
-  const tokenHash = searchParams.get("token_hash");
-  const type = searchParams.get("type");
+export function GET(request: NextRequest) {
+  return showConfirmation(request, "recovery");
+}
 
-  // Rien à vérifier : on laisse l'écran suivant constater l'absence de session
-  // et proposer un nouveau lien, plutôt que d'accuser ici sans contexte.
-  if (!tokenHash || type !== "recovery") {
-    return NextResponse.redirect(new URL("/nouveau-mot-de-passe", origin));
-  }
-
-  const supabase = await createActionClient();
-  const { error } = await supabase.auth.verifyOtp({ type: "recovery", token_hash: tokenHash });
-  if (error) {
-    // Le jeton est consommé ou périmé. L'écran de connexion sait le dire, et
-    // l'adresse ne doit pas garder un jeton mort dans l'historique.
-    return NextResponse.redirect(new URL(`${SIGN_IN_PATH}?lien=expire`, origin));
-  }
-  return NextResponse.redirect(new URL("/nouveau-mot-de-passe", origin));
+export function POST(request: NextRequest) {
+  return confirmLink(request, "recovery");
 }

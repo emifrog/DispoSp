@@ -406,23 +406,47 @@ async function writeMember(client: Client, session: AttachedSession, command: Of
  * d'heure entre deux envois d'une invitation, cinq au plus, cinquante
  * invitations par heure et par centre. La réservation passe par la session de
  * l'appelant — un gestionnaire d'un autre centre n'obtient rien à envoyer.
+ *
+ * Et un envoi qui ne part pas est rendu : sans cela, chaque échec imposait un
+ * quart d'heure annoncé comme « le message est parti », et le cinquième
+ * condamnait l'invitation. Le relais intégré de Supabase n'envoie que quelques
+ * messages par heure ; à l'arrivée d'un centre, c'était le cas ordinaire.
  */
-async function sendInvitationEmail(client: Client, invitationId: string): Promise<"sent" | "exists" | "unsent"> {
+async function sendInvitationEmail(
+  client: Client,
+  invitationId: string,
+): Promise<"sent" | "exists" | "unsent" | "limited"> {
   // Avant la réservation : un envoi qui ne peut pas partir ne doit pas user
   // le quota ni imposer le quart d'heure d'attente.
   if (!canInvite()) return "unsent";
   const { data: email, error: refused } = await client.rpc("reserve_invitation_send", { invitation: invitationId });
   if (refused) fail(refused);
   if (!email) return "exists";
+  const admin = createAdminClient();
   const redirectTo = process.env.APP_URL ? `${process.env.APP_URL.replace(/\/+$/, "")}/activation` : undefined;
-  const { error } = await createAdminClient().auth.admin.inviteUserByEmail(email as string, { redirectTo });
+  const { error } = await admin.auth.admin.inviteUserByEmail(email as string, { redirectTo });
   if (!error) return "sent";
+
+  // Rien n'est parti : la réservation est rendue, quelle que soit la raison.
+  const { error: unreleased } = await admin.rpc("release_invitation_send", { invitation: invitationId });
+  if (unreleased) console.error("Réservation d’envoi non rendue", unreleased.message);
   // Supabase refuse d'inviter une adresse déjà enregistrée. Ce n'est pas un
   // échec : le déclencheur a rattaché l'agent, il se connecte comme d'habitude.
-  if (/already been registered|already exists/i.test(error.message)) return "exists";
+  if (error.code === "email_exists" || /already been registered|already exists/i.test(error.message)) return "exists";
+  if (error.code === "over_email_send_rate_limit" || error.status === 429) {
+    console.error(
+      "Invitation non envoyée : Supabase limite les emails par heure. Branchez un SMTP (README, gabarits d’email).",
+    );
+    return "limited";
+  }
   console.error("Invitation non envoyée", error.message);
   return "unsent";
 }
+
+// Ce que le gestionnaire lit quand le message n'est pas parti. Ni l'un ni
+// l'autre n'accuse l'adresse : elle n'y est pour rien.
+const LIMITED = "Supabase limite le nombre d’emails envoyés par heure : ce message n’est pas parti.";
+const RETRY_LATER = "Renvoyez-la plus tard depuis la liste des invitations.";
 
 async function writeInvitation(client: Client, session: AttachedSession, command: Of<"invite">) {
   // L'invitation enregistre qui est attendu, et c'est la base qui rattache :
@@ -454,11 +478,19 @@ async function writeInvitation(client: Client, session: AttachedSession, command
   // L'écriture d'abord, l'envoi ensuite : le déclencheur d'insertion rattache
   // un agent dont le compte existe déjà, et il faut le laisser trancher avant
   // de demander à Supabase de créer un compte qu'il refusera.
-  const outcome = await sendInvitationEmail(client, data.id as string);
+  //
+  // À partir d'ici, l'invitation existe : un refus de l'envoi doit le dire,
+  // sinon le gestionnaire la recrée et bute sur « Cet enregistrement existe
+  // déjà ».
+  let outcome: Awaited<ReturnType<typeof sendInvitationEmail>>;
+  try {
+    outcome = await sendInvitationEmail(client, data.id as string);
+  } catch (refusal) {
+    throw new Error(`L’invitation est enregistrée, mais son message n’est pas parti. ${(refusal as Error).message}`);
+  }
+  if (outcome === "limited") throw new Error(`L’invitation est enregistrée. ${LIMITED} ${RETRY_LATER}`);
   if (outcome === "unsent")
-    throw new Error(
-      "L’invitation est enregistrée, mais le message n’a pas pu partir. Renvoyez-la depuis la liste des invitations.",
-    );
+    throw new Error(`L’invitation est enregistrée, mais le message n’a pas pu partir. ${RETRY_LATER}`);
 }
 
 /**
@@ -470,6 +502,7 @@ async function writeInvitation(client: Client, session: AttachedSession, command
 async function resendInvitation(client: Client, command: Of<"resendInvitation">) {
   const outcome = await sendInvitationEmail(client, command.invitationId);
   if (outcome === "exists") throw new Error("Cette invitation n’existe plus, ou a déjà été acceptée.");
+  if (outcome === "limited") throw new Error(`${LIMITED} Réessayez plus tard.`);
   if (outcome === "unsent") throw new Error("Le message n’a pas pu partir. Vérifiez la configuration de l’envoi.");
 }
 

@@ -58,6 +58,25 @@ test.describe("Lien d’activation ou de réinitialisation périmé", () => {
     await expect(message).toContainText("gestionnaire");
   });
 
+  // B1 de l'analyse du 23 septembre : ouvrir le lien ne le consomme pas — une
+  // messagerie qui l'analyse avant l'agent ne le brûle plus. Seul le bouton le
+  // vérifie.
+  test("ouvrir un lien d’activation demande de continuer, sans rien vérifier", async ({ page }) => {
+    await page.goto("/auth/activation?token_hash=jeton-de-test&type=invite");
+    await expect(page).toHaveURL(/\/confirmer\?type=invite&token_hash=jeton-de-test$/);
+    await expect(page.getByRole("heading", { name: "Activer mon compte" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continuer" })).toBeVisible();
+  });
+
+  test("continuer avec un jeton mort ramène à la connexion, qui l’explique", async ({ page }) => {
+    test.skip(!process.env.NEXT_PUBLIC_SUPABASE_URL, "Demande un projet Supabase joignable.");
+    await page.goto("/auth/recuperation?token_hash=jeton-inconnu&type=recovery");
+    await expect(page.getByRole("heading", { name: "Nouveau mot de passe" })).toBeVisible();
+    await page.getByRole("button", { name: "Continuer" }).click();
+    await expect(page).toHaveURL(/\/connexion\?lien=expire$/);
+    await expect(page.getByRole("status")).toContainText("Ce lien n’est plus valable");
+  });
+
   test("n’invente rien quand l’adresse ne porte pas de motif connu", async ({ page }) => {
     // Ce qui vient de l'adresse ne s'affiche jamais tel quel : un paramètre
     // fabriqué ne doit pas devenir un message signé DispoSP.

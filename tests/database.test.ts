@@ -3210,6 +3210,40 @@ describe("Limites d’envoi", () => {
     ).toEqual([]);
   });
 
+  // B1 de l'analyse du 23 septembre : un envoi qui n'est pas parti ne compte pas.
+  it("rend la réservation d’un envoi qui a échoué, et seul le serveur le peut", async () => {
+    const fresh = "50000000-0000-0000-0000-0000000000f2";
+    await live.exec("reset role");
+    await live.query(
+      `insert into public.invitations(id,organization_id,team_id,email,display_name,role,invited_by)
+       values ($1,$2,$3,'rendue@example.org','Rendue','AGENT',$4)`,
+      [fresh, org, team, manager],
+    );
+    await be(manager);
+    expect(await reserve(fresh)).toBe("rendue@example.org");
+    // Une session ne rend rien : elle remettrait les limites à zéro à volonté.
+    await expect(live.query("select public.release_invitation_send($1)", [fresh])).rejects.toThrow(/permission denied/);
+    await live.exec("reset role");
+    await live.exec("set role service_role");
+    await live.query("select public.release_invitation_send($1)", [fresh]);
+    // Rendre deux fois ne retire pas davantage que ce qui a été réservé.
+    await live.query("select public.release_invitation_send($1)", [fresh]);
+    await be(manager);
+    // L'envoi raté ne compte plus : on renvoie aussitôt, sans quart d'heure.
+    expect(await reserve(fresh)).toBe("rendue@example.org");
+    await live.exec("reset role");
+    expect(
+      Number(
+        (
+          await live.query<{ n: number }>(
+            "select count(*)::int as n from private.invitation_sends where invitation_id=$1",
+            [fresh],
+          )
+        ).rows[0].n,
+      ),
+    ).toBe(1);
+  });
+
   it("ne réserve rien pour qui n’administre pas le centre de l’invitation", async () => {
     await be(outsider);
     await expect(reserve()).rejects.toThrow("Unknown invitation");

@@ -7,9 +7,17 @@ import { PageTitle, Panel, SegmentedTabs } from "./common";
 import { Button } from "./ui/button";
 import { Modal } from "./ui/dialog";
 import { download, personalCalendar } from "@/lib/exports";
-import { dateLabel, hours, localDate, monthDays, monthLabel, plural, shiftKey, type Shift } from "@/lib/domain";
-
-type Assigned = { date: string; shift: Shift; revision: number; publishedAt: string };
+import {
+  dateLabel,
+  hours,
+  localDate,
+  monthDays,
+  monthLabel,
+  plural,
+  publishedShiftsOf,
+  type PublishedShift as Assigned,
+  type Shift,
+} from "@/lib/domain";
 
 // Le nombre de jours qui séparent deux dates, compté sur les dates elles-mêmes
 // et non sur les instants : « dans 2 jours » ne doit pas dépendre de l'heure
@@ -31,15 +39,14 @@ export function PersonalPlanning() {
   // Une affectation n'existe pour l'agent qu'une fois publiée : le brouillon du
   // gestionnaire change encore, et l'annoncer serait promettre une garde que
   // personne n'a arrêtée.
-  const assigned: Assigned[] = days.flatMap(date =>
-    (["DAY", "NIGHT"] as Shift[]).flatMap(shift => {
-      const published = state.publications[shiftKey(campaignId, date, shift)];
-      return published?.agents.includes(actor.id)
-        ? [{ date, shift, revision: published.revision, publishedAt: published.publishedAt }]
-        : [];
-    }),
-  );
-  const upcoming = assigned.filter(a => a.date >= today);
+  //
+  // Ce qui est à venir se lit sur toutes les campagnes : celle qu'on choisit
+  // par défaut est le mois qui attend une réponse, et la prochaine garde
+  // appartient souvent au mois en cours. Le calendrier et l'historique, eux,
+  // montrent le mois choisi.
+  const all = publishedShiftsOf(state, actor.id);
+  const assigned = all.filter(a => a.campaign.id === campaignId);
+  const upcoming = all.filter(a => a.date >= today);
   const past = assigned.filter(a => a.date < today).reverse();
   const next = upcoming[0];
   const shown = tab === "past" ? past : upcoming;
@@ -48,7 +55,7 @@ export function PersonalPlanning() {
     <>
       <PageTitle
         title="Mon planning"
-        description={`${monthLabel(campaign.month)} · vos gardes telles qu’elles ont été publiées.`}
+        description={`Vos gardes telles qu’elles ont été publiées. Calendrier et historique : ${monthLabel(campaign.month)}.`}
         action={
           <Button
             variant="secondary"
@@ -90,7 +97,7 @@ export function PersonalPlanning() {
           </div>
           <span className="pill pill-blue">
             <Clock3 size={14} />
-            {hours(campaign, next.shift)}
+            {hours(next.campaign, next.shift)}
           </span>
           <span className="next-shift-place">
             {state.organization.name}
@@ -112,7 +119,7 @@ export function PersonalPlanning() {
           subtitle={
             tab === "past"
               ? `Sur ${monthLabel(campaign.month)}. L’historique des mois précédents n’est pas chargé.`
-              : "Les brouillons du gestionnaire ne sont pas affichés ici."
+              : "Toutes campagnes confondues. Les brouillons du gestionnaire ne sont pas affichés ici."
           }
           action={
             shown.length ? (
@@ -138,7 +145,7 @@ export function PersonalPlanning() {
           ) : (
             <div className="personal-shifts">
               {shown.map(s => (
-                <article key={`${s.date}-${s.shift}`}>
+                <article key={`${s.campaign.id}-${s.date}-${s.shift}`}>
                   <div className={`shift-date ${s.shift === "DAY" ? "day" : "night"}`}>
                     <small>{dateLabel(s.date, { weekday: "short" })}</small>
                     <strong>{Number(s.date.slice(-2))}</strong>
@@ -147,10 +154,12 @@ export function PersonalPlanning() {
                   <div>
                     <h3>Garde {s.shift === "DAY" ? "de jour" : "de nuit"}</h3>
                     <p>
-                      {state.organization.name} · {hours(campaign, s.shift)}
+                      {state.organization.name} · {hours(s.campaign, s.shift)}
                     </p>
                     <small>
-                      Version {s.revision} · publiée le {dateLabel(s.publishedAt.slice(0, 10))}
+                      {/* Le jour de Paris : les dix premiers caractères de
+                          l'horodatage sont le jour UTC, la veille après minuit. */}
+                      Version {s.revision} · publiée le {dateLabel(localDate(new Date(s.publishedAt)))}
                     </small>
                   </div>
                   {tab === "past" ? (
@@ -159,7 +168,11 @@ export function PersonalPlanning() {
                     <WithdrawalState
                       withdrawal={state.withdrawals.find(
                         w =>
-                          w.date === s.date && w.shift === s.shift && w.userId === actor.id && w.state !== "CANCELLED",
+                          w.campaignId === s.campaign.id &&
+                          w.date === s.date &&
+                          w.shift === s.shift &&
+                          w.userId === actor.id &&
+                          w.state !== "CANCELLED",
                       )}
                       onAsk={() => {
                         setWithdrawing(s);
@@ -201,7 +214,9 @@ export function PersonalPlanning() {
             onClick={async () => {
               const ok = await run({
                 type: "withdraw",
-                campaignId,
+                // La campagne de la garde, et non celle du sélecteur : l'onglet
+                // « À venir » montre aussi les gardes des autres mois.
+                campaignId: withdrawing.campaign.id,
                 date: withdrawing.date,
                 shift: withdrawing.shift,
                 reason,

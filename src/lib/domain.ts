@@ -297,6 +297,31 @@ export function defaultCampaign(campaigns: Campaign[], today = localDate()): Cam
     undefined,
   );
 }
+/** Une garde publiée d'un agent, avec la campagne qui la porte : ses horaires en viennent. */
+export type PublishedShift = { campaign: Campaign; date: string; shift: Shift; revision: number; publishedAt: string };
+/**
+ * Les gardes publiées d'un agent, sur **toutes** les campagnes chargées, par
+ * date puis jour avant nuit.
+ *
+ * Pas sur la seule campagne choisie : celle qu'on ouvre par défaut est celle qui
+ * attend une réponse — le mois suivant, pendant la plus grande partie du mois.
+ * L'accueil disait alors « aucune garde à venir » à l'agent de garde le
+ * lendemain, qui devait changer de campagne pour la voir.
+ */
+export function publishedShiftsOf(state: AppState, userId: string): PublishedShift[] {
+  return state.campaigns
+    .flatMap(campaign =>
+      monthDays(campaign.month).flatMap(date =>
+        (["DAY", "NIGHT"] as const).flatMap(shift => {
+          const published = state.publications[shiftKey(campaign.id, date, shift)];
+          return published?.agents.includes(userId)
+            ? [{ campaign, date, shift, revision: published.revision, publishedAt: published.publishedAt }]
+            : [];
+        }),
+      ),
+    )
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.shift === b.shift ? 0 : a.shift === "DAY" ? -1 : 1));
+}
 export const isValidated = (state: AppState, campaignId: string, userId: string) =>
   Boolean(state.responses[responseKey(campaignId, userId)]);
 export const filledDays = (state: AppState, campaign: Campaign, userId: string) =>

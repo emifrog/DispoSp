@@ -27,7 +27,8 @@ export const HOME_PATH = "/";
 // Le choix d'un nouveau mot de passe et la vérification du lien qui y mène
 // doivent passer le garde : on y arrive précisément sans session, et les y
 // soumettre renverrait l'agent vers la connexion — l'écran même qu'il ne peut
-// pas franchir.
+// pas franchir. `/confirmer` en fait partie : c'est la page qu'ouvre le lien,
+// avant que le bouton ne le vérifie.
 //
 // Le rattrapage des envois poussés, enfin : un planificateur externe n'a pas
 // de cookie, il porte un jeton. Le garde le renvoyait vers la connexion et la
@@ -39,6 +40,7 @@ export const publicPaths = [
   "/auth/recuperation",
   "/activation",
   "/auth/activation",
+  "/confirmer",
   "/manifest.webmanifest",
   "/sw.js",
   "/hors-ligne",

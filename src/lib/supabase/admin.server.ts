@@ -13,9 +13,11 @@ import { supabaseUrl } from "./config";
  *
  * - `server-only` : ce module refuse de se compiler dans un paquet navigateur.
  * - Pas de préfixe `NEXT_PUBLIC_`, sans quoi la clé partirait dans ce paquet.
- * - Ce client ne sert **qu'à** `auth.admin.inviteUserByEmail`. Il ne lit ni
- *   n'écrit aucune table : tout le reste continue de passer par la session de
- *   l'appelant et ses policies. Une lecture faite ici contournerait le
+ * - Ce client ne sert **qu'à** `auth.admin.inviteUserByEmail`, et à rendre la
+ *   réservation d'un envoi qui n'est pas parti (`release_invitation_send`, une
+ *   fonction accordée au seul serveur, qui ne touche que ce journal). Il ne lit
+ *   ni n'écrit aucune table : tout le reste continue de passer par la session
+ *   de l'appelant et ses policies. Une lecture faite ici contournerait le
  *   cloisonnement entre centres sans que rien ne le signale.
  *
  * Elle est facultative. Sans elle, l'invitation enregistre toujours qui est

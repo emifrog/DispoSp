@@ -12,7 +12,7 @@ test.describe("En-têtes de sécurité", () => {
     expect(headers["strict-transport-security"]).toBe("max-age=31536000");
   });
 
-  for (const path of ["/connexion", "/hors-ligne", "/nouveau-mot-de-passe"])
+  for (const path of ["/connexion", "/hors-ligne", "/nouveau-mot-de-passe", "/confirmer?type=invite&token_hash=x"])
     test(`${path} se charge sans violation de la politique de contenu`, async ({ page }) => {
       const violations: string[] = [];
       page.on("console", message => {

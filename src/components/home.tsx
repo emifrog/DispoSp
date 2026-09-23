@@ -12,10 +12,8 @@ import {
   isValidated,
   localDate,
   monthDays,
-  monthLabel,
   plural,
-  shiftKey,
-  type Shift,
+  publishedShiftsOf,
 } from "@/lib/domain";
 
 /**
@@ -36,16 +34,11 @@ export function AgentHome() {
   const validated = isValidated(state, campaignId, actor.id);
   const open = isOpen(campaign);
   const today = localDate();
-  // Les gardes publiées à venir. Un brouillon n'est pas une garde : tant que le
-  // gestionnaire n'a pas publié, l'agent n'a rien à lire ici.
-  const upcoming = days
-    .filter(date => date >= today)
-    .flatMap(date =>
-      (["DAY", "NIGHT"] as Shift[]).flatMap(shift => {
-        const published = state.publications[shiftKey(campaignId, date, shift)];
-        return published?.agents.includes(actor.id) ? [{ date, shift }] : [];
-      }),
-    );
+  // Les gardes publiées à venir, toutes campagnes confondues : la campagne
+  // choisie est celle qui attend une réponse, souvent le mois suivant, et la
+  // garde de demain appartient au mois en cours. Un brouillon n'est pas une
+  // garde : tant que le gestionnaire n'a pas publié, l'agent n'a rien à lire ici.
+  const upcoming = publishedShiftsOf(state, actor.id).filter(s => s.date >= today);
   // Le prénom seul : « Bonjour Julien Bernard » sonne comme une convocation.
   const firstName = (agent?.name ?? "").split(" ")[0];
   return (
@@ -116,13 +109,12 @@ export function AgentHome() {
       >
         {!upcoming.length ? (
           <div className="empty-small">
-            Aucune garde publiée à venir sur {monthLabel(campaign.month)}. Elles apparaîtront ici dès que le
-            gestionnaire aura publié le planning.
+            Aucune garde publiée à venir. Elles apparaîtront ici dès que le gestionnaire aura publié le planning.
           </div>
         ) : (
           <div className="home-shifts">
             {upcoming.slice(0, 3).map(s => (
-              <Link key={`${s.date}-${s.shift}`} href="/mon-planning">
+              <Link key={`${s.campaign.id}-${s.date}-${s.shift}`} href="/mon-planning">
                 <span className={`shift-date ${s.shift === "DAY" ? "day" : "night"}`}>
                   <small>{dateLabel(s.date, { weekday: "short" })}</small>
                   <strong>{Number(s.date.slice(-2))}</strong>
@@ -132,7 +124,7 @@ export function AgentHome() {
                   <strong>Garde {s.shift === "DAY" ? "de jour" : "de nuit"}</strong>
                   <small>{state.organization.name}</small>
                 </span>
-                <span className="home-shift-hours">{hours(campaign, s.shift)}</span>
+                <span className="home-shift-hours">{hours(s.campaign, s.shift)}</span>
                 <ChevronRight size={17} />
               </Link>
             ))}

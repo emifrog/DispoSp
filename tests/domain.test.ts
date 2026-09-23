@@ -14,6 +14,7 @@ import {
   localMonth,
   localTime,
   monthDays,
+  publishedShiftsOf,
   shiftKey,
   shiftMonth,
   templateEntries,
@@ -228,6 +229,30 @@ describe("Campagne par défaut", () => {
   it("ne retombe jamais sur la plus ancienne par le seul ordre de la liste", () => {
     expect(defaultCampaign(centre, "2026-09-18")?.month).not.toBe("2026-08");
     expect(defaultCampaign([], "2026-09-18")).toBeUndefined();
+  });
+});
+
+// B2 de l'analyse du 23 septembre : la campagne choisie par défaut est celle qui
+// attend une réponse — le mois suivant. Les gardes du mois en cours ne doivent
+// pas disparaître pour autant.
+describe("Gardes publiées d’un agent", () => {
+  it("rassemble toutes les campagnes, par date puis jour avant nuit", () => {
+    const state = sampleState(now);
+    const september = { ...state.campaigns[0], id: "campaign-2026-09", month: "2026-09", name: "Septembre" };
+    state.campaigns.unshift(september);
+    publish(state, campaignId, "2026-10-02", "DAY", [julien], 1, now);
+    publish(state, september.id, "2026-09-24", "NIGHT", [julien], 1, now);
+    publish(state, september.id, "2026-09-24", "DAY", [julien], 2, now);
+    publish(state, september.id, "2026-09-25", "DAY", ["marie"], 1, now);
+    const shifts = publishedShiftsOf(state, julien).map(s => `${s.campaign.id} ${s.date} ${s.shift}`);
+    expect(shifts).toEqual([
+      "campaign-2026-09 2026-09-24 DAY",
+      "campaign-2026-09 2026-09-24 NIGHT",
+      "campaign-2026-10 2026-10-02 DAY",
+    ]);
+    // La garde porte sa campagne : ses horaires et son désistement en viennent.
+    expect(publishedShiftsOf(state, julien)[0].campaign.month).toBe("2026-09");
+    expect(publishedShiftsOf(state, "personne")).toEqual([]);
   });
 });
 
