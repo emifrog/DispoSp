@@ -1,6 +1,6 @@
 import "server-only";
 import { frenchMessage, type DatabaseFailure } from "./command-errors";
-import type { Command, Shift } from "./domain";
+import { plural, type Command, type Shift } from "./domain";
 import type { AttachedSession } from "./session";
 import { createActionClient } from "./supabase/server";
 import { canInvite, createAdminClient } from "./supabase/admin.server";
@@ -15,7 +15,10 @@ function fail(error: DatabaseFailure): never {
 // Every write below runs under RLS as the signed-in user, and the triggers of
 // 0001/0002/0003 do the checking. Nothing here re-implements a rule the database
 // already holds: it would only give the two a chance to disagree.
-export async function runCommand(session: AttachedSession, command: Command): Promise<void> {
+//
+// Une commande peut rendre le libellé à afficher, quand le libellé fixe de
+// `commandLabels` ne dirait pas ce qui s'est passé — le nombre de relancés.
+export async function runCommand(session: AttachedSession, command: Command): Promise<string | void> {
   const client = await createActionClient();
   switch (command.type) {
     case "availability":
@@ -88,12 +91,19 @@ async function applyTemplate(client: Client, command: Of<"applyTemplate">) {
 }
 
 // Nobody runs a clock, so a reminder is an act a manager takes. The database
-// picks the targets — those who have not validated — and refuses a second
-// pending reminder for the same campaign. L'envoi, lui, n'est plus déclenché
-// ici : les deux files se vident après chaque commande, depuis l'action.
-async function remindCampaign(client: Client, command: Of<"remind">) {
-  const { error } = await client.rpc("remind_campaign", { campaign: command.campaignId });
+// picks the targets — active members who have not validated — and refuses a
+// closed campaign or a second reminder within twelve hours. L'envoi, lui, n'est
+// plus déclenché ici : les deux files se vident après chaque commande.
+//
+// Le compte revient à l'écran : « Relance envoyée » quand personne n'était à
+// relancer laissait croire à un envoi.
+async function remindCampaign(client: Client, command: Of<"remind">): Promise<string> {
+  const { data, error } = await client.rpc("remind_campaign", { campaign: command.campaignId });
   if (error) fail(error);
+  const sent = Number(data ?? 0);
+  return sent > 0
+    ? `Relance envoyée à ${sent} ${plural(sent, "agent")}`
+    : "Personne à relancer : tous les agents concernés ont validé";
 }
 
 // The only column a session may write on its own notices. Marking one already

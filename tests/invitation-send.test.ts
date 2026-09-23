@@ -102,7 +102,7 @@ describe("Envoi d’une invitation", () => {
   it("dit que l’invitation est enregistrée quand la base refuse l’envoi", async () => {
     rpc.mockResolvedValue({ data: null, error: { message: "Too many invitations sent" } });
     await expect(runCommand(session, invite)).rejects.toThrow(
-      "L’invitation est enregistrée, mais son message n’est pas parti. Plus de cinquante invitations sont parties dans l’heure pour ce centre.",
+      "L’invitation est enregistrée, mais son message n’est pas parti. Cinquante invitations sont déjà parties dans l’heure pour ce centre.",
     );
     expect(inviteUserByEmail).not.toHaveBeenCalled();
     expect(adminRpc).not.toHaveBeenCalled();

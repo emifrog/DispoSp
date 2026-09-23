@@ -48,9 +48,9 @@ export async function submitCommand(payload: unknown): Promise<CommandResult> {
   if (!session) return { ok: false, message: "Votre session a expiré. Reconnectez-vous." };
   if (!session.membership) return { ok: false, message: "Votre compte n’est rattaché à aucun centre." };
   try {
-    await runCommand({ ...session, membership: session.membership }, parsed.data);
+    const label = await runCommand({ ...session, membership: session.membership }, parsed.data);
     flushQueues();
-    return { ok: true, label: commandLabels[parsed.data.type] };
+    return { ok: true, label: label ?? commandLabels[parsed.data.type] };
   } catch (error) {
     return {
       ok: false,

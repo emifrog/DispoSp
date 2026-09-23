@@ -31,6 +31,7 @@ export const MIGRATIONS = [
   "20260923090000_fiche_agent_atomique.sql",
   "20260923140000_limites_envois.sql",
   "20260923180000_rendre_envoi_invitation.sql",
+  "20260923200000_relances_et_plafonds.sql",
 ];
 
 /**

@@ -95,3 +95,30 @@ describe("Disponibilité habituelle depuis le serveur", () => {
     );
   });
 });
+
+// C8 de l'analyse du 23 septembre : « Relance envoyée » quand personne n'était
+// à relancer laissait croire à un envoi. Le compte revient de la base.
+describe("Relance d’une campagne depuis le serveur", () => {
+  const remind = { type: "remind" as const, campaignId: "40000000-0000-0000-0000-000000000001" };
+
+  it("dit combien d’agents ont été relancés", async () => {
+    rpc.mockResolvedValue({ data: 3, error: null });
+    await expect(runCommand(session, remind)).resolves.toBe("Relance envoyée à 3 agents");
+    rpc.mockResolvedValue({ data: 1, error: null });
+    await expect(runCommand(session, remind)).resolves.toBe("Relance envoyée à 1 agent");
+  });
+
+  it("dit qu’il n’y avait personne à relancer", async () => {
+    rpc.mockResolvedValue({ data: 0, error: null });
+    await expect(runCommand(session, remind)).resolves.toBe(
+      "Personne à relancer : tous les agents concernés ont validé",
+    );
+  });
+
+  it("traduit le refus d’une campagne close", async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: "Cannot remind a closed campaign" } });
+    await expect(runCommand(session, remind)).rejects.toThrow(
+      "Cette campagne est close : il n’y a plus de réponse à relancer.",
+    );
+  });
+});

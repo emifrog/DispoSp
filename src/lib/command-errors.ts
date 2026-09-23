@@ -72,17 +72,20 @@ const byMessage: [RegExp, (match: RegExpMatchArray) => string][] = [
     () => "Un rappel est déjà parti pour cette campagne il y a moins de douze heures.",
   ],
   [/^Unknown invitation/, () => "Cette invitation n’existe plus, ou ne vous est pas accessible."],
+  [/^Cannot remind a closed campaign/, () => "Cette campagne est close : il n’y a plus de réponse à relancer."],
+  // Les limites portent sur l'adresse, pas sur l'invitation : effacer puis
+  // refaire l'invitation n'y change rien, et le message ne le suggère plus.
   [
     /^Invitation sent too recently/,
-    () => "Ce message est parti il y a moins d’un quart d’heure : laissez-lui le temps d’arriver.",
+    () => "Un message est parti vers cette adresse il y a moins d’un quart d’heure : laissez-lui le temps d’arriver.",
   ],
   [
     /^Invitation send limit reached/,
-    () => "Cette invitation a déjà été envoyée cinq fois. Vérifiez l’adresse, puis supprimez-la et refaites-la.",
+    () => "Cette adresse a déjà reçu cinq invitations en vingt-quatre heures. Vérifiez-la, puis réessayez demain.",
   ],
   [
     /^Too many invitations sent/,
-    () => "Plus de cinquante invitations sont parties dans l’heure pour ce centre. Réessayez un peu plus tard.",
+    () => "Cinquante invitations sont déjà parties dans l’heure pour ce centre. Réessayez un peu plus tard.",
   ],
   [/^Unknown campaign/, () => "Cette campagne n’existe pas, ou ne vous est pas accessible."],
   [

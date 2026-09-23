@@ -312,8 +312,10 @@ export function Dashboard() {
                 <ArrowRight size={15} />
               </Link>
               {/* Nobody runs a clock, so the reminder is an act. The database
-                  picks the targets and refuses to pile two on the same person. */}
-              {pending.length > 0 && (
+                  picks the targets and refuses to pile two on the same person.
+                  Une campagne close n'a plus de réponse à attendre : la base
+                  refuserait, le bouton ne se propose pas. */}
+              {pending.length > 0 && isOpen(campaign) && (
                 <Button variant="secondary" onClick={() => run({ type: "remind", campaignId })}>
                   <Send size={15} />
                   Relancer {pending.length} {plural(pending.length, "agent")}

@@ -52,6 +52,16 @@ describe("Action serveur", () => {
     expect(dispatchEmails).toHaveBeenCalledOnce();
   });
 
+  it("rend le libellé de la commande quand elle en donne un, le libellé fixe sinon", async () => {
+    readSession.mockResolvedValue(attached);
+    runCommand.mockResolvedValue("Relance envoyée à 3 agents");
+    await expect(submitCommand(command)).resolves.toEqual({ ok: true, label: "Relance envoyée à 3 agents" });
+    runCommand.mockResolvedValue(undefined);
+    const fixed = await submitCommand(command);
+    expect(fixed).toMatchObject({ ok: true });
+    expect(fixed.ok && fixed.label).not.toBe("Relance envoyée à 3 agents");
+  });
+
   it("vide la file email même quand la file poussée échoue, sans faire échouer la commande", async () => {
     readSession.mockResolvedValue(attached);
     runCommand.mockResolvedValue(undefined);

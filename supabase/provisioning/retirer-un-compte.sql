@@ -105,6 +105,8 @@ begin
   -- empêcherait sinon de supprimer le compte, et son adresse ne pourrait plus
   -- être réinvitée. Celles qu'il a faites passent au relais.
   delete from public.invitations where accepted_by = cible;
+  -- Le journal des envois d'invitation garde l'adresse, invitation effacée ou non.
+  delete from private.invitation_sends where email = lower(btrim(compte));
   update public.invitations set invited_by = releve where invited_by = cible;
   delete from public.memberships where user_id = cible;
   delete from public.profiles where user_id = cible;

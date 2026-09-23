@@ -151,6 +151,8 @@ begin
     delete from public.user_qualifications where organization_id = essai_id;
     delete from public.qualifications where organization_id = essai_id;
     delete from public.invitations where organization_id = essai_id;
+    -- Le journal des envois survit aux invitations : il part avec le centre.
+    delete from private.invitation_sends where organization_id = essai_id;
 
     -- Le journal en dernier : chacun des effacements ci-dessus y a encore
     -- écrit, par les déclencheurs d'audit de 0003 et 0004.

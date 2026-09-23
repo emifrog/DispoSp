@@ -58,6 +58,9 @@ select jsonb_pretty(jsonb_build_object(
   'invitations', (
     select coalesce(jsonb_agg(to_jsonb(i) - 'organization_id' - 'team_id' - 'invited_by' - 'accepted_by'), '[]')
       from public.invitations i where i.email = (select lower(email) from compte)),
+  'envois_d_invitation', (
+    select coalesce(jsonb_agg(s.sent_at order by s.sent_at), '[]')
+      from private.invitation_sends s where s.email = (select lower(email) from compte)),
   -- Le journal : ce que la personne a fait, et ce qui a été fait sur sa fiche.
   'journal', (
     select coalesce(jsonb_agg(jsonb_build_object(

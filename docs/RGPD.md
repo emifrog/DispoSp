@@ -52,6 +52,7 @@ Ce sont les valeurs réglées dans `supabase/provisioning/purger-les-donnees-anc
 | Journal d'audit                                                                               | 12 mois                               | Durée usuelle d'un journal de traçabilité                                                                        |
 | Notifications (et leurs envois)                                                               | 6 mois                                | Elles n'ont plus d'intérêt une fois lues                                                                         |
 | Invitations, acceptées ou non                                                                 | 3 mois                                | Elles recopient nom, email, téléphone et matricule ; inutiles une fois le compte créé ou l'invitation abandonnée |
+| Journal des envois d'invitation (adresse et date de chaque envoi)                             | 3 mois après l'envoi                  | Il tient les limites d'envoi par adresse, et survit donc à l'invitation effacée                                  |
 | Compte, fiche, rattachement                                                                   | Tant que l'agent appartient au centre | Retrait à son départ (section 5)                                                                                 |
 
 La purge **n'est pas automatique** : elle s'exécute à la main dans l'éditeur SQL de Supabase, **une fois par mois**, et chaque exécution affiche ce qu'elle a effacé. Il faut désigner qui s'en charge. Pour l'automatiser, il faudra planifier la tâche, par exemple avec `pg_cron` sur Supabase, ce qui n'est pas fait.
@@ -78,7 +79,14 @@ Toutes les procédures s'exécutent par l'administrateur technique dans l'édite
 - **Cloisonnement :** chaque lecture et chaque écriture passe par des politiques de sécurité au niveau des lignes en base. Un agent ne lit que ses données, et un centre ne voit jamais un autre centre. Les clés d'administration ne quittent pas le serveur.
 - **Transport :** HTTPS imposé par HSTS. La politique de sécurité du contenu interdit tout script, cadre ou connexion vers un autre serveur que l'application et Supabase.
 - **Traçabilité :** chaque modification est journalisée avec son auteur, et le journal n'est modifiable par aucun utilisateur de l'application.
-- **Limites d'envoi :** un rappel par campagne toutes les douze heures. Pour les invitations : cinq envois au plus par invitation, un quart d'heure entre deux envois, cinquante par heure et par centre.
+- **Limites d'envoi :**
+  - un rappel par campagne toutes les douze heures, jamais sur une campagne close, jamais à un membre désactivé ;
+  - pour les invitations, par adresse : un quart d'heure entre deux envois et cinq en vingt-quatre heures, même si l'invitation est effacée puis refaite ; et cinquante envois par heure et par centre ;
+  - une demande de désistement refaite dans les douze heures ne renotifie pas l'encadrement ;
+  - au plus dix emails par heure et par destinataire, les suivants différés ; aucun email à un membre désactivé.
+
+  Ces plafonds portent sur les emails. Les notifications de l'application et les bulles sur téléphone, elles, ne sont pas plafonnées.
+
 - **Messages sans fuite :** l'application ne révèle pas à un gestionnaire qu'une adresse a un compte dans un autre centre.
 
 ## 7. Reste à faire avant la mise en service

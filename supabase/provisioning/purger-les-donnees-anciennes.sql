@@ -75,6 +75,11 @@ begin
   delete from public.invitations where created_at < now() - duree_invitations;
   get diagnostics n = row_count;
   raise notice 'Invitations de plus de % : % effacée(s).', duree_invitations, n;
+  -- Le journal des envois survit à l'invitation (il tient les limites par
+  -- adresse) ; il porte une adresse, et suit donc la même durée.
+  delete from private.invitation_sends where sent_at < now() - duree_invitations;
+  get diagnostics n = row_count;
+  raise notice 'Envois d''invitation de plus de % : % effacé(s).', duree_invitations, n;
 
   delete from public.notifications where created_at < now() - duree_notifications;
   get diagnostics n = row_count;
