@@ -15,6 +15,9 @@ import {
 } from "@/lib/domain";
 import { CAMPAIGN_PARAM } from "@/lib/campaign-param";
 
+/** L'absence au-delà de laquelle le retour au premier plan relit l'état. */
+const RESUME_AFTER_MS = 30_000;
+
 type Context = {
   state: AppState;
   actor: Actor;
@@ -191,6 +194,46 @@ export function AppProvider({
       setSubmitting(false);
     }
   }
+  /*
+   * Une application installée reste ouverte des jours sur un téléphone : on la
+   * quitte, on la retrouve le lendemain, et rien ne se rechargeait. L'agent
+   * relisait le planning de la veille — un créneau republié depuis, un
+   * désistement tranché, restaient invisibles jusqu'à sa première action. Et le
+   * code aussi restait celui d'avant le dernier déploiement.
+   *
+   * On relit donc quand l'application revient au premier plan après une vraie
+   * absence, quand le navigateur la restaure depuis son cache de pages, et
+   * quand le réseau revient. La relecture ramène les données du moment, et si
+   * une nouvelle version a été déployée, Next le voit à la réponse et recharge
+   * la page entière. Trente secondes d'absence au moins : passer d'une
+   * application à l'autre pour lire un SMS ne doit pas relire tout le centre.
+   * Jamais pendant une écriture : elle se relit d'elle-même en finissant.
+   */
+  useEffect(() => {
+    let hiddenAt = document.visibilityState === "hidden" ? Date.now() : 0;
+    const reread = () => {
+      if (!running.current) startRefresh(() => router.refresh());
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now();
+        return;
+      }
+      if (hiddenAt && Date.now() - hiddenAt >= RESUME_AFTER_MS) reread();
+      hiddenAt = 0;
+    };
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) reread();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pageshow", onPageShow);
+    window.addEventListener("online", reread);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pageshow", onPageShow);
+      window.removeEventListener("online", reread);
+    };
+  }, [router]);
   // Resolved once here so no screen has to assert that a lookup succeeded. The
   // workspace layout has already turned away a centre without campaigns.
   const campaign = state.campaigns.find(c => c.id === campaignId) ?? state.campaigns[0];

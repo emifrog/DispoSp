@@ -298,9 +298,11 @@ Ces vérifications ne sont pas du confort. Elles portent sur des données person
 
 **Faire** — Ouvrir le site public sur un téléphone. Sur Android : la bannière d'installation, ou **Mon profil → Installer l'application**. Sur iPhone : Safari, bouton Partager, « Sur l'écran d'accueil ».
 
-**Attendu** — Une icône DispoSP sur l'écran d'accueil. L'application s'ouvre en plein écran, sans barre d'adresse.
+**Attendu** — Une icône DispoSP sur l'écran d'accueil. L'application s'ouvre en plein écran, sans barre d'adresse. Sur iPhone, **l'heure et la batterie restent lisibles au-dessus de la barre de l'application**, qui commence sous elles et non derrière l'encoche. Sur iPhone toujours, l'application installée ne reprend pas la session de Safari : il faut s'y connecter une fois.
 
 **À vérifier** — Couper la connexion et ouvrir l'application : une page « Pas de connexion » doit s'afficher, et **aucune donnée ancienne**. C'est voulu : un planning servi depuis un cache serait présenté comme à jour sans l'être.
+
+**À vérifier aussi** — Laisser l'application ouverte, passer à une autre application plus d'une minute, pendant qu'un gestionnaire modifie et republie un créneau de l'agent ; revenir à DispoSP. La barre d'attente passe en haut de l'écran et le planning montre la version republiée, sans qu'il ait fallu toucher à quoi que ce soit.
 
 ### 8.2 Activer les notifications
 

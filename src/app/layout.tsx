@@ -18,7 +18,13 @@ export const metadata: Metadata = {
   applicationName: "DispoSP",
   // iOS ignore le manifeste pour l'écran d'accueil : il lui faut son icône et
   // son propre drapeau de plein écran.
-  appleWebApp: { capable: true, title: "DispoSP", statusBarStyle: "black-translucent" },
+  //
+  // `default` et non `black-translucent` : ce dernier fait passer la page sous
+  // la barre d'état et y écrit l'heure en blanc. La barre du haut de DispoSP,
+  // blanche, se retrouvait sous l'heure et l'encoche, avec une heure blanche sur
+  // fond blanc — rien dans la feuille de style ne réserve la hauteur de la
+  // barre d'état. Avec `default`, la page commence sous elle.
+  appleWebApp: { capable: true, title: "DispoSP", statusBarStyle: "default" },
   icons: { apple: "/apple-touch-icon.png" },
 };
 export const viewport: Viewport = {
