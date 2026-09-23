@@ -54,6 +54,7 @@ const byMessage: [RegExp, (match: RegExpMatchArray) => string][] = [
     /^Cannot remove the last administrator/,
     () => "Ce compte est le dernier administrateur actif du centre : nommez-en un autre avant de le retirer.",
   ],
+  [/^Not allowed to edit this member/, () => "Vous n’avez pas le droit de modifier cette fiche."],
   // Publication : ce que 20260921090000 ajoute aux contrôles de couverture.
   [
     /^Inactive members cannot be published: (.+)$/,

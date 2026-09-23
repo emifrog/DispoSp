@@ -1,3 +1,4 @@
+import { formatInTimeZone } from "date-fns-tz";
 import { z } from "zod";
 import { roleLabels } from "./session";
 
@@ -209,11 +210,29 @@ export const monthDays = (month: string) =>
     { length: new Date(Number(month.slice(0, 4)), Number(month.slice(5)), 0).getDate() },
     (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`,
   );
-export const localDate = (d = new Date()) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-export const localMonth = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-export const shiftMonth = (month: string, delta: number) =>
-  localMonth(new Date(Number(month.slice(0, 4)), Number(month.slice(5)) - 1 + delta, 1));
+/**
+ * Le jour et le mois de référence sont ceux de Paris, où que tourne le code.
+ *
+ * Ils lisaient l'heure de la machine. Les écrans sont d'abord rendus sur le
+ * serveur, et un hébergeur tourne le plus souvent en UTC : entre minuit et deux
+ * heures à Paris, le serveur rendait une campagne ouverte que le navigateur
+ * rendait close, et la base refusait le premier clic. La base, elle, décide en
+ * Europe/Paris ; l'écran dit désormais la même chose qu'elle.
+ */
+export const PARIS = "Europe/Paris";
+export const localDate = (d = new Date()) => formatInTimeZone(d, PARIS, "yyyy-MM-dd");
+export const localMonth = (d = new Date()) => formatInTimeZone(d, PARIS, "yyyy-MM");
+// De l'arithmétique sur « aaaa-mm », sans passer par une Date : aucun fuseau
+// ne peut faire glisser le premier du mois sur la veille.
+export const shiftMonth = (month: string, delta: number) => {
+  const index = Number(month.slice(0, 4)) * 12 + Number(month.slice(5)) - 1 + delta;
+  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`;
+};
+/** L'heure d'un instant, lue à Paris : « 14:05 ». */
+export const localTime = (d: Date) => formatInTimeZone(d, PARIS, "HH:mm");
+/** Un horodatage lisible, lu à Paris : « 23 sept. 2026, 14:05 ». */
+export const stampLabel = (at: string) =>
+  new Date(at).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short", timeZone: PARIS });
 export const lastDayOfMonth = (month: string) => {
   const days = monthDays(month);
   return days[days.length - 1];

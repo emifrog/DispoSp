@@ -1,9 +1,9 @@
-import { formatInTimeZone } from "date-fns-tz";
 import {
   availabilitySchema,
   dateLabel,
   entryKey,
   labels,
+  localDate,
   memberRoles,
   plural,
   responseKey,
@@ -131,9 +131,8 @@ async function sequential<T>(what: string, size: number, page: Page, from: numbe
   }
 }
 
-const PARIS = "Europe/Paris";
 /** A campaign window is a timestamp in the database and a calendar day on screen. */
-export const dayIn = (timestamp: string) => formatInTimeZone(new Date(timestamp), PARIS, "yyyy-MM-dd");
+export const dayIn = (timestamp: string) => localDate(new Date(timestamp));
 
 // The rows exactly as PostgREST returns them for the queries in data.server.ts.
 export type Raw = {

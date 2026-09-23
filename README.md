@@ -101,7 +101,8 @@ Le schéma est découpé en migrations successives, à appliquer dans l'ordre et
 | `supabase/migrations/20260921130000_web_push_abonnement.sql`                      | Inscription d'un appareil par la session qui le tient                                                                                                                                                         | Appliquée — confirmation du porteur du projet |
 | `supabase/migrations/20260921140000_verrou_publication.sql`                       | Verrou de ligne sur le créneau publié, contre deux publications simultanées                                                                                                                                   | Appliquée le 22 septembre 2026                |
 | `supabase/migrations/20260922100000_reactivation_administrateur_devalidation.sql` | Fiche des membres désactivés ouverte à l'encadrement ; dernier administrateur protégé ; dévalidation sous la même fenêtre que la validation, journalisée                                                      | Appliquée le 22 septembre 2026                |
-| `supabase/migrations/20260922150000_rattachement_retrait_file_email.sql`          | Un seul centre actif par compte, invitation d'un compte actif ailleurs refusée, membre désactivé réinvité réactivé ; retrait d'un compte possible (invitations) ; file d'emails avec bail, tentatives et état | **À appliquer**                               |
+| `supabase/migrations/20260922150000_rattachement_retrait_file_email.sql`          | Un seul centre actif par compte, invitation d'un compte actif ailleurs refusée, membre désactivé réinvité réactivé ; retrait d'un compte possible (invitations) ; file d'emails avec bail, tentatives et état | Appliquée le 22 septembre 2026                |
+| `supabase/migrations/20260923090000_fiche_agent_atomique.sql`                     | `public.save_member()` : rattachement, profil et qualifications d'un agent écrits en une seule transaction                                                                                                    | **À appliquer avant de déployer le code**     |
 
 Les deux migrations du 18 septembre n’ajoutent que des fonctions : `public.create_campaign()` pour la première, `public.save_availability_template()` et `public.apply_availability_template()` pour la seconde. Elles ne modifient aucune donnée existante.
 
@@ -323,7 +324,7 @@ Les deux règles correspondantes mesurent, l'une la position des liens du menu a
 
 ## Limites et prochaines étapes
 
-Dix-huit migrations sont appliquées et l’application lit et écrit les données en mode connecté. **`20260922150000_rattachement_retrait_file_email.sql` reste à passer** : sans elle, l'envoi des emails ne trouve pas ses fonctions de réservation et le journal du serveur le dit à chaque commande. Les étapes restantes sont suivies dans [le plan de développement](PLAN_DEVELOPPEMENT.md), et la vérification avant mise en service dans [la recette](RECETTE.md) :
+Les dix-neuf migrations sont appliquées et l’application lit et écrit les données en mode connecté. Les étapes restantes sont suivies dans [le plan de développement](PLAN_DEVELOPPEMENT.md), et la vérification avant mise en service dans [la recette](RECETTE.md) :
 
 - Confirmer la configuration du site hébergé et effectuer une recette avec plusieurs comptes : invitation, confirmation d’adresse, disponibilités habituelles, validation, publication, réception des emails et des notifications poussées sur un téléphone.
 - Déployer la version qui appelle `public.create_campaign()`, `public.save_availability_template()` et `public.apply_availability_template()`, puis vérifier ces parcours en mode connecté : les migrations sont appliquées, le comportement hébergé reste à observer.

@@ -285,28 +285,6 @@ async function writeOneRequirement(client: Client, command: RequirementWrite) {
   if (error) fail(error);
 }
 
-// The catalogue has no administration screen yet, so it fills itself as needs are
-// defined. Creating one takes an administrator: a team manager reusing existing
-// qualifications works, inventing a new one does not.
-async function qualificationIds(client: Client, organizationId: string, names: string[]) {
-  const { data, error } = await client
-    .from("qualifications")
-    .select("id, name")
-    .eq("organization_id", organizationId)
-    .in("name", names);
-  if (error) fail(error);
-  const found = new Map((data ?? []).map(row => [row.name as string, row.id as string]));
-  const missing = names.filter(name => !found.has(name));
-  if (!missing.length) return found;
-  const { data: created, error: createFailure } = await client
-    .from("qualifications")
-    .insert(missing.map(name => ({ organization_id: organizationId, name })))
-    .select("id, name");
-  if (createFailure) fail(createFailure);
-  for (const row of created ?? []) found.set(row.name as string, row.id as string);
-  return found;
-}
-
 // ---------------------------------------------------------------------------
 // Organization
 // ---------------------------------------------------------------------------
@@ -386,75 +364,31 @@ async function decideWithdrawal(client: Client, command: Of<"decideWithdrawal">)
 // Administration
 // ---------------------------------------------------------------------------
 
+/**
+ * Une fiche d'agent écrite en une transaction.
+ *
+ * L'ancienne version enchaînait quatre requêtes — rattachement, profil,
+ * qualifications retirées, qualifications ajoutées — et un refus au troisième
+ * pas laissait une fiche à moitié modifiée alors que l'écran annonçait un
+ * échec. `save_member()` fait tout d'un bloc, sous les droits de l'appelant et
+ * ses policies ; l'ordre, rattachement d'abord, y est conservé pour que la
+ * réactivation rende la fiche modifiable.
+ */
 async function writeMember(client: Client, session: AttachedSession, command: Of<"member">) {
-  const organizationId = session.membership.organizationId;
-  // The record and the membership are two tables with two policies. A partial
-  // edit is visible and re-editable; nothing is derived from the other half.
-  //
-  // Le rattachement d'abord, la fiche ensuite. L'ordre inverse rendait la
-  // réactivation impossible : la fiche d'un membre désactivé n'était pas
-  // modifiable, la commande s'arrêtait là, et le rattachement — qui aurait
-  // rétabli l'accès — n'était jamais atteint. La migration du 22 septembre
-  // ouvre aussi la fiche des inactifs à l'encadrement ; l'ordre reste le bon
-  // pour une base qui ne l'aurait pas encore reçue.
-  const { data: membership, error: membershipFailure } = await client
-    .from("memberships")
-    .update({ team_id: command.teamId, role: command.role, active: command.active })
-    .eq("organization_id", organizationId)
-    .eq("user_id", command.userId)
-    .select("user_id");
-  if (membershipFailure) fail(membershipFailure);
-  if (!membership?.length) throw new Error("Vous n’avez pas le droit de modifier cette fiche.");
-
-  const { data: profile, error: profileFailure } = await client
-    .from("profiles")
-    .update({
-      display_name: command.name,
-      grade: command.grade || null,
-      fonction: command.fonction || null,
-      matricule: command.matricule || null,
-      phone: command.phone || null,
-    })
-    .eq("user_id", command.userId)
-    .select("user_id");
-  if (profileFailure) fail(profileFailure);
-  if (!profile?.length) throw new Error("Vous n’avez pas le droit de modifier cette fiche.");
-
-  // The screen always sends the complete set, so the difference is computed here
-  // rather than asking it to remember what it removed.
-  const { data: held, error: heldFailure } = await client
-    .from("user_qualifications")
-    .select("qualification_id, qualifications(name)")
-    .eq("organization_id", organizationId)
-    .eq("user_id", command.userId);
-  if (heldFailure) fail(heldFailure);
-  // A to-one embed comes back as an object, but the untyped client infers an
-  // array: accept either rather than assert one and be wrong at runtime.
-  const embeddedName = (value: unknown): string => {
-    const row = Array.isArray(value) ? value[0] : value;
-    return row && typeof row === "object" && "name" in row ? String((row as { name: unknown }).name) : "";
-  };
-  const current = new Map((held ?? []).map(row => [embeddedName(row.qualifications), row.qualification_id as string]));
-  const wanted = new Set(command.qualifications);
-  const removed = [...current].filter(([name]) => name && !wanted.has(name)).map(([, id]) => id);
-  if (removed.length) {
-    const { error } = await client
-      .from("user_qualifications")
-      .delete()
-      .eq("user_id", command.userId)
-      .in("qualification_id", removed);
-    if (error) fail(error);
-  }
-  const added = command.qualifications.filter(name => !current.has(name));
-  if (!added.length) return;
-  const ids = await qualificationIds(client, organizationId, added);
-  const { error } = await client.from("user_qualifications").insert(
-    added.map(name => ({
-      organization_id: organizationId,
-      user_id: command.userId,
-      qualification_id: ids.get(name),
-    })),
-  );
+  const { error } = await client.rpc("save_member", {
+    org: session.membership.organizationId,
+    member: command.userId,
+    team: command.teamId,
+    member_role: command.role,
+    is_active: command.active,
+    member_name: command.name,
+    member_grade: command.grade || null,
+    member_fonction: command.fonction || null,
+    member_matricule: command.matricule || null,
+    member_phone: command.phone || null,
+    // L'écran envoie toujours l'ensemble complet ; la fonction calcule l'écart.
+    qualification_names: command.qualifications,
+  });
   if (error) fail(error);
 }
 

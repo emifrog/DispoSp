@@ -2997,3 +2997,100 @@ describe("Première campagne — les horaires viennent de l’organisation", () 
     await fresh.close();
   }, 30000);
 });
+
+// Point 4 de l'audit de déployabilité : la fiche d'un agent s'écrit d'un bloc.
+describe("Fiche d’agent atomique", () => {
+  const org = "10000000-0000-0000-0000-0000000000e0";
+  const other = "10000000-0000-0000-0000-0000000000e9";
+  const golf = "20000000-0000-0000-0000-0000000000e0";
+  const hotel = "20000000-0000-0000-0000-0000000000e1";
+  const away = "20000000-0000-0000-0000-0000000000e9";
+  const manager = "30000000-0000-0000-0000-0000000000e0";
+  const agent = "30000000-0000-0000-0000-0000000000e1";
+  const stranger = "30000000-0000-0000-0000-0000000000e9";
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+  const save = (member: string, team: string, name: string, qualifications: string[], role = "AGENT") =>
+    live.query("select public.save_member($1,$2,$3,$4,true,$5,'Sergent',null,'M-42',null,$6)", [
+      org,
+      member,
+      team,
+      role,
+      name,
+      qualifications,
+    ]);
+  const fiche = async () => {
+    await live.exec("reset role");
+    const row = (
+      await live.query<{ display_name: string; team_id: string; qualifications: string[] }>(
+        `select p.display_name, m.team_id,
+                coalesce(array(select q.name from public.user_qualifications uq
+                                 join public.qualifications q on q.id = uq.qualification_id
+                                where uq.user_id = $1 order by q.name), '{}') as qualifications
+           from public.profiles p join public.memberships m on m.user_id = p.user_id
+          where p.user_id = $1`,
+        [agent],
+      )
+    ).rows[0];
+    return row;
+  };
+
+  beforeAll(async () => {
+    live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const m of MIGRATIONS)
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    await live.exec(`insert into auth.users(id) values ('${manager}'), ('${agent}'), ('${stranger}');
+      insert into public.profiles(user_id,display_name) values ('${manager}','Gestionnaire'), ('${agent}','Agent'), ('${stranger}','Ailleurs');
+      insert into public.organizations(id,name) values ('${org}','Centre 23'), ('${other}','Centre voisin');
+      insert into public.teams(id,organization_id,name) values ('${golf}','${org}','Golf'), ('${hotel}','${org}','Hotel'), ('${away}','${other}','India');
+      insert into public.memberships values
+        ('${org}','${manager}','${golf}','GESTIONNAIRE',true),
+        ('${org}','${agent}','${golf}','AGENT',true),
+        ('${other}','${stranger}','${away}','AGENT',true);
+      insert into public.qualifications(organization_id,name) values ('${org}','INC1'), ('${org}','SAP1');
+      insert into public.user_qualifications(organization_id,user_id,qualification_id)
+        select '${org}','${agent}',id from public.qualifications where organization_id='${org}' and name='INC1';`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("écrit l’équipe, le profil et l’écart de qualifications en un appel", async () => {
+    await be(manager);
+    // INC1 retirée, SAP1 reprise du catalogue, COD1 créée.
+    await save(agent, hotel, "Agent Renommé", ["SAP1", "COD1", "SAP1", ""]);
+    expect(await fiche()).toEqual({ display_name: "Agent Renommé", team_id: hotel, qualifications: ["COD1", "SAP1"] });
+    await live.exec("reset role");
+    expect((await live.query("select grade, matricule from public.profiles where user_id=$1", [agent])).rows).toEqual([
+      { grade: "Sergent", matricule: "M-42" },
+    ]);
+  });
+
+  it("n’écrit rien quand le dernier pas est refusé", async () => {
+    const before = await fiche();
+    await be(manager);
+    // Le nom de qualification dépasse soixante caractères : refus à la
+    // création du catalogue, après le rattachement et le profil.
+    await expect(save(agent, golf, "Moitié Écrite", ["SAP1", "X".repeat(61)])).rejects.toThrow();
+    expect(await fiche()).toEqual(before);
+  });
+
+  it("refuse, sans rien écrire, un rôle qu’un gestionnaire ne peut pas donner", async () => {
+    const before = await fiche();
+    await be(manager);
+    await expect(save(agent, golf, "Promu", [], "ADMIN")).rejects.toThrow("Only an administrator can change a role");
+    expect(await fiche()).toEqual(before);
+  });
+
+  it("refuse la fiche d’un membre d’un autre centre, et d’un agent qui n’encadre pas", async () => {
+    await be(manager);
+    await expect(save(stranger, golf, "Capturé", [])).rejects.toThrow("Not allowed to edit this member");
+    await be(agent);
+    await expect(save(manager, golf, "Usurpé", [])).rejects.toThrow("Not allowed to edit this member");
+  });
+});

@@ -4,7 +4,7 @@ import { useApp } from "./provider";
 import { PageTitle, Panel } from "./common";
 import { PushNotifications } from "./pwa";
 import { Button } from "./ui/button";
-import { notificationLabels, plural } from "@/lib/domain";
+import { notificationLabels, plural, stampLabel } from "@/lib/domain";
 
 export function Notifications() {
   const { state, run } = useApp();
@@ -45,8 +45,7 @@ export function Notifications() {
                   <h3>{notice.subject}</h3>
                   {notice.body && <p>{notice.body}</p>}
                   <small>
-                    {notificationLabels[notice.kind] ?? notice.kind} ·{" "}
-                    {new Date(notice.createdAt).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })}
+                    {notificationLabels[notice.kind] ?? notice.kind} · {stampLabel(notice.createdAt)}
                   </small>
                 </div>
                 {!notice.readAt && (

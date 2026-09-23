@@ -41,6 +41,7 @@ import {
   monthLabel,
   plural,
   shiftMonth,
+  stampLabel,
   type Agent,
   type AppState,
   type MemberRole,
@@ -800,8 +801,7 @@ export function Audit() {
                 <h3>{event.action}</h3>
                 <p>{event.detail}</p>
                 <small>
-                  {event.actor} ·{" "}
-                  {new Date(event.at).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" })}
+                  {event.actor} · {stampLabel(event.at)}
                 </small>
               </div>
             </li>

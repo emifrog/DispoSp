@@ -6,6 +6,7 @@ import {
   entryKey,
   labels,
   localDate,
+  localTime,
   monthDays,
   shiftKey,
 } from "./domain";
@@ -45,7 +46,7 @@ export function auditCsv(events: AppState["audit"]) {
         const at = new Date(event.at);
         return [
           localDate(at),
-          at.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+          localTime(at),
           event.actor,
           event.action,
           event.detail,

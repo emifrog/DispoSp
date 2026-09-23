@@ -40,6 +40,14 @@ jobs:
       - name: Tests unitaires et schéma PostgreSQL
         run: pnpm test
 
+      # Un hébergeur tourne le plus souvent en UTC. Le fuseau épinglé plus haut
+      # cachait tout calcul qui lisait l'horloge de la machine au lieu de Paris ;
+      # la même suite, rejouée en UTC, le fait apparaître.
+      - name: Tests unitaires — serveur en UTC
+        run: pnpm vitest run --exclude tests/database.test.ts
+        env:
+          TZ: UTC
+
       - name: Build de production
         run: pnpm build
 

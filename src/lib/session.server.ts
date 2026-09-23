@@ -1,5 +1,6 @@
 import "server-only";
 import { connection } from "next/server";
+import { cache } from "react";
 import { taken } from "./data-mapping";
 import { createReadClient } from "./supabase/server";
 import type { Session } from "./session";
@@ -7,7 +8,15 @@ import type { Session } from "./session";
 // Returns null for a visitor without a session. Every
 // query below runs under RLS as the signed-in user: an empty result is the
 // database's answer, not a missing filter.
-export async function readSession(): Promise<Session | null> {
+//
+// Lue une seule fois par rendu : la mise en page de l'espace de travail et
+// certaines pages la demandent chacune, et chaque lecture coûtait un aller-retour
+// réseau vers Supabase Auth plus deux requêtes. `cache` la partage le temps
+// d'une requête serveur, jamais d'une requête à l'autre — donc jamais entre deux
+// utilisateurs. Hors rendu (route, action), elle se relit simplement.
+export const readSession = cache(read);
+
+async function read(): Promise<Session | null> {
   /*
    * Aucun écran de l'espace de travail ne peut être prérendu : ils dépendent
    * tous de qui est connecté. Next l'apprenait jusqu'ici par `cookies()`, que

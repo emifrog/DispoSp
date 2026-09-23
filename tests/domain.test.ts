@@ -7,9 +7,14 @@ import {
   coverage,
   coverageLevel,
   isoWeekday,
+  isOpen,
   isValidated,
+  localDate,
+  localMonth,
+  localTime,
   monthDays,
   shiftKey,
+  shiftMonth,
   templateEntries,
   workload,
 } from "../src/lib/domain";
@@ -224,3 +229,50 @@ describe("Campagne par défaut", () => {
     expect(defaultCampaign([], "2026-09-18")).toBeUndefined();
   });
 });
+
+// La CI fait tourner cette suite deux fois, en Europe/Paris puis en UTC : ces
+// attentes ne doivent dépendre d'aucune des deux.
+describe("Dates de référence", () => {
+  it("lit le jour et le mois à Paris, pas sur l'horloge de la machine", () => {
+    // 23 h 30 UTC le 30 septembre : déjà le 1er octobre à Paris (UTC+2).
+    const lateEvening = new Date("2026-09-30T23:30:00Z");
+    expect(localDate(lateEvening)).toBe("2026-10-01");
+    expect(localMonth(lateEvening)).toBe("2026-10");
+    expect(localTime(lateEvening)).toBe("01:30");
+    // L'hiver, Paris n'a plus qu'une heure d'avance.
+    expect(localTime(new Date("2026-12-15T23:30:00Z"))).toBe("00:30");
+  });
+
+  it("date le journal exporté à l'heure de Paris", () => {
+    const csv = auditCsv([
+      {
+        id: "a",
+        at: "2026-09-30T22:15:00Z",
+        actor: "Gestionnaire",
+        action: "Campagne ouverte",
+        detail: "Novembre",
+        entity: "availability_campaigns",
+      },
+    ] as Parameters<typeof auditCsv>[0]);
+    expect(csv).toContain('"2026-10-01";"00:15"');
+  });
+
+  it("décale un mois sans passer par un fuseau", () => {
+    expect(shiftMonth("2026-12", 1)).toBe("2027-01");
+    expect(shiftMonth("2026-01", -1)).toBe("2025-12");
+    expect(shiftMonth("2026-09", 0)).toBe("2026-09");
+    expect(shiftMonth("2026-03", 14)).toBe("2027-05");
+  });
+
+  it("dit une campagne ouverte le jour de Paris où elle l'est", () => {
+    const [campaign] = sampleState(now).campaigns;
+    expect(isOpen(campaign, campaign.closesOn)).toBe(true);
+    expect(isOpen(campaign, shiftDay(campaign.closesOn))).toBe(false);
+  });
+});
+
+const shiftDay = (date: string) => {
+  const next = new Date(`${date}T12:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
+};

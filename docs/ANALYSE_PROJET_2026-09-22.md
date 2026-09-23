@@ -23,7 +23,7 @@ La migration `20260922100000_reactivation_administrateur_devalidation.sql` a ét
 
 ### Suivi des constats importants — C1 à C16, le même jour
 
-Les seize constats du chapitre 3 ont été corrigés à leur tour, chacun avec son test. Une migration de plus, `20260922150000_rattachement_retrait_file_email.sql`, **à appliquer** après `20260922100000`.
+Les seize constats du chapitre 3 ont été corrigés à leur tour, chacun avec son test. Une migration de plus, `20260922150000_rattachement_retrait_file_email.sql`, **appliquée le 22 septembre 2026** sur le projet hébergé, après `20260922100000`. Livrés par le commit `a0785a4`, intégration continue verte.
 
 | Point | Correctif                                                                                                                                                                                                                                                                                                 | Test                                                                                                                                                                                                                   |
 | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
