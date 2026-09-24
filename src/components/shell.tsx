@@ -11,7 +11,6 @@ import {
   Megaphone,
   Settings2,
   History,
-  ChevronDown,
   ArrowUpRight,
   ShieldCheck,
   UserRound,
@@ -96,11 +95,11 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
           <span className="workspace-icon">
             <Flame size={19} />
           </span>
+          {/* Pas de chevron : ce bloc ne s'ouvre pas. Un centre par projet, rien
+              à choisir — un chevron promettait un menu qui n'existe pas. */}
           <div>
             <strong>{state.organization.name}</strong>
-            {/*<small>Centre de secours</small>*/}
           </div>
-          <ChevronDown size={15} />
         </div>
         <span className="nav-caption">ESPACE {space}</span>
         <nav aria-label="Navigation principale">
@@ -159,6 +158,15 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
           </>
         )}
         <div className="sidebar-bottom">
+          {/* Sur un téléphone, la déconnexion quitte le bandeau, trop chargé, et
+              vient ici, dans le menu — avec son libellé, qu'une icône seule ne
+              donnait pas. */}
+          <form method="post" action="/deconnexion" className="mobile-only sidebar-signout">
+            <button type="submit">
+              <LogOut size={18} />
+              Se déconnecter
+            </button>
+          </form>
           <span className="version">
             DispoSP <span>Version · 1.0</span>
           </span>
@@ -201,9 +209,9 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
             </Link>
             {/* Le rôle plutôt qu'un « Connecté » : l'agent sait qu'il est
                 connecté — il vient de saisir son mot de passe —, mais il ne
-                sait pas toujours ce que son rôle lui ouvre. Et cette place est
-                la seule du bandeau qui reste visible sur un téléphone, où le
-                nom et sa ligne disparaissent. */}
+                sait pas toujours ce que son rôle lui ouvre. Sur un téléphone,
+                le bandeau n'a pas la place : le rôle s'y lit dans le menu
+                (« Espace … »), en tête de la navigation. */}
             <span className={`role-tag ${roleTones[session.membership.role] ?? ""}`}>
               <span className="sr-only">Rôle : </span>
               {roleLabels[session.membership.role] ?? session.membership.role}
@@ -213,7 +221,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
             <div className="user-name">
               <strong>{session.displayName}</strong>
             </div>
-            <form method="post" action="/deconnexion">
+            <form method="post" action="/deconnexion" className="topbar-signout">
               <button type="submit" className="button button-ghost button-sm" aria-label="Se déconnecter">
                 <LogOut size={17} />
               </button>
@@ -230,7 +238,9 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
         </div>
         <main id="main" tabIndex={-1}>
           <div className="campaign-context">
-            <span>
+            {/* Le nom du centre est déjà dans la barre latérale ; il ne se
+                répète ici que sur un téléphone, où elle est escamotée. */}
+            <span className="campaign-context-centre">
               <span className="live-dot" />
               {state.organization.name}
             </span>

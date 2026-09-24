@@ -8,7 +8,15 @@
   --blue: #1763ef;
   --navy: #08284a;
   --text: #182e4c;
-  --muted: #718097;
+  /* Deux gris pour le texte secondaire, et pas davantage. Près de quatre-vingts
+     teintes s'étaient accumulées, presque toutes sous le contraste de 4,5:1
+     qu'exige un texte courant : légendes, en-têtes de tableaux, onglets
+     inactifs se lisaient mal, et des éléments actifs paraissaient désactivés.
+     `--muted` pour le texte d'accompagnement, `--subtle` pour les légendes ;
+     tous deux au-dessus de 4,5:1 sur le blanc, le fond de page et les cartes
+     bleutées. Sur le bleu nuit de la barre latérale, ce sont d'autres gris. */
+  --muted: #56657b;
+  --subtle: #5f6e84;
   --border: #e6ebf3;
   --background: #f6f8fc;
   --green: #189271;
@@ -82,7 +90,7 @@ textarea {
 }
 input::placeholder,
 textarea::placeholder {
-  color: #8b97a9;
+  color: var(--muted);
 }
 textarea {
   min-height: 85px;
@@ -219,6 +227,29 @@ label {
   margin-top: auto;
   padding-top: 40px;
 }
+/* La déconnexion du menu, sur téléphone seulement : un vrai bouton, avec son
+   libellé, à la taille du doigt. */
+.sidebar-signout {
+  margin: 0 0 18px;
+}
+.sidebar-signout button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid #ffffff26;
+  border-radius: 9px;
+  background: transparent;
+  color: #dbe6f6;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.sidebar-signout button:hover {
+  background: #ffffff14;
+}
 .version {
   display: flex;
   justify-content: space-between;
@@ -250,7 +281,7 @@ label {
 }
 .breadcrumb {
   font-size: 12px;
-  color: #91a0b3;
+  color: var(--subtle);
 }
 .breadcrumb span {
   padding: 0 12px;
@@ -329,7 +360,7 @@ label {
   border-bottom: 1px solid #e0eafb;
   padding: 7px 36px;
   font-size: 10px;
-  color: #657fa6;
+  color: var(--muted);
 }
 .context-banner a {
   display: flex;
@@ -346,7 +377,7 @@ label {
 }
 .campaign-context {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   color: var(--muted);
   font-size: 11px;
@@ -356,6 +387,11 @@ label {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+/* Le nom du centre est déjà dans la barre latérale : pas une seconde fois ici,
+   sauf sur un téléphone, où la barre est escamotée (voir plus bas). */
+.campaign-context > .campaign-context-centre {
+  display: none;
 }
 .campaign-context label {
   display: flex;
@@ -437,7 +473,7 @@ label {
 }
 .button-ghost {
   background: transparent;
-  color: #7d8da4;
+  color: var(--muted);
 }
 .button-ghost:hover:not(:disabled) {
   background: #edf2f9;
@@ -508,7 +544,7 @@ label {
   background: #edf3ff;
 }
 .pill-gray {
-  color: #728098;
+  color: var(--muted);
   background: #edf1f6;
 }
 .pill-orange {
@@ -547,7 +583,7 @@ label {
 .campaign-ribbon span:not(.pill, .live-dot) {
   display: block;
   font-size: 11px;
-  color: #7b8ca6;
+  color: var(--muted);
   margin-top: 3px;
 }
 .campaign-ribbon .pill {
@@ -578,7 +614,7 @@ label {
 .segmented button {
   padding: 7px 12px;
   background: none;
-  color: #76869e;
+  color: var(--muted);
   border-radius: 5px;
   font-size: 11px;
   font-weight: 600;
@@ -648,7 +684,7 @@ label {
   color: var(--text);
 }
 .ring span {
-  color: #8a99ac;
+  color: var(--muted);
   line-height: 1.3;
 }
 .ring-lg {
@@ -721,7 +757,7 @@ label {
   gap: 6px;
   font-size: 11px;
   font-weight: 500;
-  color: #6a7e98;
+  color: var(--muted);
 }
 .stat-icon {
   display: grid;
@@ -762,7 +798,7 @@ label {
   font-size: 13px;
   font-weight: 450;
   letter-spacing: 0;
-  color: #94a1b5;
+  color: var(--subtle);
 }
 .stat-number .stat-badge {
   margin-left: auto;
@@ -775,7 +811,7 @@ label {
   font-weight: 650;
 }
 .stat-card p {
-  color: #8a98ac;
+  color: var(--muted);
   font-size: 10px;
   display: flex;
   align-items: center;
@@ -838,7 +874,7 @@ label {
 }
 .panel-heading p {
   font-size: 11px;
-  color: #8b99ad;
+  color: var(--subtle);
   margin-top: 4px;
 }
 .coverage-legend {
@@ -856,25 +892,30 @@ label {
   width: 8px;
   height: 8px;
   border-radius: 2px;
+  /* Le fond seul, pâle, ne se voyait pas : le contour prend la couleur de l'état. */
+  border: 1px solid currentColor;
 }
+/* Les quatre niveaux de couverture. Leurs textes passaient de 2,4:1 à 3,2:1 sur
+   leur fond : l'information centrale du gestionnaire était la moins lisible de
+   l'écran. Tous dépassent désormais 4,5:1. */
 .covered {
   background: #e6f6ef;
-  color: #39977f;
+  color: #17684f;
 }
 .deficit {
   background: #fff0ec;
-  color: #ce8878;
+  color: #b03a28;
 }
 /* Covered with nothing to spare: one absence and the shift is short. §9 asks for
    this third level, and a manager reads the orange cells first. */
 .tight {
   background: #fff5e6;
-  color: #b8802f;
+  color: #8a5a0e;
 }
 /* Neither covered nor in deficit: no requirement has been recorded for the shift. */
 .unset {
   background: #f1f4f8;
-  color: #93a2b5;
+  color: var(--subtle);
 }
 .day-groups {
   display: grid;
@@ -917,7 +958,7 @@ label {
 .day-group.unknown header,
 .day-group.pending header {
   background: #f1f4f8;
-  color: #6b7c94;
+  color: var(--muted);
 }
 .day-group ul {
   list-style: none;
@@ -1012,27 +1053,26 @@ label {
 .heatmap-date {
   text-align: center;
   padding: 0 0 7px;
-  color: #7186a2;
+  color: var(--muted);
 }
 .heatmap-date small {
   display: block;
   font-size: 9px;
   text-transform: uppercase;
-  opacity: 0.6;
 }
 .heatmap-date b {
   font-weight: 500;
   font-size: 11px;
 }
 .heatmap-date.weekend {
-  color: #a3afbf;
+  color: var(--subtle);
 }
 .heatmap-label {
   display: flex;
   align-items: center;
   gap: 5px;
   font-size: 10px;
-  color: #8393a8;
+  color: var(--muted);
 }
 .heatmap-cell {
   display: flex;
@@ -1048,10 +1088,11 @@ label {
 .heatmap-cell:hover {
   filter: brightness(0.94);
 }
+/* Pas d'opacité : elle ramenait l'effectif requis sous le contraste que la
+   couleur de l'état venait d'atteindre. */
 .heatmap-cell small {
   font-size: 8px;
   font-weight: 400;
-  opacity: 0.8;
 }
 .panel-footnote {
   border-top: 1px solid #eff2f7;
@@ -1060,7 +1101,7 @@ label {
   align-items: center;
   gap: 7px;
   font-size: 10px;
-  color: #8c9ab0;
+  color: var(--subtle);
   background: #fdfefe;
 }
 .panel-footnote a {
@@ -1124,7 +1165,7 @@ label {
 }
 .deadline-body small {
   font-size: 11px;
-  color: #8a99af;
+  color: var(--subtle);
 }
 .deadline-list .pill {
   flex-shrink: 0;
@@ -1144,7 +1185,7 @@ label {
   justify-content: space-between;
   gap: 15px;
   font-size: 11px;
-  color: #8390a5;
+  color: var(--muted);
   margin: 15px 0;
 }
 .response-counts span {
@@ -1180,14 +1221,14 @@ label {
   display: block;
 }
 .pending-list small {
-  color: #97a3b4;
+  color: var(--subtle);
   font-size: 9px;
   display: block;
 }
 .pending-progress {
   margin-left: auto;
   font-size: 10px;
-  color: #8291a8;
+  color: var(--muted);
 }
 .pending-list svg {
   color: #a6b3c6;
@@ -1237,7 +1278,7 @@ label {
   font-weight: 600;
 }
 .muted-step {
-  color: #8494ab;
+  color: var(--muted);
   background: #f1f4f8;
 }
 .next-step h3 {
@@ -1246,7 +1287,7 @@ label {
   margin: 4px 0 6px;
 }
 .next-step p {
-  color: #8a99af;
+  color: var(--subtle);
   font-size: 11px;
   line-height: 1.7;
   max-width: 300px;
@@ -1264,7 +1305,7 @@ label {
   margin: 17px 22px;
   font-size: 10px;
   line-height: 1.8;
-  color: #8b9bb1;
+  color: var(--subtle);
 }
 .small-note svg {
   color: #9fbbdf;
@@ -1276,7 +1317,7 @@ label {
 .page-footer {
   padding: 0 36px 24px;
   font-size: 9px;
-  color: #9cabc0;
+  color: var(--subtle);
   display: flex;
   justify-content: space-between;
 }
@@ -1320,7 +1361,7 @@ label {
   background: white;
 }
 .response-banner p {
-  color: #7186a1;
+  color: var(--muted);
   font-size: 12px;
 }
 .response-banner .pill {
@@ -1342,7 +1383,7 @@ label {
 .weekday {
   text-align: center;
   font-size: 11px;
-  color: #8a9ab1;
+  color: var(--subtle);
   padding: 10px 0;
 }
 .calendar-day {
@@ -1366,6 +1407,13 @@ label {
 .calendar-day:disabled {
   opacity: 1;
 }
+/* Un jour encore à renseigner, campagne ouverte, est une case à remplir : blanche
+   et bordée. Grise, elle se lisait comme désactivée. Le gris reste pour ce qui
+   l'est vraiment — les jours d'une campagne close. */
+.calendar-day.unknown:not(:disabled) {
+  background: #fff;
+  border-color: #d5dee9;
+}
 .calendar-day.is-selected {
   border-color: var(--blue);
   box-shadow: 0 0 0 2px #d9e7ff;
@@ -1381,25 +1429,28 @@ label {
   font-size: 13px;
   font-weight: 650;
 }
+/* Les cinq états d'une disponibilité, partout : calendrier, synthèse, modèle.
+   Chaque texte dépasse 4,5:1 sur son fond ; les teintes d'avant, entre 2:1 et
+   4:1, faisaient passer des cases actives pour désactivées. */
 .day {
   background: #e7f6ee;
-  color: #268662;
+  color: #1b6e4f;
 }
 .night {
   background: #e8f1ff;
-  color: #3073d6;
+  color: #1f5ab8;
 }
 .full {
   background: #f1eafd;
-  color: #9263c3;
+  color: #6b3fa6;
 }
 .unavailable {
   background: #feedef;
-  color: #d36a7a;
+  color: #b23a4c;
 }
 .unknown {
   background: #f1f4f8;
-  color: #a2aec0;
+  color: var(--subtle);
 }
 .unknown-symbol {
   display: none;
@@ -1420,7 +1471,7 @@ label {
   padding: 16px 22px;
   border-top: 1px solid #edf1f7;
   font-size: 10px;
-  color: #7d8da3;
+  color: var(--muted);
 }
 .legend > span {
   display: flex;
@@ -1431,6 +1482,7 @@ label {
   width: 9px;
   height: 9px;
   border-radius: 3px;
+  border: 1px solid currentColor;
 }
 .availability-side .panel > .muted {
   margin: 17px 22px;
@@ -1447,7 +1499,7 @@ label {
   border: 1px solid #e2e9f3;
   border-radius: 10px;
   padding: 22px;
-  color: #6e85a4;
+  color: var(--muted);
 }
 .info-card svg {
   color: #809bbb;
@@ -1546,7 +1598,7 @@ label {
   background: #f4f6fa;
   border-radius: 50%;
   padding: 6px;
-  color: #6d809b;
+  color: var(--muted);
 }
 .form-grid {
   display: grid;
@@ -1567,7 +1619,7 @@ label {
 .field-label {
   display: block;
   font-size: 11px;
-  color: #70849f;
+  color: var(--muted);
   margin: 10px 0;
 }
 .weekday-picker {
@@ -1578,7 +1630,7 @@ label {
   flex: 1;
   height: 34px;
   border-radius: 6px;
-  color: #8292aa;
+  color: var(--muted);
   background: #f1f4f9;
 }
 .weekday-picker button.selected {
@@ -1617,7 +1669,6 @@ label {
 }
 .availability-choices small {
   font-size: 9px;
-  opacity: 0.75;
 }
 /* Ce que la saisie rapide va réellement toucher, dit avant le bouton plutôt
    qu'après coup. */
@@ -1642,7 +1693,7 @@ label {
 }
 .quick-summary small {
   font-size: 11px;
-  color: #6c86ab;
+  color: var(--muted);
 }
 .availability-choices svg {
   position: absolute;
@@ -1738,7 +1789,7 @@ label {
   padding: 2px 7px;
   border-radius: 5px;
   font-size: 11px;
-  color: #6b84aa;
+  color: var(--muted);
 }
 .search-field {
   display: flex;
@@ -1748,7 +1799,7 @@ label {
   border: 1px solid #dfe6f1;
   border-radius: 7px;
   padding: 0 11px;
-  color: #92a3ba;
+  color: var(--subtle);
 }
 .search-field input {
   width: 100%;
@@ -1790,7 +1841,7 @@ label {
 .agent-info > small {
   display: block;
   font-size: 9px;
-  color: #8a9bb1;
+  color: var(--subtle);
   margin: 2px 0 6px;
 }
 .qualification-tags {
@@ -1800,7 +1851,7 @@ label {
 }
 .qualification-tags span {
   background: #eef4fc;
-  color: #6b8caf;
+  color: var(--muted);
   font-size: 8px;
   border-radius: 4px;
   padding: 2px 5px;
@@ -1827,7 +1878,7 @@ label {
   text-align: center;
   border: 1px dashed #d4e0f0;
   border-radius: 8px;
-  color: #a0b3ce;
+  color: var(--subtle);
   padding: 25px 10px;
   font-size: 11px;
 }
@@ -1857,7 +1908,7 @@ label {
 .need-summary strong > span {
   font-size: 13px;
   font-weight: 450;
-  color: #7a95b6;
+  color: var(--muted);
 }
 .need-covered {
   background: #edf8f3;
@@ -1892,7 +1943,7 @@ label {
 }
 .qualification-list small {
   font-size: 9px;
-  color: #90a1b7;
+  color: var(--subtle);
   display: block;
 }
 .qualification-list b {
@@ -1914,7 +1965,7 @@ label {
 }
 .save-caption {
   font-size: 9px;
-  color: #96a5b9;
+  color: var(--subtle);
   text-align: center;
   margin: 11px 10px 20px;
 }
@@ -1941,7 +1992,7 @@ label {
 .workload-list small {
   font-size: 8px;
   font-weight: 400;
-  color: #92a1b6;
+  color: var(--subtle);
 }
 .workload-list .avatar {
   width: 25px;
@@ -2048,7 +2099,7 @@ label {
 .availability-table thead th {
   font-weight: 500;
   background: #f9fbfe;
-  color: #7d91af;
+  color: var(--muted);
   position: sticky;
   top: 0;
   z-index: 3;
@@ -2080,7 +2131,7 @@ label {
   min-height: 26px;
   gap: 8px;
   background: none;
-  color: #6a84a6;
+  color: var(--muted);
 }
 .availability-table tbody tr:hover td {
   background: #fafcff;
@@ -2099,7 +2150,7 @@ label {
 .table-agent small {
   display: block;
   font-size: 9px;
-  color: #95a4b9;
+  color: var(--subtle);
 }
 .availability-table thead th:nth-child(2),
 .availability-table tbody td:nth-child(2) {
@@ -2160,12 +2211,12 @@ label {
 .availability-table tfoot td {
   background: #fafcff;
   font-size: 10px;
-  color: #8a9fbb;
+  color: var(--subtle);
 }
 .availability-table tfoot th {
   font-size: 10px;
   font-weight: 500;
-  color: #6f85a4;
+  color: var(--muted);
 }
 .campaign-list .panel {
   max-width: 980px;
@@ -2181,7 +2232,7 @@ label {
   align-items: center;
   gap: 11px;
   font-size: 10px;
-  color: #8ba0bb;
+  color: var(--subtle);
 }
 .campaign-details strong {
   display: block;
@@ -2222,7 +2273,7 @@ label {
 }
 .profile-card p {
   font-size: 11px;
-  color: #8c9db4;
+  color: var(--subtle);
   margin: 5px 0 16px;
 }
 .profile-card .qualification-tags span {
@@ -2254,12 +2305,12 @@ label {
 }
 .audit-list p {
   font-size: 12px;
-  color: #7f93ae;
+  color: var(--muted);
   margin: 4px 0;
 }
 .audit-list small {
   font-size: 10px;
-  color: #a0adc0;
+  color: var(--subtle);
 }
 .settings-width {
   max-width: 650px;
@@ -2323,7 +2374,7 @@ label {
   width: 34px;
   height: 34px;
   border-radius: 9px;
-  color: #6b7c94;
+  color: var(--muted);
   transition:
     background 0.15s,
     color 0.15s;
@@ -2392,7 +2443,7 @@ label {
   height: 32px;
   border-radius: 9px;
   background: #f1f4f8;
-  color: #93a2b5;
+  color: var(--subtle);
   flex: none;
 }
 .notice-list li.unread .notice-icon {
@@ -2516,7 +2567,7 @@ fieldset.field legend {
 .empty-small {
   text-align: center;
   padding: 25px 15px;
-  color: #95a6bd;
+  color: var(--subtle);
   font-size: 12px;
 }
 .empty-small svg {
@@ -2555,11 +2606,11 @@ fieldset.field legend {
 }
 .personal-shifts p {
   font-size: 12px;
-  color: #7187a5;
+  color: var(--muted);
   margin: 4px 0;
 }
 .personal-shifts article > div > small {
-  color: #99a9be;
+  color: var(--subtle);
   font-size: 10px;
 }
 .personal-shifts .pill {
@@ -2579,13 +2630,13 @@ fieldset.field legend {
   padding: 6px 11px;
   border-radius: 20px;
   background: #f1f4f9;
-  color: #6d7f99;
+  color: var(--muted);
   font-size: 11px;
   font-weight: 600;
 }
 .grade-chips button b {
   font-weight: 650;
-  color: #93a3ba;
+  color: var(--subtle);
 }
 .grade-chips button.selected {
   background: var(--blue);
@@ -2610,9 +2661,6 @@ fieldset.field legend {
 .withdrawal-list article:last-child {
   border-bottom: 0;
 }
-.withdrawal-list.settled article {
-  opacity: 0.72;
-}
 .withdrawal-body {
   flex: 1;
   min-width: 0;
@@ -2632,7 +2680,7 @@ fieldset.field legend {
   align-items: center;
   gap: 5px;
   font-size: 11px;
-  color: #7f92ad;
+  color: var(--muted);
 }
 .withdrawal-reason {
   margin: 9px 0 0;
@@ -2739,7 +2787,7 @@ fieldset.field legend {
   display: block;
   font-weight: 400;
   font-size: 10px;
-  color: #98a8bf;
+  color: var(--subtle);
 }
 .stats-table tbody td {
   width: auto;
@@ -2770,7 +2818,7 @@ fieldset.field legend {
   background: #45b599;
 }
 .stat-bar small {
-  color: #7a8ba3;
+  color: var(--muted);
   font-size: 11px;
   white-space: nowrap;
 }
@@ -2799,7 +2847,7 @@ fieldset.field legend {
 }
 .weekday-stats-name small {
   font-size: 10px;
-  color: #98a8bf;
+  color: var(--subtle);
 }
 /* La barre empilée reprend les teintes de la légende des disponibilités : le
    même vert veut dire « jour » ici comme dans la matrice. */
@@ -2846,7 +2894,7 @@ fieldset.field legend {
 }
 .weekday-stats-coverage small {
   font-size: 10px;
-  color: #98a8bf;
+  color: var(--subtle);
 }
 
 /* --- Besoins du mois ------------------------------------------------------- */
@@ -2868,7 +2916,7 @@ fieldset.field legend {
   top: 0;
   z-index: 1;
   background: #f9fbfe;
-  color: #7d91af;
+  color: var(--muted);
   font-weight: 500;
   padding: 10px 12px;
   text-align: left;
@@ -2877,7 +2925,7 @@ fieldset.field legend {
 .needs-table thead th small {
   display: block;
   font-size: 10px;
-  color: #9dadc4;
+  color: var(--subtle);
   font-weight: 400;
 }
 .needs-table thead th svg {
@@ -2916,13 +2964,13 @@ fieldset.field legend {
 }
 .need-cell small {
   font-size: 10px;
-  color: #6c86ab;
+  color: var(--muted);
 }
 /* Un créneau sans besoin n'est pas « zéro » : il n'a pas été réglé. Le gris et
    le tiret disent l'absence, pas une valeur. */
 .need-cell.empty {
   background: #f4f6fa;
-  color: #a4b2c6;
+  color: var(--subtle);
   align-items: center;
 }
 .minima-grid {
@@ -2984,7 +3032,7 @@ fieldset.field legend {
   font-size: 15px;
 }
 .next-shift p {
-  color: #6c82a1;
+  color: var(--muted);
   font-size: 12px;
   margin-top: 3px;
 }
@@ -2999,7 +3047,7 @@ fieldset.field legend {
 .next-shift-place small {
   font-weight: 400;
   font-size: 11px;
-  color: #7f92ad;
+  color: var(--muted);
 }
 .my-month {
   display: grid;
@@ -3016,7 +3064,7 @@ fieldset.field legend {
   align-items: center;
   justify-content: center;
   gap: 2px;
-  color: #93a3ba;
+  color: var(--subtle);
 }
 .my-day b {
   font-size: 14px;
@@ -3122,7 +3170,7 @@ fieldset.field legend {
 }
 .home-shift-body small {
   font-size: 12px;
-  color: #7187a5;
+  color: var(--muted);
 }
 .home-shift-hours {
   font-size: 12px;
@@ -3166,7 +3214,7 @@ fieldset.field legend {
 }
 .shortcut small {
   font-size: 12px;
-  color: #7187a5;
+  color: var(--muted);
 }
 .shortcut-icon {
   display: grid;
@@ -3459,14 +3507,14 @@ fieldset.field legend {
   .topbar-actions {
     gap: 9px;
   }
+  /* Sur un téléphone, le bandeau ne garde que le menu, le logo, la cloche et
+     les initiales. Six éléments s'y serraient ; le rôle se lit dans le menu
+     (« Espace … »), et la déconnexion y a son bouton. */
   .user-name,
-  .topbar-divider {
+  .topbar-divider,
+  .role-tag,
+  .topbar-signout {
     display: none;
-  }
-  /* Le nom disparaît sur un téléphone, l'étiquette de rôle reste : c'est elle
-     qui dit, à côté des initiales, sous quels droits on travaille. */
-  .role-tag {
-    font-size: 9px;
   }
   .role-switch select {
     font-size: 10px;
@@ -3488,8 +3536,12 @@ fieldset.field legend {
     padding: 20px 18px 30px;
   }
   .campaign-context {
+    justify-content: space-between;
     margin-bottom: 18px;
     font-size: 10px;
+  }
+  .campaign-context > .campaign-context-centre {
+    display: flex;
   }
   .campaign-context select {
     font-size: 11px;
@@ -3649,7 +3701,7 @@ fieldset.field legend {
     flex-direction: column;
     align-items: center;
     gap: 5px;
-    color: #91a3bd;
+    color: var(--subtle);
     font-size: 9px;
     min-width: 60px;
   }
@@ -3979,7 +4031,7 @@ fieldset.field legend {
   width: 32px;
   height: 32px;
   border-radius: 6px;
-  color: #7d90ab;
+  color: var(--muted);
   background: none;
 }
 .input-reveal:hover {
@@ -4013,7 +4065,7 @@ fieldset.field legend {
   display: flex;
   align-items: center;
   gap: 12px;
-  color: #9aabc2;
+  color: var(--subtle);
   font-size: 12px;
   margin: 4px 0;
 }
@@ -4036,13 +4088,13 @@ fieldset.field legend {
   padding-top: 16px;
   border-top: 1px solid var(--border);
   font-size: 11px;
-  color: #8b9bb2;
+  color: var(--subtle);
 }
 .sign-in-footer small {
   display: block;
   margin-top: 3px;
   font-size: 11px;
-  color: #a0aec4;
+  color: var(--subtle);
 }
 /* Sous 900 px le panneau de marque passerait en bandeau écrasé : il disparaît,
    et le mot-symbole en tête de carte porte seul l'identité. */
@@ -4211,13 +4263,19 @@ fieldset.field legend {
   border-radius: 7px;
   font-size: 11px;
   font-weight: 600;
-  opacity: 0.45;
   transition:
-    opacity 0.15s,
+    background 0.15s,
     border-color 0.15s;
 }
-.weekly-choices button:hover {
-  opacity: 0.8;
+/* Non retenu : blanc et bordé, la lettre dans la couleur de son état. Une
+   opacité de 45 % sur des teintes déjà claires rendait les sept lignes
+   illisibles, et le choix ne se distinguait plus du reste. */
+.weekly-choices button:not(.chosen) {
+  background: #fff;
+  border-color: #d5dee9;
+}
+.weekly-choices button:not(.chosen):hover {
+  border-color: #acbede;
 }
 /* Le choix retenu se voit par le contraste, pas par une couleur de plus :
    les cinq états ont déjà la leur, partout dans l'application. */
