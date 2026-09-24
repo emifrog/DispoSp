@@ -39,6 +39,23 @@ const contentSecurityPolicy = [
 
 const config: NextConfig = {
   poweredByHeader: false,
+  /*
+   * L'identifiant du déploiement, pour qu'une application restée ouverte sur un
+   * téléphone recharge la nouvelle version au lieu de continuer avec l'ancienne.
+   *
+   * Next compare celui du navigateur à celui du serveur à chaque navigation et
+   * à chaque relecture ; s'ils diffèrent, il recharge la page entière. Sans
+   * identifiant, il ne s'appuie que sur l'identifiant de build, et nos essais
+   * du 23 septembre (.local/audit-20260923/pwa/controle.cjs) ont montré qu'une
+   * relecture pouvait alors passer à côté ; avec lui, toutes rechargeaient.
+   *
+   * Vercel fournit `VERCEL_DEPLOYMENT_ID` à chaque construction, gratuitement.
+   * La « Skew Protection » payante ajoute seulement le service des anciens
+   * fichiers pendant la bascule ; sans elle, le rechargement suffit. Hors
+   * Vercel — en local, en intégration continue —, rien n'est défini et Next
+   * garde son comportement par défaut.
+   */
+  deploymentId: process.env.VERCEL_DEPLOYMENT_ID,
   async headers() {
     return [
       {

@@ -35,12 +35,12 @@ Ce document réunit ce qu'il faut au DPO pour inscrire DispoSP au registre des t
 
 ## 3. Sous-traitants
 
-| Sous-traitant                                                                | Rôle                                          | Données reçues                                                                              | À faire                                                                                                                           |
-| ---------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Supabase                                                                     | Base de données, authentification             | Toutes                                                                                      | Signer le DPA ; **vérifier que le projet est hébergé dans une région de l'UE** (réglage du projet, non modifiable après création) |
-| Resend                                                                       | Envoi des emails (invitations, notifications) | Adresse, sujet et texte du message, y compris le motif d'un désistement                     | Signer le DPA ; vérifier le mécanisme de transfert (Resend est une société américaine)                                            |
-| Hébergeur de l'application                                                   | Exécution du serveur Next.js                  | Toutes, en transit                                                                          | **Pas encore choisi** ; choisir une région UE et signer le DPA                                                                    |
-| Services de notification des navigateurs (Google, Mozilla, Apple, Microsoft) | Acheminement des notifications poussées       | Un message générique (« Votre planning a été publié ou modifié. »), chiffré de bout en bout | Aucune donnée nominative ne leur parvient ; rien à signer                                                                         |
+| Sous-traitant                                                                | Rôle                                          | Données reçues                                                                              | À faire                                                                                                                                                                                               |
+| ---------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Supabase                                                                     | Base de données, authentification             | Toutes                                                                                      | Projet hébergé en **Irlande** (région UE, vérifiée le 24 septembre 2026). Signer le DPA ; vérifier le mécanisme de transfert (Supabase est une société américaine)                                    |
+| Resend                                                                       | Envoi des emails (invitations, notifications) | Adresse, sujet et texte du message, y compris le motif d'un désistement                     | Signer le DPA ; vérifier le mécanisme de transfert (Resend est une société américaine)                                                                                                                |
+| Vercel                                                                       | Exécution du serveur Next.js                  | Toutes, en transit                                                                          | Retenu le 24 septembre 2026. **Régler les fonctions sur Dublin (`dub1`)** : par défaut, elles tournent à Washington (`iad1`). Signer le DPA ; vérifier le mécanisme de transfert (société américaine) |
+| Services de notification des navigateurs (Google, Mozilla, Apple, Microsoft) | Acheminement des notifications poussées       | Un message générique (« Votre planning a été publié ou modifié. »), chiffré de bout en bout | Aucune donnée nominative ne leur parvient ; rien à signer                                                                                                                                             |
 
 ## 4. Durées de conservation proposées
 
@@ -93,8 +93,10 @@ Toutes les procédures s'exécutent par l'administrateur technique dans l'édite
 
 - [ ] Valider la base légale et les durées de conservation (sections 1 et 4)
 - [ ] Décider du traitement du texte libre et du motif de désistement dans les emails (section 2)
-- [ ] Vérifier la région du projet Supabase ; signer les DPA Supabase et Resend
-- [ ] Choisir l'hébergeur (région UE) et signer son DPA
+- [x] Vérifier la région du projet Supabase : Irlande, UE
+- [ ] Signer les DPA Supabase et Resend
+- [x] Choisir l'hébergeur : Vercel
+- [ ] Régler les fonctions Vercel sur Dublin (`dub1`) ; signer le DPA de Vercel
 - [ ] Décider si une analyse d'impact (AIPD) est nécessaire
 - [ ] Informer les agents (art. 13) : une notice à afficher à la connexion ou à remettre à l'invitation, qui reprend les sections 1 à 5
 - [ ] Désigner qui exécute la purge mensuelle et les demandes d'exercice des droits
