@@ -62,17 +62,31 @@ export function Campaigns() {
     (month, c) => (c.month >= month ? shiftMonth(c.month, 1) : month),
     shiftMonth(localMonth(), 1),
   );
+  const freshValues = () => ({
+    name: "",
+    month: nextMonth,
+    closesOn: lastDayOfMonth(shiftMonth(nextMonth, -1)),
+  });
   const form = useForm<z.infer<typeof campaignFormSchema>>({
     resolver: zodResolver(campaignFormSchema),
-    defaultValues: { name: "", month: nextMonth, closesOn: lastDayOfMonth(shiftMonth(nextMonth, -1)) },
+    defaultValues: freshValues(),
   });
+  // Les valeurs par défaut de `useForm` sont figées au premier rendu : rouvrir
+  // la fenêtre après avoir créé novembre reproposait novembre, et un clic
+  // ouvrait une seconde campagne du même mois. Elles se recalculent donc à
+  // chaque ouverture, sur les campagnes du moment. La base refuse de toute
+  // façon le doublon (20260924090000).
+  function openForm() {
+    form.reset(freshValues());
+    setOpen(true);
+  }
   return (
     <>
       <PageTitle
         title="Campagnes de disponibilités"
         description="Ouverture de la collecte, suivi des réponses, clôture."
         action={
-          <Button onClick={() => setOpen(true)}>
+          <Button onClick={openForm}>
             <Plus size={17} />
             Nouvelle campagne
           </Button>

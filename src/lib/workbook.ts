@@ -143,18 +143,34 @@ export function buildWorkbook(state: AppState, campaign: Campaign): ExcelJS.Work
     { header: "Grade", key: "grade", width: 16 },
     { header: "Fonction", key: "fonction", width: 22 },
     { header: "Équipe", key: "team", width: 16 },
-    { header: "État", key: "status", width: 22 },
+    { header: "État", key: "status", width: 34 },
   ]);
+  // Les deux effectifs : une affectation faite avant une désactivation doit
+  // garder son nom, sans quoi la ligne disparaîtrait de l'export au lieu de
+  // signaler ce qu'il faut corriger. Seul l'effectif actif était lu : la
+  // feuille Couverture comptait l'agent, celle-ci l'omettait.
+  const roster = new Map([...state.agents, ...state.inactiveAgents].map(a => [a.id, a]));
+  const inactive = new Set(state.inactiveAgents.map(a => a.id));
   for (const date of days)
     for (const shift of SHIFTS) {
       const key = shiftKey(campaign.id, date, shift);
       const published = state.publications[key];
-      for (const id of state.assignments[key] ?? []) {
-        // L'effectif entier, et non les seuls participants : une affectation
-        // faite avant un départ doit garder son nom, sans quoi la ligne
-        // disparaîtrait de l'export au lieu de signaler ce qu'il faut corriger.
-        const agent = state.agents.find(a => a.id === id);
+      const drafted = state.assignments[key] ?? [];
+      // Le brouillon et le publié ensemble : un agent publié puis retiré du
+      // brouillon est toujours attendu sur la garde tant que personne n'a
+      // republié. Ne parcourir que le brouillon le faisait disparaître du
+      // fichier, alors que les agents lisent encore son nom au planning.
+      for (const id of new Set([...drafted, ...(published?.agents ?? [])])) {
+        const agent = roster.get(id);
         if (!agent) continue;
+        const inDraft = drafted.includes(id);
+        const status = !published
+          ? "Brouillon"
+          : !published.agents.includes(id)
+            ? "Brouillon · pas encore publié"
+            : inDraft
+              ? `Publié · version ${published.revision}`
+              : `Publié · version ${published.revision} · retiré du brouillon`;
         assignments.addRow({
           date,
           shift: shiftLabel(shift),
@@ -162,7 +178,7 @@ export function buildWorkbook(state: AppState, campaign: Campaign): ExcelJS.Work
           grade: gradeLabel(agent),
           fonction: agent.fonction,
           team: agent.team,
-          status: published?.agents.includes(id) ? `Publié · version ${published.revision}` : "Brouillon",
+          status: inactive.has(id) ? `${status} · agent désactivé` : status,
         });
       }
     }

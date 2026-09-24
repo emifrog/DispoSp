@@ -1368,7 +1368,11 @@ describe("Création atomique d’une campagne", () => {
         for each row execute function private.fail_test_notification();`);
     try {
       await be(manager);
-      await expect(create({ name: "Annulation tardive" })).rejects.toThrow("Simulated notification failure");
+      // Un mois à lui : depuis 20260924090000, une équipe n'a qu'une campagne
+      // par mois, et le mois par défaut est déjà pris par les tests précédents.
+      await expect(create({ name: "Annulation tardive", month: "2097-05-01", closes: "2097-04-25" })).rejects.toThrow(
+        "Simulated notification failure",
+      );
       expect(await counts()).toEqual(before);
     } finally {
       await live.exec(
@@ -1376,7 +1380,7 @@ describe("Création atomique d’une campagne", () => {
       );
     }
     await be(manager);
-    const id = await create({ name: "Reprise après échec" });
+    const id = await create({ name: "Reprise après échec", month: "2097-05-01", closes: "2097-04-25" });
     expect((await live.query("select id from public.schedules where campaign_id=$1", [id])).rows).toHaveLength(1);
   });
 
@@ -1409,7 +1413,7 @@ describe("Création atomique d’une campagne", () => {
     await live.exec("rollback");
     expect(await counts()).toEqual(before);
     await be(manager);
-    expect(await create()).toEqual(expect.any(String));
+    expect(await create({ month: "2097-06-01", closes: "2097-05-25" })).toEqual(expect.any(String));
   });
 
   it("garde les droits de l’appelant et refuse les appels anonymes ou sans identité", async () => {
@@ -3621,5 +3625,55 @@ describe("Relances et plafonds d’envoi", () => {
     expect(await count("from public.notifications where user_id=$1 and email_status='pending'", [agent])).toBe(5);
     await sql("update public.notifications set sent_at = sent_at - interval '2 hours' where email_status='sent'");
     expect(await claim()).toHaveLength(5);
+  });
+});
+
+// C5 de l'analyse du 23 septembre : une campagne par mois et par équipe.
+describe("Une campagne par mois et par équipe", () => {
+  const org = "10000000-0000-0000-0000-0000000000c5";
+  const alpha = "20000000-0000-0000-0000-0000000000c5";
+  const bravo = "20000000-0000-0000-0000-0000000000c6";
+  const manager = "30000000-0000-0000-0000-0000000000c5";
+  const seed = `
+    insert into auth.users(id) values ('${manager}');
+    insert into public.profiles(user_id,display_name) values ('${manager}','Chef');
+    insert into public.organizations(id,name) values ('${org}','Centre C5');
+    insert into public.teams(id,organization_id,name) values ('${alpha}','${org}','Alpha'), ('${bravo}','${org}','Bravo');
+    insert into public.memberships values ('${org}','${manager}','${alpha}','GESTIONNAIRE',true);`;
+  const open = (live: PGlite, team: string) =>
+    live.query("select public.create_campaign($1,$2,'Disponibilités de novembre','2099-11-01','2099-10-25')", [
+      org,
+      team,
+    ]);
+
+  it("refuse une seconde campagne du même mois pour la même équipe, pas pour une autre", async () => {
+    const live = await freshDatabase();
+    await live.exec(seed);
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [manager]);
+    await live.exec("set role authenticated");
+    await open(live, alpha);
+    await expect(open(live, alpha)).rejects.toThrow("availability_campaigns_team_month_key");
+    // Une autre équipe du centre garde sa propre campagne de novembre.
+    await open(live, bravo);
+    await live.exec("reset role");
+    expect(
+      (await live.query<{ n: number }>("select count(*)::int as n from public.availability_campaigns")).rows[0].n,
+    ).toBe(2);
+    await live.close();
+  });
+
+  it("ne s’applique pas sur une base qui porte déjà un doublon, et dit pourquoi", async () => {
+    const live = new PGlite();
+    await live.exec(baseAuthSchema);
+    for (const migration of MIGRATIONS.slice(0, -1))
+      await live.exec(readFileSync(new URL(`../supabase/migrations/${migration}`, import.meta.url), "utf8"));
+    await live.exec(`${seed}
+      insert into public.availability_campaigns(organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at) values
+        ('${org}','${alpha}','Novembre','2099-11-01','2099-11-30',now(),now()+interval '1 day'),
+        ('${org}','${alpha}','Novembre bis','2099-11-01','2099-11-30',now(),now()+interval '1 day');`);
+    await expect(
+      live.exec(readFileSync(new URL(`../supabase/migrations/${MIGRATIONS.at(-1)}`, import.meta.url), "utf8")),
+    ).rejects.toThrow("deux campagnes existent déjà pour la même équipe et le même mois");
+    await live.close();
   });
 });

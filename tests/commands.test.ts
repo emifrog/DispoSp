@@ -54,6 +54,10 @@ describe("Création de campagne depuis le serveur", () => {
     ["Campaign closing date must be in the future", "La date de clôture de la campagne doit être à venir."],
     ["Campaign name is too short", "Le nom de la campagne doit contenir au moins trois caractères."],
     ["Campaign month must start on the first day", "Choisissez un mois valide pour la campagne."],
+    [
+      'duplicate key value violates unique constraint "availability_campaigns_team_month_key"',
+      "Une campagne existe déjà pour ce mois et cette équipe. Choisissez un autre mois.",
+    ],
     ["Simulated internal failure", "La modification n’a pas pu être enregistrée. Réessayez dans un instant."],
   ])("traduit le refus : %s", async (message, shown) => {
     rpc.mockResolvedValue({ error: { message } });

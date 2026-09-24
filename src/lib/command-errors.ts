@@ -9,6 +9,11 @@ export type DatabaseFailure = { message?: string | null; code?: string | null };
 const byMessage: [RegExp, (match: RegExpMatchArray) => string][] = [
   [/^Not allowed to create this campaign/, () => "Vous n’avez pas le droit de créer une campagne pour cette équipe."],
   [/^Campaign name is too short/, () => "Le nom de la campagne doit contenir au moins trois caractères."],
+  // L'index unique de 20260924090000 : PostgreSQL le nomme dans son refus.
+  [
+    /availability_campaigns_team_month_key/,
+    () => "Une campagne existe déjà pour ce mois et cette équipe. Choisissez un autre mois.",
+  ],
   [/^Campaign month must start on the first day/, () => "Choisissez un mois valide pour la campagne."],
   [/^Campaign closing date must be in the future/, () => "La date de clôture de la campagne doit être à venir."],
   [

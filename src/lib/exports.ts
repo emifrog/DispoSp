@@ -58,12 +58,52 @@ export function auditCsv(events: AppState["audit"]) {
       .join("\r\n")
   );
 }
+/**
+ * Un instant au format iCalendar (RFC 5545 §3.3.5) : `AAAAMMJJTHHMMSSZ`, en UTC,
+ * sans fraction de seconde ni décalage.
+ *
+ * Toujours à partir d'une vraie date. `DTSTAMP` retouchait jusqu'ici le texte
+ * reçu de la base en supposant la forme `.123Z` ; PostgREST rend
+ * `2026-09-20T08:00:00.123456+00:00`, et le fichier portait
+ * `DTSTAMP:20260920T080000.123456+0000`, hors norme sur une propriété
+ * obligatoire — de quoi faire refuser l'import par un agenda strict.
+ */
+const icsInstant = (instant: Date) =>
+  instant
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}Z$/, "Z");
+
+/**
+ * Replie une ligne à 75 octets (RFC 5545 §3.1) : la suite repart sur une ligne
+ * qui commence par une espace. Compté en octets UTF-8, pas en caractères — un
+ * « é » en vaut deux —, et sans jamais couper un caractère en deux.
+ */
+function fold(line: string) {
+  const encoder = new TextEncoder();
+  const parts: string[] = [];
+  let current = "";
+  let size = 0;
+  let limit = 75;
+  for (const char of line) {
+    const bytes = encoder.encode(char).length;
+    if (size + bytes > limit) {
+      parts.push(current);
+      current = "";
+      size = 0;
+      // L'espace de tête d'une ligne de suite compte dans ses 75 octets.
+      limit = 74;
+    }
+    current += char;
+    size += bytes;
+  }
+  parts.push(current);
+  return parts.join("\r\n ");
+}
+
 export function personalCalendar(state: AppState, campaign: Campaign, userId: string) {
   const utc = (date: string, hour: number) =>
-    fromZonedTime(`${date}T${String(hour).padStart(2, "0")}:00:00`, "Europe/Paris")
-      .toISOString()
-      .replace(/[-:]/g, "")
-      .replace(/\.\d{3}Z$/, "Z");
+    icsInstant(fromZonedTime(`${date}T${String(hour).padStart(2, "0")}:00:00`, "Europe/Paris"));
   const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//DispoSP//Planning//FR", "CALSCALE:GREGORIAN"];
   for (const day of monthDays(campaign.month))
     for (const shift of ["DAY", "NIGHT"] as const) {
@@ -76,14 +116,14 @@ export function personalCalendar(state: AppState, campaign: Campaign, userId: st
         "BEGIN:VEVENT",
         `UID:${key.replaceAll("/", "-")}-${userId}@disposp.local`,
         `SEQUENCE:${published.revision}`,
-        `DTSTAMP:${published.publishedAt.replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`,
+        `DTSTAMP:${icsInstant(new Date(published.publishedAt))}`,
         `DTSTART:${utc(day, shift === "DAY" ? campaign.dayStart : campaign.nightStart)}`,
         `DTEND:${utc(shift === "DAY" ? day : tomorrow.toISOString().slice(0, 10), shift === "DAY" ? campaign.nightStart : campaign.dayStart)}`,
         `SUMMARY:Garde ${shift === "DAY" ? "de jour" : "de nuit"} - DispoSP`,
         "END:VEVENT",
       );
     }
-  return [...lines, "END:VCALENDAR", ""].join("\r\n");
+  return [...lines.map(fold), "END:VCALENDAR", ""].join("\r\n");
 }
 export function download(content: string, filename: string, mime: string) {
   const url = URL.createObjectURL(new Blob([content], { type: mime }));

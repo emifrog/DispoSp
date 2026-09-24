@@ -145,6 +145,24 @@ describe("Exports", () => {
     expect(personalCalendar(state, state.campaigns[0], "marie")).not.toContain("BEGIN:VEVENT");
   });
 
+  // C13 de l'analyse du 23 septembre : l'horodatage vient de PostgREST, avec
+  // microsecondes et décalage ; les identifiants réels sont des UUID, et la
+  // ligne UID dépassait 75 octets.
+  it("écrit un agenda conforme à partir de ce que rend la base", () => {
+    const uuid = "1ee74c18-b527-40cf-b6db-e41b711d9de9";
+    const agent = "30000000-0000-0000-0000-0000000000c3";
+    const state = sampleState(now);
+    const campaign = { ...state.campaigns[0], id: uuid };
+    publish(state, uuid, "2026-10-24", "NIGHT", [agent], 2, now);
+    state.publications[shiftKey(uuid, "2026-10-24", "NIGHT")].publishedAt = "2026-09-20T08:00:00.123456+00:00";
+    const ics = personalCalendar(state, campaign, agent);
+    expect(ics).toContain("\r\nDTSTAMP:20260920T080000Z\r\n");
+    // Aucune ligne physique au-delà de 75 octets…
+    for (const line of ics.split("\r\n")) expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75);
+    // … et le dépliage rend l'identifiant entier.
+    expect(ics.replaceAll("\r\n ", "")).toContain(`UID:${uuid}-2026-10-24-NIGHT-${agent}@disposp.local\r\n`);
+  });
+
   it("exporte le journal avec la date séparée de l’heure et le sujet en clair", () => {
     const state = sampleState(now);
     state.audit.unshift({

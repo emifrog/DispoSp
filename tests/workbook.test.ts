@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildWorkbook } from "../src/lib/workbook";
-import { sampleState } from "./fixtures/centre";
+import { publish, sampleState } from "./fixtures/centre";
 import { entryKey, isValidated, labels, monthDays, shiftKey } from "../src/lib/domain";
 
 const now = new Date("2026-09-18T10:00:00Z");
@@ -60,6 +60,38 @@ describe("Classeur Excel", () => {
       .filter(([key]) => key.startsWith(`${campaign.id}/`))
       .reduce((total, [, ids]) => total + ids.length, 0);
     expect((sheet?.rowCount ?? 0) - 1).toBe(assigned);
+  });
+
+  // C14 de l'analyse du 23 septembre : la feuille ne lisait que le brouillon, et
+  // dans l'effectif actif seulement.
+  it("garde un agent désactivé encore affecté, et un agent publié puis retiré du brouillon", () => {
+    const local = sampleState(now);
+    const target = local.campaigns[0];
+    const date = monthDays(target.month)[1];
+    const day = shiftKey(target.id, date, "DAY");
+    const night = shiftKey(target.id, date, "NIGHT");
+    // Désactivé, resté au brouillon de jour.
+    const leaving = local.assignments[day][0];
+    const record = local.agents.find(a => a.id === leaving)!;
+    local.agents = local.agents.filter(a => a.id !== leaving);
+    local.inactiveAgents.push(record);
+    // Publié la nuit, puis retiré du brouillon sans republier.
+    const drafted = [...local.assignments[night]];
+    publish(local, target.id, date, "NIGHT", drafted, 1, now);
+    const removed = drafted[drafted.length - 1];
+    local.assignments[night] = drafted.slice(0, -1);
+
+    const rows: string[][] = [];
+    buildWorkbook(local, target)
+      .getWorksheet("Affectations")
+      ?.eachRow((row, index) => {
+        if (index > 1) rows.push([1, 2, 3, 7].map(column => String(row.getCell(column).value)));
+      });
+    const nameOf = (id: string) => [...local.agents, ...local.inactiveAgents].find(a => a.id === id)!.name;
+    expect(rows).toContainEqual([date, "Jour", record.name, "Brouillon · agent désactivé"]);
+    expect(rows).toContainEqual([date, "Nuit", nameOf(removed), "Publié · version 1 · retiré du brouillon"]);
+    // Autant de lignes de jour que la feuille Couverture compte d'affectés.
+    expect(rows.filter(r => r[0] === date && r[1] === "Jour")).toHaveLength(local.assignments[day].length);
   });
 
   it("n’invente aucun besoin dans la couverture", () => {
