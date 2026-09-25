@@ -33,6 +33,7 @@ export const MIGRATIONS = [
   "20260923180000_rendre_envoi_invitation.sql",
   "20260923200000_relances_et_plafonds.sql",
   "20260924090000_campagne_unique.sql",
+  "20260925090000_participants_en_cours.sql",
 ];
 
 /**

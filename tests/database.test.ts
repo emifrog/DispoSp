@@ -2636,7 +2636,12 @@ describe("Correctifs du 22 septembre — réactivation, dernier administrateur, 
     ]);
     await be(null);
     expect(
-      (await live.query("select validated_at from public.campaign_participants where campaign_id=$1", [campaign])).rows,
+      (
+        await live.query("select validated_at from public.campaign_participants where campaign_id=$1 and user_id=$2", [
+          campaign,
+          agent,
+        ])
+      ).rows,
     ).toEqual([{ validated_at: null }]);
     // Une seule ligne : la saisie. Pas d'UNVALIDATE.
     expect(await auditCount()).toBe(before + 1);
@@ -2661,9 +2666,11 @@ describe("Correctifs du 22 septembre — réactivation, dernier administrateur, 
       ]),
     ).rejects.toThrow("Campaign is closed");
     await be(null);
+    // L'agent seul : l'administrateur réactivé plus haut est désormais inscrit
+    // lui aussi à la campagne ouverte de son équipe (B1 du 25 septembre).
     const kept = await live.query(
-      "select validated_at is not null as kept from public.campaign_participants where campaign_id=$1",
-      [campaign],
+      "select validated_at is not null as kept from public.campaign_participants where campaign_id=$1 and user_id=$2",
+      [campaign, agent],
     );
     expect(kept.rows).toEqual([{ kept: true }]);
   });
@@ -3665,15 +3672,252 @@ describe("Une campagne par mois et par équipe", () => {
   it("ne s’applique pas sur une base qui porte déjà un doublon, et dit pourquoi", async () => {
     const live = new PGlite();
     await live.exec(baseAuthSchema);
-    for (const migration of MIGRATIONS.slice(0, -1))
+    // Par son nom et non par sa place : d'autres migrations la suivent.
+    const target = MIGRATIONS.indexOf("20260924090000_campagne_unique.sql");
+    for (const migration of MIGRATIONS.slice(0, target))
       await live.exec(readFileSync(new URL(`../supabase/migrations/${migration}`, import.meta.url), "utf8"));
     await live.exec(`${seed}
       insert into public.availability_campaigns(organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at) values
         ('${org}','${alpha}','Novembre','2099-11-01','2099-11-30',now(),now()+interval '1 day'),
         ('${org}','${alpha}','Novembre bis','2099-11-01','2099-11-30',now(),now()+interval '1 day');`);
     await expect(
-      live.exec(readFileSync(new URL(`../supabase/migrations/${MIGRATIONS.at(-1)}`, import.meta.url), "utf8")),
+      live.exec(readFileSync(new URL(`../supabase/migrations/${MIGRATIONS[target]}`, import.meta.url), "utf8")),
     ).rejects.toThrow("deux campagnes existent déjà pour la même équipe et le même mois");
     await live.close();
   });
+});
+
+// B1 de l'analyse du 25 septembre : un agent arrivé après l'ouverture d'une
+// campagne n'y était jamais inscrit. L'ordre recommandé pour le pilote —
+// ouvrir, puis inviter — laissait ainsi chaque agent invité devant « Aucune
+// campagne ne vous concerne », sans que l'encadrement puisse rien y faire.
+describe("Inscription aux campagnes ouvertes d’un membre qui arrive", () => {
+  const org = "10000000-0000-0000-0000-0000000000d5";
+  const alpha = "20000000-0000-0000-0000-0000000000d5";
+  const bravo = "20000000-0000-0000-0000-0000000000d6";
+  const admin = "30000000-0000-0000-0000-0000000000d5";
+  const late = "30000000-0000-0000-0000-0000000000d6";
+  const existing = "30000000-0000-0000-0000-0000000000d7";
+  const dormant = "30000000-0000-0000-0000-0000000000d8";
+  const mover = "30000000-0000-0000-0000-0000000000d9";
+  const open = "40000000-0000-0000-0000-0000000000d5";
+  const locked = "40000000-0000-0000-0000-0000000000d6";
+  const closed = "40000000-0000-0000-0000-0000000000d7";
+  const bravoOpen = "40000000-0000-0000-0000-0000000000d8";
+  let live: PGlite;
+  const be = async (id: string | null) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id ?? ""]);
+    if (id) await live.exec("set role authenticated");
+  };
+  const campaignsOf = async (user: string) => {
+    await be(null);
+    return (
+      await live.query<{ campaign_id: string }>(
+        "select campaign_id from public.campaign_participants where user_id=$1 order by campaign_id",
+        [user],
+      )
+    ).rows.map(row => row.campaign_id);
+  };
+  const openingNotices = async (user: string) => {
+    await be(null);
+    return (
+      await live.query<{ subject: string }>(
+        "select subject from public.notifications where user_id=$1 and kind='CAMPAIGN_OPENED' order by subject",
+        [user],
+      )
+    ).rows.map(row => row.subject);
+  };
+
+  beforeAll(async () => {
+    live = await freshDatabase();
+    await live.exec(`
+      insert into auth.users(id,email,email_confirmed_at) values
+        ('${admin}','admin@d5.test',now()), ('${existing}','deja@d5.test',now()),
+        ('${dormant}','ancien@d5.test',now()), ('${mover}','mobile@d5.test',now());
+      insert into public.profiles(user_id,display_name) values
+        ('${admin}','Admin'), ('${dormant}','Ancien'), ('${mover}','Mobile');
+      insert into public.organizations(id,name) values ('${org}','Centre D5');
+      insert into public.teams(id,organization_id,name) values ('${alpha}','${org}','Alpha'), ('${bravo}','${org}','Bravo');
+      insert into public.memberships values
+        ('${org}','${admin}','${alpha}','ADMIN',true),
+        ('${org}','${dormant}','${alpha}','AGENT',false),
+        ('${org}','${mover}','${bravo}','AGENT',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at,locked) values
+        ('${open}','${org}','${alpha}','Octobre Alpha','2026-10-01','2026-10-01',now()-interval '1 day',now()+interval '9 days',false),
+        ('${locked}','${org}','${alpha}','Novembre Alpha','2026-11-01','2026-11-01',now()-interval '1 day',now()+interval '9 days',true),
+        ('${closed}','${org}','${alpha}','Septembre Alpha','2026-09-01','2026-09-01',now()-interval '30 days',now()-interval '1 day',false),
+        ('${bravoOpen}','${org}','${bravo}','Octobre Bravo','2026-10-01','2026-10-01',now()-interval '1 day',now()+interval '9 days',false);`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("inscrit l’agent invité après l’ouverture, qui est prévenu et peut répondre", async () => {
+    await be(admin);
+    await live.query(
+      `insert into public.invitations(organization_id,team_id,email,display_name,role,invited_by)
+       values ($1,$2,'tardif@d5.test','Tardif','AGENT',$3)`,
+      [org, alpha, admin],
+    );
+    await be(null);
+    await live.query("insert into auth.users(id,email,email_confirmed_at) values ($1,'tardif@d5.test',now())", [late]);
+    // La campagne ouverte de son équipe, et elle seule : ni la verrouillée, ni
+    // la close, ni celle d'une autre équipe.
+    expect(await campaignsOf(late)).toEqual([open]);
+    expect(await openingNotices(late)).toEqual(["Campagne ouverte : Octobre Alpha"]);
+    // Ce qui lui était refusé : écrire, puis valider.
+    await be(late);
+    await live.query(
+      "insert into public.availability_entries(campaign_id,user_id,date,availability_type) values ($1,$2,'2026-10-01','DAY')",
+      [open, late],
+    );
+    await live.query("update public.campaign_participants set validated_at=now() where campaign_id=$1 and user_id=$2", [
+      open,
+      late,
+    ]);
+    await be(null);
+    const validated = await live.query(
+      "select validated_at is not null as validated from public.campaign_participants where user_id=$1",
+      [late],
+    );
+    expect(validated.rows).toEqual([{ validated: true }]);
+  });
+
+  it("inscrit aussi le compte déjà confirmé, rattaché dès l’invitation", async () => {
+    await be(admin);
+    await live.query(
+      `insert into public.invitations(organization_id,team_id,email,display_name,role,invited_by)
+       values ($1,$2,'deja@d5.test','Déjà là','AGENT',$3)`,
+      [org, alpha, admin],
+    );
+    expect(await campaignsOf(existing)).toEqual([open]);
+  });
+
+  it("inscrit le membre réactivé, une seule fois", async () => {
+    expect(await campaignsOf(dormant)).toEqual([]);
+    await be(admin);
+    await live.query("update public.memberships set active=true where organization_id=$1 and user_id=$2", [
+      org,
+      dormant,
+    ]);
+    expect(await campaignsOf(dormant)).toEqual([open]);
+    // Désactivé puis réactivé : sa participation demeure, sans doublon ni
+    // second avis.
+    await be(admin);
+    await live.query("update public.memberships set active=false where organization_id=$1 and user_id=$2", [
+      org,
+      dormant,
+    ]);
+    expect(await campaignsOf(dormant)).toEqual([open]);
+    await be(admin);
+    await live.query("update public.memberships set active=true where organization_id=$1 and user_id=$2", [
+      org,
+      dormant,
+    ]);
+    expect(await campaignsOf(dormant)).toEqual([open]);
+    expect(await openingNotices(dormant)).toHaveLength(1);
+  });
+
+  it("inscrit le membre qui change d’équipe aux campagnes ouvertes de la nouvelle, sans rien lui retirer", async () => {
+    expect(await campaignsOf(mover)).toEqual([]);
+    await be(admin);
+    await live.query("update public.memberships set team_id=$3 where organization_id=$1 and user_id=$2", [
+      org,
+      mover,
+      alpha,
+    ]);
+    expect(await campaignsOf(mover)).toEqual([open]);
+    // Revenu dans Bravo, il y retrouve la campagne de Bravo, et garde celle
+    // d'Alpha avec ce qu'il y aurait saisi.
+    await be(admin);
+    await live.query("update public.memberships set team_id=$3 where organization_id=$1 and user_id=$2", [
+      org,
+      mover,
+      bravo,
+    ]);
+    expect(await campaignsOf(mover)).toEqual([open, bravoOpen].sort());
+  });
+
+  it("n’inscrit personne en changeant autre chose que l’activité ou l’équipe", async () => {
+    const before = await campaignsOf(mover);
+    await be(admin);
+    await live.query("update public.memberships set role='GESTIONNAIRE' where organization_id=$1 and user_id=$2", [
+      org,
+      mover,
+    ]);
+    expect(await campaignsOf(mover)).toEqual(before);
+    expect(await openingNotices(mover)).toHaveLength(2);
+  });
+
+  it("garde l’inscription hors de portée d’une session", async () => {
+    await be(late);
+    await expect(live.query("select private.join_open_campaigns($1,$2,$3)", [org, late, bravo])).rejects.toThrow(
+      /permission denied/,
+    );
+    expect(await campaignsOf(late)).toEqual([open]);
+  });
+});
+
+// Le rattrapage de la migration : ceux qui étaient déjà arrivés trop tard sur le
+// projet hébergé — le pilote a pu inviter ses agents avant ce correctif.
+describe("Migration 20260925090000 — rattrapage des arrivées tardives", () => {
+  const org = "10000000-0000-0000-0000-0000000000de";
+  const team = "20000000-0000-0000-0000-0000000000de";
+  const admin = "30000000-0000-0000-0000-0000000000de";
+  const late = "30000000-0000-0000-0000-0000000000df";
+  const campaign = "40000000-0000-0000-0000-0000000000de";
+  const last = MIGRATIONS[MIGRATIONS.length - 1];
+  const migration = () => readFileSync(new URL(`../supabase/migrations/${last}`, import.meta.url), "utf8");
+  const upTo = async (count: number) => {
+    const db = new PGlite();
+    await db.exec(baseAuthSchema);
+    for (const m of MIGRATIONS.slice(0, count))
+      await db.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    return db;
+  };
+
+  it("inscrit et prévient les membres actifs absents d’une campagne ouverte de leur équipe", async () => {
+    expect(last).toBe("20260925090000_participants_en_cours.sql");
+    const db = await upTo(MIGRATIONS.length - 1);
+    // Avant le correctif : la campagne est ouverte, puis l'agent arrive.
+    await db.exec(`
+      insert into auth.users(id,email,email_confirmed_at) values ('${admin}','admin@de.test',now()), ('${late}','tardif@de.test',now());
+      insert into public.profiles(user_id,display_name) values ('${admin}','Admin'), ('${late}','Tardif');
+      insert into public.organizations(id,name) values ('${org}','Centre DE');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values ('${org}','${admin}','${team}','ADMIN',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        values ('${campaign}','${org}','${team}','Octobre','2026-10-01','2026-10-01',now()-interval '1 day',now()+interval '9 days');
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values ('${org}','${campaign}','${admin}');
+      insert into public.memberships values ('${org}','${late}','${team}','AGENT',true);`);
+    const participants = async () =>
+      (
+        await db.query<{ user_id: string }>(
+          "select user_id from public.campaign_participants where campaign_id=$1 order by user_id",
+          [campaign],
+        )
+      ).rows.map(row => row.user_id);
+    // Le défaut, tel qu'il était.
+    expect(await participants()).toEqual([admin]);
+
+    await db.exec(migration());
+    expect(await participants()).toEqual([admin, late]);
+    expect((await db.query("select kind from public.notifications where user_id=$1", [late])).rows).toEqual([
+      { kind: "CAMPAIGN_OPENED" },
+    ]);
+    // L'administrateur, déjà inscrit, ne reçoit pas un second avis.
+    expect(
+      (await db.query("select count(*)::int as n from public.notifications where user_id=$1", [admin])).rows,
+    ).toEqual([{ n: 1 }]);
+
+    await expect(db.exec(migration())).rejects.toThrow("déjà été appliquée");
+    await db.close();
+  }, 60000);
+
+  it("refuse de s’appliquer avant la migration dont elle dépend", async () => {
+    const db = await upTo(MIGRATIONS.length - 2);
+    await expect(db.exec(migration())).rejects.toThrow("20260924090000_campagne_unique.sql");
+    await db.close();
+  }, 60000);
 });

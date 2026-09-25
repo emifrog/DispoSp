@@ -29,7 +29,17 @@ export default function Offline() {
         depuis une copie qui pourrait dater.
       </p>
       <p>Rétablissez la connexion, puis réessayez.</p>
-      <Link href="/">Réessayer</Link>
+      {/* Sans préchargement. Next précharge un lien visible en production, et
+          laisse sans le lire le corps d'une réponse qui n'est pas la sienne —
+          l'erreur de la racine sans configuration, la page de connexion vers
+          laquelle le garde la redirige. Le navigateur tient alors la requête
+          pour ouverte, et la page n'est jamais « chargée » : le test de
+          politique de contenu attendait ce moment, et l'intégration continue
+          est restée rouge du 23 au 25 septembre. Ici, rien à précharger : on
+          revient quand le réseau revient. */}
+      <Link href="/" prefetch={false}>
+        Réessayer
+      </Link>
     </main>
   );
 }
