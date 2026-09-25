@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Roboto } from "next/font/google";
+import Script from "next/script";
 import { ServiceWorker } from "@/components/pwa";
 import "./globals.css";
 // Téléchargée à la construction et servie depuis l'application : aucune requête
@@ -45,6 +46,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body>
         {children}
         <ServiceWorker />
+        {/* Avant tout le reste : la proposition d'installation de Chrome arrive
+            parfois avant que React n'ait hydraté la page, et passait alors sans
+            que personne la retienne. Voir public/installation.js. */}
+        <Script src="/installation.js" strategy="beforeInteractive" />
       </body>
     </html>
   );

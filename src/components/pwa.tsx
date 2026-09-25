@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { BellOff, BellRing, Check, Send, Share, ShieldAlert, Smartphone } from "lucide-react";
+import { BellOff, BellRing, Check, Download, Send, Share, ShieldAlert, Smartphone } from "lucide-react";
 import {
   applicationServerKey,
   offersPush,
@@ -16,7 +16,70 @@ import { Modal } from "./ui/dialog";
 
 /** Propre à Chrome et à ses dérivés : ni les types du DOM ni Safari ne le
     connaissent, d'où la déclaration locale plutôt qu'un cast au clic. */
-type InstallPrompt = Event & { prompt: () => Promise<void> };
+type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice?: Promise<{ outcome: string }> };
+
+declare global {
+  interface Window {
+    /** Posé par public/installation.js, chargé avant l'hydratation. */
+    __dispospInstallation?: InstallPrompt | null;
+  }
+}
+
+/* --- La proposition d'installation, partagée par tous les écrans ------------
+ *
+ * public/installation.js la retient dès le chargement de la page et prévient
+ * par « disposp:installation ». Chaque bouton lit la même : le panneau du
+ * profil, la barre du haut, l'écran de connexion. Elle survit aux navigations
+ * internes — c'est la page qui la porte, pas un écran.
+ */
+const INSTALLATION = "disposp:installation";
+const subscribeInstallation = (listener: () => void) => {
+  window.addEventListener(INSTALLATION, listener);
+  return () => window.removeEventListener(INSTALLATION, listener);
+};
+const useInstallOffer = () =>
+  useSyncExternalStore(
+    subscribeInstallation,
+    () => window.__dispospInstallation ?? null,
+    () => null,
+  );
+
+/**
+ * Montre la fenêtre de Chrome. Une proposition ne sert qu'une fois : acceptée
+ * ou refusée, elle est oubliée, et Chrome en annoncera une nouvelle s'il le
+ * juge utile.
+ */
+async function install(offer: InstallPrompt) {
+  try {
+    await offer.prompt();
+    await offer.userChoice;
+  } finally {
+    if (window.__dispospInstallation === offer) window.__dispospInstallation = null;
+    window.dispatchEvent(new Event(INSTALLATION));
+  }
+}
+
+/**
+ * Le bouton compact, pour la barre du haut et l'écran de connexion. Il ne se
+ * montre que lorsque Chrome propose vraiment l'installation, et jamais dans
+ * l'application déjà installée.
+ */
+export function InstallButton({ className = "" }: { className?: string }) {
+  const offer = useInstallOffer();
+  const standalone = useStandalone();
+  if (!offer || standalone) return null;
+  return (
+    <button
+      type="button"
+      className={`install-trigger ${className}`}
+      aria-label="Installer l’application sur cet appareil"
+      onClick={() => void install(offer)}
+    >
+      <Download size={17} aria-hidden="true" />
+      <span>Installer</span>
+    </button>
+  );
+}
 
 export function ServiceWorker() {
   useEffect(() => {
@@ -51,26 +114,16 @@ const useStandalone = () =>
 // conservée hors ligne ; les notifications poussées, elles, sont là — voir
 // `PushNotifications` plus bas.
 export function InstallApp() {
-  const [offer, setOffer] = useState<InstallPrompt | null>(null);
+  // La proposition vient de public/installation.js, retenue dès le chargement :
+  // le panneau l'écoutait lui-même, et la manquait quand Chrome l'annonçait
+  // avant que le profil ne s'affiche — c'est-à-dire presque toujours.
+  const offer = useInstallOffer();
   const [justInstalled, setJustInstalled] = useState(false);
   const installed = useStandalone() || justInstalled;
   useEffect(() => {
-    const keep = (event: Event) => {
-      // Sans cela, le navigateur affiche sa propre invite, au moment qu'il
-      // choisit et par-dessus l'écran en cours.
-      event.preventDefault();
-      setOffer(event as InstallPrompt);
-    };
-    const done = () => {
-      setOffer(null);
-      setJustInstalled(true);
-    };
-    window.addEventListener("beforeinstallprompt", keep);
+    const done = () => setJustInstalled(true);
     window.addEventListener("appinstalled", done);
-    return () => {
-      window.removeEventListener("beforeinstallprompt", keep);
-      window.removeEventListener("appinstalled", done);
-    };
+    return () => window.removeEventListener("appinstalled", done);
   }, []);
   if (installed)
     return (
@@ -98,7 +151,7 @@ export function InstallApp() {
       </div>
       {offer && (
         <div className="install-buttons">
-          <Button onClick={() => void offer.prompt()}>Installer l’application</Button>
+          <Button onClick={() => void install(offer)}>Installer l’application</Button>
         </div>
       )}
       {/* Safari n'annonce jamais la possibilité d'installer : sur iPhone, le

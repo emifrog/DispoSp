@@ -43,6 +43,9 @@ export const publicPaths = [
   "/confirmer",
   "/manifest.webmanifest",
   "/sw.js",
+  // Chargé avant tout le reste, sur chaque page, connexion comprise : voir
+  // public/installation.js. Redirigé vers /connexion, il ne s'exécutait pas.
+  "/installation.js",
   "/hors-ligne",
   "/api/push/dispatch",
 ];

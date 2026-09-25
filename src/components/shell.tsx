@@ -25,6 +25,7 @@ import {
 import { useState, type ReactNode } from "react";
 import { Brand, BrandMark } from "./brand";
 import { useApp } from "./provider";
+import { InstallButton } from "./pwa";
 import { Button } from "./ui/button";
 import { defaultCampaign, monthLabel } from "@/lib/domain";
 import { roleLabels, type AttachedSession } from "@/lib/session";
@@ -181,6 +182,11 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
             <strong>{[...managerNav, ...agentNav, ...adminNav].find(n => n.href === path)?.label ?? "DispoSP"}</strong>
           </div>
           <div className="topbar-actions">
+            {/* Sur chaque écran et pour chaque rôle : le seul bouton
+                d'installation vivait dans /profil, que le menu de l'encadrement
+                n'atteint pas. Il n'apparaît que si Chrome propose vraiment
+                l'installation, et disparaît dans l'application installée. */}
+            <InstallButton />
             {/* Everyone receives notices: a manager is an agent too, and it is
                 their own publications that reach them. */}
             <Link

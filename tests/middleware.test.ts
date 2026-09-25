@@ -28,7 +28,7 @@ describe("Garde de session", () => {
   // donnée. L'intégration continue n'a pas de projet Supabase : si le garde
   // exige la configuration avant de regarder le chemin, elle ne peut pas
   // vérifier la surface publique qu'elle prétend vérifier.
-  it.each(["/manifest.webmanifest", "/sw.js", "/hors-ligne", "/connexion"])(
+  it.each(["/manifest.webmanifest", "/sw.js", "/installation.js", "/hors-ligne", "/connexion"])(
     "sert %s sans configuration Supabase",
     async path => {
       const updateSession = await middlewareWith(withoutSupabase);

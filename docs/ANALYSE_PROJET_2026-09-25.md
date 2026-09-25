@@ -53,7 +53,17 @@ Les écarts C9 à C12 et le tableau des points mineurs du chapitre 4 ont été c
 
 **Relevés en passant, non traités :** un gestionnaire peut encore trancher sa propre demande de désistement ; `anon` garde des droits sur la séquence du journal d'audit sous les privilèges par défaut de Supabase ; une panne d'Auth survenue entre le proxy et une route d'API y donne une 500 au lieu d'une 503 ; quelques couleurs décoratives (icônes de statistiques, bordures) restent sous 4,5:1.
 
-**À faire sur le projet hébergé :** appliquer `20260925180000`, après `20260925150000`.
+**Sur le projet hébergé :** `20260925180000` est appliquée, confirmé par le porteur du projet le 25 septembre ; le commit `2f9ff09` est en production, CI verte (409 tests, 231 en UTC, 52 parcours publics), les 78 parcours du dépôt passent contre la production, et la visite étendue n'y relève aucune erreur, sur ordinateur comme sur téléphone.
+
+### Suivi — l'installation sur Android, signalée par le porteur du projet
+
+**Constat.** Aucune proposition d'installation sur un téléphone Android. Chromium tient pourtant la production pour installable, sans objection, et émet `beforeinstallprompt` moins d'une seconde après chaque chargement. L'application ne l'écoutait que dans le panneau de `/profil` : ailleurs, personne ne le retenait ; sur `/profil`, le panneau le manquait quand Chrome l'émettait avant lui ; et le menu de l'encadrement n'a pas de lien vers `/profil` (C6). Vérifié sur la production avec un Chromium émulant un Pixel 7 (`.local/audit-20260925/e2e/installable.cjs`, `installable-profil.cjs`).
+
+**Correctif.** `public/installation.js`, chargé avant l'hydratation (`Script` en `beforeInteractive` dans la mise en page racine) et ajouté aux chemins publics du proxy, retient la proposition et la partage ; un bouton « Installer » paraît sur l'écran de connexion et dans la barre du haut de chaque écran, pour tous les rôles, et le panneau du profil lit la même proposition. Une proposition sert une fois ; le bouton disparaît dans l'application installée.
+
+**Tests.** `tests/e2e/installation.spec.ts` : 7 parcours, dont 5 sans session, donc en CI — script servi sans session, rien proposé sans signal, proposition retenue et bouton à la connexion, un seul appel, effacement à l'installation, contraste ; avec session, barre du haut après une navigation interne et à 320 px, panneau du profil. **Contre la production non corrigée, 6 des 7 échouent.** Un vrai Chrome sur la version corrigée (`installable-local.cjs`) : chaque signal retenu, bouton à la connexion, dans la barre du haut, après navigation, et dans le profil.
+
+**Vérifications :** 410 tests en Europe/Paris, 232 en UTC, construction, 92 parcours connectés, deux exécutions sans `.env` — 62 passés, aucun échec. **Non vérifié :** un vrai téléphone Android ; l'installation elle-même, qu'aucun navigateur piloté ne mène à son terme.
 
 ## Périmètre et niveau de preuve
 

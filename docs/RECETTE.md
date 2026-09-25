@@ -296,7 +296,7 @@ Ces vérifications ne sont pas du confort. Elles portent sur des données person
 
 ### 8.1 Installer l'application
 
-**Faire** — Ouvrir le site public sur un téléphone. Sur Android : la bannière d'installation, ou **Mon profil → Installer l'application**. Sur iPhone : Safari, bouton Partager, « Sur l'écran d'accueil ».
+**Faire** — Ouvrir le site public sur un téléphone. Sur Android, dans Chrome : le bouton **Installer** de l'écran de connexion, ou celui de la barre du haut une fois connecté — pour tout rôle ; à défaut, le menu ⋮ de Chrome, **Installer l'application**. Sur iPhone : Safari, bouton Partager, « Sur l'écran d'accueil ».
 
 **Attendu** — Une icône DispoSP sur l'écran d'accueil. L'application s'ouvre en plein écran, sans barre d'adresse. Sur iPhone, **l'heure et la batterie restent lisibles au-dessus de la barre de l'application**, qui commence sous elles et non derrière l'encoche. Sur iPhone toujours, l'application installée ne reprend pas la session de Safari : il faut s'y connecter une fois.
 

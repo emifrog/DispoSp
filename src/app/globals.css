@@ -2401,6 +2401,49 @@ label {
   background: #eef3fa;
   color: var(--blue);
 }
+/* « Installer » : présent seulement quand Chrome propose l'installation. Un
+   bouton de la même hauteur que la cloche, bleu parce qu'il invite à agir, et
+   qui garde son mot — une icône seule de téléchargement se lirait comme un
+   export. Sous 420 px, l'icône seule, le libellé restant dit au lecteur
+   d'écran. */
+.install-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 11px;
+  border: 1px solid #c9d8f5;
+  border-radius: 9px;
+  background: #eef4ff;
+  color: var(--blue);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.install-trigger:hover {
+  background: #e1ebff;
+}
+.sign-in-install {
+  align-self: center;
+  margin-top: 18px;
+}
+@media (max-width: 420px) {
+  .topbar .install-trigger {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+  }
+  .topbar .install-trigger span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
 /* The count, not just a dot: « three unread » and « nine unread » are different
    news, and the figure costs nothing to show. */
 .bell-badge {

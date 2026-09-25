@@ -20,6 +20,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { HOME_PATH } from "@/lib/supabase/config";
 import { Brand } from "./brand";
+import { InstallButton } from "./pwa";
 import { Button } from "./ui/button";
 
 const signInSchema = z.object({
@@ -93,6 +94,10 @@ export function SignInForm({ notice }: { notice?: string }) {
         {mode === "password" && <PasswordForm router={router} onMode={setMode} />}
         {mode === "sso" && <SsoForm onBack={() => setMode("password")} />}
         {mode === "forgotten" && <ForgottenForm onBack={() => setMode("password")} />}
+        {/* C'est ici qu'un agent arrive la première fois sur son téléphone, par
+            le lien de son invitation : le bon moment pour lui proposer
+            l'application. Rien ne s'affiche si Chrome ne la propose pas. */}
+        <InstallButton className="sign-in-install" />
       </section>
     </main>
   );
