@@ -1414,7 +1414,20 @@ label {
   background: #fff;
   border-color: #d5dee9;
 }
-.calendar-day.is-selected {
+/* Le survol, que la règle ci-dessus, plus spécifique, avait fait disparaître
+   des jours à renseigner. */
+.calendar-day.unknown:hover:not(:disabled) {
+  border-color: #acbede;
+}
+/* La sélection l'emporte sur tout le reste : jour à renseigner compris, et au
+   survol. Écrite `.calendar-day.is-selected` seule, elle cédait devant la règle
+   des jours à renseigner — trois classes contre deux — et en « Sélection
+   multiple » les jours vides qu'on cochait ne changeaient pas de bordure. Les
+   deux dernières formes portent la spécificité de leurs concurrentes et
+   viennent après elles. */
+.calendar-day.is-selected,
+.calendar-day.is-selected:not(:disabled),
+.calendar-day.is-selected:hover:not(:disabled) {
   border-color: var(--blue);
   box-shadow: 0 0 0 2px #d9e7ff;
 }

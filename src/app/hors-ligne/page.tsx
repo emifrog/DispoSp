@@ -10,13 +10,19 @@ import Link from "next/link";
 // navigateur sait faire sans aucun script : `Link` rend une ancre ordinaire,
 // qui navigue même quand rien ne s'est hydraté. La page s'affichait sans style,
 // avec un bouton qui ne faisait rien.
+//
+// Claire, toujours, comme l'application, qui n'a pas de thème sombre. Une règle
+// « prefers-color-scheme: dark » y passait le texte en clair sur un fond resté
+// clair : 1,1:1, illisible sur un téléphone réglé en sombre. Le fond et
+// `color-scheme` sont donc posés ici, pour ne rien laisser au navigateur.
 const styles = `
   .offline { max-width: 32rem; margin: 18vh auto 0; padding: 0 24px; font-family: Roboto, system-ui, -apple-system, "Segoe UI", sans-serif; color: #1d2a3a; line-height: 1.55; }
   .offline h1 { font-size: 1.45rem; font-weight: 600; margin: 0 0 12px; color: #08284a; }
   .offline p { margin: 0 0 12px; font-size: 15px; }
   .offline a { display: inline-block; margin-top: 10px; padding: 12px 20px; min-height: 24px; border-radius: 9px; background: #08284a; color: #fff; text-decoration: none; font-weight: 500; }
   .offline a:focus-visible { outline: 3px solid #1668dc; outline-offset: 2px; }
-  @media (prefers-color-scheme: dark) { .offline { color: #e6edf5; } .offline h1 { color: #fff; } .offline a { background: #1668dc; } }
+  :root { color-scheme: light; }
+  body { margin: 0; background: #f6f8fc; }
 `;
 
 export default function Offline() {

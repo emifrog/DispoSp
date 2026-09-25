@@ -3867,8 +3867,10 @@ describe("Migration 20260925090000 — rattrapage des arrivées tardives", () =>
   const admin = "30000000-0000-0000-0000-0000000000de";
   const late = "30000000-0000-0000-0000-0000000000df";
   const campaign = "40000000-0000-0000-0000-0000000000de";
-  const last = MIGRATIONS[MIGRATIONS.length - 1];
-  const migration = () => readFileSync(new URL(`../supabase/migrations/${last}`, import.meta.url), "utf8");
+  // Par son nom et non par sa place : d'autres migrations la suivent.
+  const target = MIGRATIONS.indexOf("20260925090000_participants_en_cours.sql");
+  const migration = () =>
+    readFileSync(new URL(`../supabase/migrations/${MIGRATIONS[target]}`, import.meta.url), "utf8");
   const upTo = async (count: number) => {
     const db = new PGlite();
     await db.exec(baseAuthSchema);
@@ -3878,8 +3880,8 @@ describe("Migration 20260925090000 — rattrapage des arrivées tardives", () =>
   };
 
   it("inscrit et prévient les membres actifs absents d’une campagne ouverte de leur équipe", async () => {
-    expect(last).toBe("20260925090000_participants_en_cours.sql");
-    const db = await upTo(MIGRATIONS.length - 1);
+    expect(target).toBeGreaterThan(0);
+    const db = await upTo(target);
     // Avant le correctif : la campagne est ouverte, puis l'agent arrive.
     await db.exec(`
       insert into auth.users(id,email,email_confirmed_at) values ('${admin}','admin@de.test',now()), ('${late}','tardif@de.test',now());
@@ -3916,8 +3918,168 @@ describe("Migration 20260925090000 — rattrapage des arrivées tardives", () =>
   }, 60000);
 
   it("refuse de s’appliquer avant la migration dont elle dépend", async () => {
-    const db = await upTo(MIGRATIONS.length - 2);
+    const db = await upTo(target - 1);
     await expect(db.exec(migration())).rejects.toThrow("20260924090000_campagne_unique.sql");
     await db.close();
   }, 60000);
+});
+
+// C1 et C2 de l'analyse du 25 septembre : la garde qui évite de renotifier
+// l'encadrement se fiait à une date écrite par l'agent, et ignorait l'état de
+// la demande précédente. Reproduits dans .local/audit-20260925/sql/.
+describe("Désistements : ce qui prévient l’encadrement", () => {
+  const org = "10000000-0000-0000-0000-0000000000e5";
+  const team = "20000000-0000-0000-0000-0000000000e5";
+  const manager = "30000000-0000-0000-0000-0000000000e5";
+  const agent = "30000000-0000-0000-0000-0000000000e6";
+  const campaign = "40000000-0000-0000-0000-0000000000e5";
+  const schedule = "60000000-0000-0000-0000-0000000000e5";
+  const shift = "70000000-0000-0000-0000-0000000000e5";
+  let live: PGlite;
+  const be = async (id: string | null) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id ?? ""]);
+    if (id) await live.exec("set role authenticated");
+  };
+  const announced = async () => {
+    await be(null);
+    return (
+      await live.query<{ body: string }>(
+        "select body from public.notifications where kind='WITHDRAWAL_REQUESTED' and user_id=$1 order by created_at, id",
+        [manager],
+      )
+    ).rows.map(row => row.body);
+  };
+  const ask = async (reason: string) => {
+    await be(agent);
+    await live.query(
+      "insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id,reason) values ($1,$2,$3,$4)",
+      [org, shift, agent, reason],
+    );
+  };
+  const pending = async () => {
+    await be(null);
+    return (
+      await live.query<{ id: string }>("select id from public.shift_withdrawals where user_id=$1 and state='PENDING'", [
+        agent,
+      ])
+    ).rows[0].id;
+  };
+
+  beforeEach(async () => {
+    live = await freshDatabase();
+    await live.exec(`
+      insert into auth.users(id,email,email_confirmed_at) values
+        ('${manager}','chef@e5.test',now()), ('${agent}','agent@e5.test',now());
+      insert into public.profiles(user_id,display_name) values ('${manager}','Chef'), ('${agent}','Agent');
+      insert into public.organizations(id,name) values ('${org}','Centre E5');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values
+        ('${org}','${manager}','${team}','GESTIONNAIRE',true),
+        ('${org}','${agent}','${team}','AGENT',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        values ('${campaign}','${org}','${team}','Novembre','2026-11-01','2026-11-01',now()-interval '1 day',now()+interval '10 days');
+      insert into public.schedules(id,organization_id,campaign_id,team_id) values ('${schedule}','${org}','${campaign}','${team}');
+      insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code,published_revision,published_at)
+        values ('${shift}','${org}','${schedule}','2026-11-01','DAY',1,now());
+      insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,revision,status,assigned_by)
+        values ('${org}','${shift}','${agent}',1,'CONFIRMED','${manager}');`);
+  }, 30000);
+  afterEach(async () => {
+    await live.close();
+  });
+
+  it("refuse une demande qui porte sa propre date ou son propre état", async () => {
+    await be(agent);
+    await expect(
+      live.query(
+        `insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id,reason,created_at)
+         values ($1,$2,$3,'Antidatée','2000-01-01')`,
+        [org, shift, agent],
+      ),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      live.query(
+        `insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id,reason,state)
+         values ($1,$2,$3,'Déjà tranchée','PENDING')`,
+        [org, shift, agent],
+      ),
+    ).rejects.toThrow(/permission denied/);
+    // Les quatre colonnes que l'application envoie suffisent : la date est celle
+    // de la base.
+    await ask("Convocation");
+    await be(null);
+    const stamped = await live.query<{ fresh: boolean }>(
+      "select created_at > now() - interval '1 minute' as fresh from public.shift_withdrawals where user_id=$1",
+      [agent],
+    );
+    expect(stamped.rows).toEqual([{ fresh: true }]);
+  });
+
+  it("ne laisse plus notifier l’encadrement en boucle", async () => {
+    // Ce que l'antidatage permettait : dix allers-retours, dix notifications.
+    // Sans lui, la boucle retombe sur la garde des douze heures.
+    for (let turn = 0; turn < 10; turn++) {
+      await ask("Empêché");
+      await be(agent);
+      await live.query("update public.shift_withdrawals set state='CANCELLED' where user_id=$1 and state='PENDING'", [
+        agent,
+      ]);
+    }
+    expect(await announced()).toHaveLength(1);
+  });
+
+  it("annonce une nouvelle demande après un refus, même dans les douze heures", async () => {
+    await ask("Enfant malade");
+    const first = await pending();
+    await be(manager);
+    await live.query("update public.shift_withdrawals set state='REFUSED' where id=$1", [first]);
+    // Deux heures plus tard, un motif nouveau : c'est une nouvelle affaire.
+    await ask("Enfant hospitalisé");
+    expect(await announced()).toEqual(["Motif : Enfant malade", "Motif : Enfant hospitalisé"]);
+  });
+
+  it("n’annonce pas de nouveau une demande retirée puis refaite dans les douze heures", async () => {
+    await ask("Empêché");
+    await be(agent);
+    await live.query("update public.shift_withdrawals set state='CANCELLED' where user_id=$1", [agent]);
+    await ask("Empêché, finalement");
+    expect(await announced()).toEqual(["Motif : Empêché"]);
+  });
+
+  it("garde le reste de la notification tel quel : décision annoncée à l’agent", async () => {
+    await ask("Convocation");
+    const id = await pending();
+    await be(manager);
+    await live.query("update public.shift_withdrawals set state='ACCEPTED' where id=$1", [id]);
+    await be(null);
+    const decided = await live.query<{ subject: string }>(
+      "select subject from public.notifications where kind='WITHDRAWAL_DECIDED' and user_id=$1",
+      [agent],
+    );
+    expect(decided.rows).toEqual([{ subject: "Désistement accepté — garde de jour du 01/11/2026" }]);
+  });
+});
+
+describe("Migration 20260925150000 — gardes d’application", () => {
+  const target = MIGRATIONS.indexOf("20260925150000_desistements_notification.sql");
+  const migration = () =>
+    readFileSync(new URL(`../supabase/migrations/${MIGRATIONS[target]}`, import.meta.url), "utf8");
+  const upTo = async (count: number) => {
+    const db = new PGlite();
+    await db.exec(baseAuthSchema);
+    for (const m of MIGRATIONS.slice(0, count))
+      await db.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    return db;
+  };
+
+  it("refuse un second passage et un passage avant sa dépendance", async () => {
+    expect(target).toBeGreaterThan(0);
+    const applied = await upTo(target + 1);
+    await expect(applied.exec(migration())).rejects.toThrow("déjà été appliquée");
+    await applied.close();
+    const early = await upTo(target - 1);
+    await expect(early.exec(migration())).rejects.toThrow("20260925090000_participants_en_cours.sql");
+    await early.close();
+  }, 90000);
 });
