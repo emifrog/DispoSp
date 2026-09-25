@@ -8,7 +8,10 @@ import {
   localDate,
   localTime,
   monthDays,
+  publishedShiftsOf,
+  relievedFrom,
   shiftKey,
+  type Shift,
 } from "./domain";
 
 // Une cellule qui commence par = ou + est une formule pour un tableur, d'où
@@ -101,29 +104,75 @@ function fold(line: string) {
   return parts.join("\r\n ");
 }
 
+const utc = (date: string, hour: number) =>
+  icsInstant(fromZonedTime(`${date}T${String(hour).padStart(2, "0")}:00:00`, "Europe/Paris"));
+
+/** Une garde publiée, en événement. Ses horaires viennent de sa campagne. */
+function shiftEvent(
+  campaign: Pick<Campaign, "id" | "dayStart" | "nightStart">,
+  day: string,
+  shift: Shift,
+  published: { revision: number; publishedAt: string },
+  userId: string,
+) {
+  const tomorrow = new Date(`${day}T12:00:00Z`);
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  return [
+    "BEGIN:VEVENT",
+    `UID:${shiftKey(campaign.id, day, shift).replaceAll("/", "-")}-${userId}@disposp.local`,
+    `SEQUENCE:${published.revision}`,
+    `DTSTAMP:${icsInstant(new Date(published.publishedAt))}`,
+    `DTSTART:${utc(day, shift === "DAY" ? campaign.dayStart : campaign.nightStart)}`,
+    `DTEND:${utc(shift === "DAY" ? day : tomorrow.toISOString().slice(0, 10), shift === "DAY" ? campaign.nightStart : campaign.dayStart)}`,
+    `SUMMARY:Garde ${shift === "DAY" ? "de jour" : "de nuit"} - DispoSP`,
+    "END:VEVENT",
+  ];
+}
+
+const calendar = (events: string[][]) =>
+  [
+    ...[
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//DispoSP//Planning//FR",
+      "CALSCALE:GREGORIAN",
+      ...events.flat(),
+    ].map(fold),
+    "END:VCALENDAR",
+    "",
+  ].join("\r\n");
+
+/**
+ * L'agenda d'une campagne. Une garde dont le désistement a été accepté n'y est
+ * plus : l'agent l'importait dans son téléphone après qu'on lui eut répondu
+ * qu'il n'était plus attendu.
+ */
 export function personalCalendar(state: AppState, campaign: Campaign, userId: string) {
-  const utc = (date: string, hour: number) =>
-    icsInstant(fromZonedTime(`${date}T${String(hour).padStart(2, "0")}:00:00`, "Europe/Paris"));
-  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//DispoSP//Planning//FR", "CALSCALE:GREGORIAN"];
+  const events: string[][] = [];
   for (const day of monthDays(campaign.month))
     for (const shift of ["DAY", "NIGHT"] as const) {
-      const key = shiftKey(campaign.id, day, shift);
-      const published = state.publications[key];
+      const published = state.publications[shiftKey(campaign.id, day, shift)];
       if (!published?.agents.includes(userId)) continue;
-      const tomorrow = new Date(`${day}T12:00:00Z`);
-      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-      lines.push(
-        "BEGIN:VEVENT",
-        `UID:${key.replaceAll("/", "-")}-${userId}@disposp.local`,
-        `SEQUENCE:${published.revision}`,
-        `DTSTAMP:${icsInstant(new Date(published.publishedAt))}`,
-        `DTSTART:${utc(day, shift === "DAY" ? campaign.dayStart : campaign.nightStart)}`,
-        `DTEND:${utc(shift === "DAY" ? day : tomorrow.toISOString().slice(0, 10), shift === "DAY" ? campaign.nightStart : campaign.dayStart)}`,
-        `SUMMARY:Garde ${shift === "DAY" ? "de jour" : "de nuit"} - DispoSP`,
-        "END:VEVENT",
-      );
+      if (relievedFrom(state, userId, campaign.id, day, shift, published.publishedAt)) continue;
+      events.push(shiftEvent(campaign, day, shift, published, userId));
     }
-  return [...lines.map(fold), "END:VCALENDAR", ""].join("\r\n");
+  return calendar(events);
+}
+
+/**
+ * L'agenda des gardes à venir, toutes campagnes chargées confondues.
+ *
+ * Celui d'une campagne ne suffit pas : la campagne ouverte par défaut est
+ * celle qui attend une réponse — le mois suivant —, et l'agent de garde
+ * demain n'y trouvait rien à importer. Mêmes règles que `personalCalendar` :
+ * le publié seulement, sans les gardes dont le désistement est accepté.
+ */
+export function upcomingCalendar(state: AppState, userId: string, today = localDate()): string {
+  return calendar(
+    publishedShiftsOf(state, userId)
+      .filter(s => s.date >= today)
+      .map(s => shiftEvent(s.campaign, s.date, s.shift, s, userId)),
+  );
 }
 export function download(content: string, filename: string, mime: string) {
   const url = URL.createObjectURL(new Blob([content], { type: mime }));

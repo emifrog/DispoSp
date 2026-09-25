@@ -209,10 +209,25 @@ export function AppProvider({
    * application à l'autre pour lire un SMS ne doit pas relire tout le centre.
    * Jamais pendant une écriture : elle se relit d'elle-même en finissant.
    */
+  // Vraie tant qu'une relecture court, quelle qu'en soit l'origine ; posée
+  // aussi par `reread` avant que React ait rendu l'attente, pour qu'un second
+  // événement du même instant la trouve déjà prise.
+  const rereading = useRef(false);
+  useEffect(() => {
+    rereading.current = refreshing;
+  }, [refreshing]);
   useEffect(() => {
     let hiddenAt = document.visibilityState === "hidden" ? Date.now() : 0;
+    // Une relecture à la fois : le retour du réseau et le retour au premier
+    // plan arrivent souvent ensemble, et en lançaient deux, complètes.
+    // Et aucune tant que le navigateur se sait hors ligne : la relecture
+    // échouerait, Next se rabattrait sur une navigation complète — vers la
+    // page hors ligne —, et ce qu'une boîte de dialogue ouverte contenait
+    // serait perdu. Le retour du réseau la déclenchera.
     const reread = () => {
-      if (!running.current) startRefresh(() => router.refresh());
+      if (running.current || rereading.current || !navigator.onLine) return;
+      rereading.current = true;
+      startRefresh(() => router.refresh());
     };
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {

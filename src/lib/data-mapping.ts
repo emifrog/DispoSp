@@ -43,9 +43,28 @@ export function taken<T>(what: string, result: { data: unknown; error: { message
   return (result.data ?? fallback) as T;
 }
 
+/** Ce que le pager attend d'une page, en plus de sa plage. */
+export type PageRequest = {
+  /**
+   * Le compte exact. Chaque compte coûte un dénombrement de la table, et les
+   * pages lancées ensemble n'ont pas à le redemander : leurs plages viennent du
+   * compte de la première. Seules les pages lues à la file, qui s'arrêtent sur
+   * le leur, le réclament encore.
+   */
+  count: boolean;
+  /**
+   * Une relecture. Pendant un rendu, Next garde la réponse d'un `fetch`
+   * identique (voir `node_modules/next/dist/docs/01-app/03-api-reference/04-functions/fetch.md`,
+   * « Memoization ») : sans précaution, la relecture recevrait la première
+   * page qu'on vient justement de trouver fausse.
+   */
+  fresh: boolean;
+};
+
 type Page = (
   from: number,
   to: number,
+  request: PageRequest,
 ) => PromiseLike<{ data: unknown; error: { message: string } | null; count: number | null }>;
 
 /**
@@ -77,19 +96,24 @@ const IN_FLIGHT = 6;
  * Deux cas gardent la lecture séquentielle, parce qu'on ne peut pas y prévoir
  * les plages : l'absence de compte, et la première page écourtée — signe que le
  * serveur plafonne plus bas que ce qu'on demande.
+ *
+ * `key` identifie une ligne. Une lecture par plages n'est pas un instantané :
+ * une ligne insérée pendant qu'elle se fait décale les suivantes d'un rang, et
+ * la dernière d'une page revient en tête de la suivante. Un agent apparaissait
+ * alors deux fois. Sans clé, la ligne entière en tient lieu.
  */
-export async function paged<T>(what: string, size: number, page: Page): Promise<T[]> {
-  const first = await page(0, size - 1);
+export async function paged<T>(what: string, size: number, page: Page, key?: (row: T) => string): Promise<T[]> {
+  const first = await page(0, size - 1, { count: true, fresh: false });
   const head = taken<T[]>(what, first, []);
   const total = first.count;
-  if (total !== null && head.length >= total) return head;
+  if (total !== null && head.length === total) return head;
   // Ni fini ni avancé : mieux vaut une erreur qu'une boucle sans fin ou une
   // liste tronquée qu'on présenterait comme entière.
   if (!head.length) {
     console.error(`Lecture interrompue : ${what}, 0 ligne sur ${total ?? "?"}`);
     throw new Error(READ_FAILED);
   }
-  if (total === null || head.length < size) return [...head, ...(await sequential<T>(what, size, page, head.length))];
+  if (total === null || head.length < size) return sequential<T>(what, size, page, head, false, key);
 
   const starts: number[] = [];
   for (let from = size; from < total; from += size) starts.push(from);
@@ -98,37 +122,64 @@ export async function paged<T>(what: string, size: number, page: Page): Promise<
   await Promise.all(
     Array.from({ length: Math.min(IN_FLIGHT, starts.length) }, async () => {
       for (let index = next++; index < starts.length; index = next++)
-        pages[index] = taken<T[]>(what, await page(starts[index], starts[index] + size - 1), []);
+        pages[index] = taken<T[]>(
+          what,
+          await page(starts[index], starts[index] + size - 1, { count: false, fresh: false }),
+          [],
+        );
     }),
   );
 
+  // Autant de lignes **distinctes** que le compte, ni plus ni moins. « Au
+  // moins autant » laissait passer un doublon dû à une insertion en cours de
+  // lecture — et avec lui, une ligne manquante que le doublon masquait.
   const collected = [head, ...pages].flat();
-  if (collected.length >= total) return collected;
+  const distinct = unique(collected, key);
+  if (collected.length === total && distinct.length === total) return collected;
   /*
-   * Moins de lignes que le compte annoncé : une page a été servie écourtée, ou
-   * des lignes ont disparu pendant la lecture. Les plages ayant été calculées
-   * d'avance, ce qui manque laisse un **trou au milieu** — et un trou muet est
-   * exactement ce que ce module existe pour empêcher. On relit tout à la file,
-   * où chaque page repart de ce qui a réellement été reçu.
+   * Le compte ne tombe pas juste : une page a été servie écourtée, ou des
+   * lignes sont apparues ou ont disparu pendant la lecture. Les plages ayant
+   * été calculées d'avance, ce qui manque laisse un **trou au milieu** et ce qui
+   * s'ajoute, un doublon — et un trou ou un doublon muets sont exactement ce
+   * que ce module existe pour empêcher. On relit tout à la file, où chaque page
+   * repart de ce qui a réellement été reçu.
    */
-  console.error(`Lecture relancée à la file : ${what}, ${collected.length} ligne(s) sur ${total}`);
-  return sequential<T>(what, size, page, 0);
+  console.error(`Lecture relancée à la file : ${what}, ${distinct.length} ligne(s) sur ${total}`);
+  return sequential<T>(what, size, page, [], true, key);
 }
 
-async function sequential<T>(what: string, size: number, page: Page, from: number): Promise<T[]> {
-  const collected: T[] = [];
+async function sequential<T>(
+  what: string,
+  size: number,
+  page: Page,
+  start: T[],
+  fresh: boolean,
+  key?: (row: T) => string,
+): Promise<T[]> {
+  const collected = [...start];
   for (;;) {
-    const result = await page(from + collected.length, from + collected.length + size - 1);
+    const result = await page(collected.length, collected.length + size - 1, { count: true, fresh });
     const batch = taken<T[]>(what, result, []);
     collected.push(...batch);
 
     const total = result.count;
-    if (total !== null ? from + collected.length >= total : batch.length < size) return collected;
+    // Ici, « au moins » est un critère d'arrêt, pas de réussite : les doublons
+    // qu'un décalage a pu faire entrer sont retirés avant de rendre la liste.
+    if (total !== null ? collected.length >= total : batch.length < size) return unique(collected, key, what);
     if (!batch.length) {
-      console.error(`Lecture interrompue : ${what}, ${from + collected.length} ligne(s) sur ${total ?? "?"}`);
+      console.error(`Lecture interrompue : ${what}, ${collected.length} ligne(s) sur ${total ?? "?"}`);
       throw new Error(READ_FAILED);
     }
   }
+}
+
+/** Une ligne par clé, à la place de sa première apparition ; la lecture la plus récente l'emporte. */
+function unique<T>(rows: T[], key: (row: T) => string = row => JSON.stringify(row), what?: string): T[] {
+  const byKey = new Map<string, T>();
+  for (const row of rows) byKey.set(key(row), row);
+  if (byKey.size === rows.length) return rows;
+  if (what) console.error(`Doublons écartés : ${what}, ${rows.length - byKey.size} ligne(s)`);
+  return [...byKey.values()];
 }
 
 /** A campaign window is a timestamp in the database and a calendar day on screen. */
@@ -278,6 +329,16 @@ const auditLabels: Record<string, string> = {
   "invitation/UPDATE": "Invitation modifiée",
   "user_qualification/GRANT": "Qualification attribuée",
   "user_qualification/REVOKE": "Qualification retirée",
+  // `record_withdrawal_audit` écrit l'état atteint comme action : l'historique
+  // montrait « shift_withdrawal · ACCEPTED ». `UPDATE` est son repli, qu'un
+  // état toujours renseigné ne devrait jamais atteindre ; il a quand même son
+  // libellé, comme tout ce que la migration peut écrire.
+  "shift_withdrawal/CREATE": "Désistement demandé",
+  "shift_withdrawal/PENDING": "Désistement remis en attente",
+  "shift_withdrawal/ACCEPTED": "Désistement accepté",
+  "shift_withdrawal/REFUSED": "Désistement refusé",
+  "shift_withdrawal/CANCELLED": "Désistement retiré par l’agent",
+  "shift_withdrawal/UPDATE": "Désistement modifié",
 };
 
 type Values = Record<string, unknown> | null;
@@ -345,6 +406,10 @@ function auditDetail(entity: string, previous: Values, after: Values, nameById: 
     case "invitation":
       return `${text(subject, "display_name")} · ${text(subject, "email")}`;
     case "user_qualification":
+      return who(text(subject, "user_id"));
+    // L'agent, sans le motif : il peut être personnel, et l'historique se lit
+    // par tout l'encadrement. Le motif reste sur l'écran des demandes.
+    case "shift_withdrawal":
       return who(text(subject, "user_id"));
     default:
       return "";
@@ -530,9 +595,17 @@ export function buildState(raw: Raw, fallbackOrganizationName: string, window?: 
     // accepté écarte l'agent, à moins qu'on ne l'ait réaffecté depuis. Sans
     // cette comparaison, l'écran signalerait un blocage là où la base
     // publierait — ou l'inverse, ce qui serait pire.
+    //
+    // Comparés comme des instants, pas comme du texte : l'ordre des chaînes
+    // n'est celui du temps que si les deux portent le même décalage et la même
+    // précision. « 2026-09-19T09:00:00+02:00 » précède « 2026-09-19T08:30:00Z »
+    // dans le temps, et le suit dans l'alphabet.
     const assigned = draftedAt.get(`${row.schedule_shift_id}/${row.user_id}`);
     const blocking =
-      row.state === "ACCEPTED" && Boolean(row.decided_at) && Boolean(assigned) && row.decided_at! > assigned!;
+      row.state === "ACCEPTED" &&
+      Boolean(row.decided_at) &&
+      Boolean(assigned) &&
+      Date.parse(row.decided_at!) > Date.parse(assigned!);
     return [
       {
         blocking,
@@ -545,6 +618,7 @@ export function buildState(raw: Raw, fallbackOrganizationName: string, window?: 
         reason: row.reason ?? "",
         state: row.state as AppState["withdrawals"][number]["state"],
         createdAt: row.created_at,
+        decidedAt: row.decided_at,
       },
     ];
   });

@@ -65,7 +65,7 @@ export function AgentHome() {
             </span>
           ) : (
             <span className={`pill ${validated ? "pill-green" : "pill-gray"}`}>
-              {validated ? "Réponse validée" : open ? "À valider" : "Campagne clôturée"}
+              {validated ? "Réponse validée" : open ? "À valider" : "Campagne fermée"}
             </span>
           )
         }
@@ -81,7 +81,7 @@ export function AgentHome() {
             </div>
             <p className="muted small">
               {!open
-                ? "La campagne est clôturée. Vos disponibilités restent consultables."
+                ? "La campagne est fermée. Vos disponibilités restent consultables."
                 : validated
                   ? "Toute modification nécessitera une nouvelle validation."
                   : `Réponses attendues jusqu’au ${dateLabel(campaign.closesOn)}.`}

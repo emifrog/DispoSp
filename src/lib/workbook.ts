@@ -23,6 +23,10 @@ import {
 const SHIFTS: Shift[] = ["DAY", "NIGHT"];
 const shiftLabel = (shift: Shift) => (shift === "DAY" ? "Jour" : "Nuit");
 const HEADER = { bold: true } as const;
+export const POTENTIAL_HEADER = "Disponibles (couverture potentielle, réponses validées)";
+export const PLANNED_HEADER = "Affectés (couverture planifiée — brouillon)";
+/** Ce que mesurent les compteurs de créneaux de la feuille Statistiques. */
+const PLANNED_DRAFT = "couverture planifiée — brouillon";
 
 function sheet(book: ExcelJS.Workbook, name: string, columns: Partial<ExcelJS.Column>[]) {
   const page = book.addWorksheet(name, { views: [{ state: "frozen", xSplit: 1, ySplit: 1 }] });
@@ -109,15 +113,22 @@ export function buildWorkbook(state: AppState, campaign: Campaign): ExcelJS.Work
   }
 
   // 3. Couverture — besoins, potentiel et planifié, avec l'écart du §7.
+  //
+  // Chaque colonne dit ce qu'elle mesure. « Disponibles / Affectés / Écart /
+  // Niveau » ne le disait pas, et le fichier circule hors de l'application :
+  // un chef de centre lisait un écart calculé sur le brouillon comme celui du
+  // planning publié. Les décisions fonctionnelles (§1) demandent de nommer la
+  // couverture potentielle et la planifiée, le brouillon et le publié — le
+  // tableau de bord le fait, l'export doit le faire aussi.
   const cover = sheet(book, "Couverture", [
     { header: "Date", key: "date", width: 12 },
     { header: "Créneau", key: "shift", width: 10 },
     { header: "Horaires", key: "hours", width: 18 },
     { header: "Besoin", key: "need", width: 9 },
-    { header: "Disponibles", key: "potential", width: 12 },
-    { header: "Affectés", key: "planned", width: 10 },
-    { header: "Écart", key: "gap", width: 8 },
-    { header: "Niveau", key: "level", width: 20 },
+    { header: POTENTIAL_HEADER, key: "potential", width: 26 },
+    { header: PLANNED_HEADER, key: "planned", width: 26 },
+    { header: "Écart planifié (affectés − besoin, brouillon)", key: "gap", width: 24 },
+    { header: "Niveau de couverture planifiée (brouillon)", key: "level", width: 26 },
   ]);
   for (const date of days)
     for (const shift of SHIFTS) {
@@ -202,7 +213,7 @@ export function buildWorkbook(state: AppState, campaign: Campaign): ExcelJS.Work
   // 6. Statistiques — le tableau de bord et l'équité du §8.
   const stats = book.addWorksheet("Statistiques");
   stats.columns = [
-    { header: "Indicateur", key: "label", width: 34 },
+    { header: "Indicateur", key: "label", width: 54 },
     { header: "Valeur", key: "value", width: 16 },
   ];
   stats.getRow(1).font = HEADER;
@@ -216,9 +227,10 @@ export function buildWorkbook(state: AppState, campaign: Campaign): ExcelJS.Work
     ["Agents concernés", agents.length],
     ["Réponses validées", validated],
     ["Taux de réponse", agents.length ? `${Math.round((validated / agents.length) * 100)} %` : "—"],
-    ["Créneaux couverts", levels.filter(l => l === "covered").length],
-    ["Créneaux à la limite", levels.filter(l => l === "tight").length],
-    ["Créneaux en déficit", levels.filter(l => l === "deficit").length],
+    // Comptés sur le brouillon, comme la feuille Couverture : le libellé le dit.
+    [`Créneaux couverts (${PLANNED_DRAFT})`, levels.filter(l => l === "covered").length],
+    [`Créneaux à la limite (${PLANNED_DRAFT})`, levels.filter(l => l === "tight").length],
+    [`Créneaux en déficit (${PLANNED_DRAFT})`, levels.filter(l => l === "deficit").length],
     ["Créneaux sans besoins définis", levels.filter(l => l === "unset").length],
   ] as [string, string | number][])
     stats.addRow({ label, value });

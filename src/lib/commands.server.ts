@@ -8,7 +8,11 @@ import { canInvite, createAdminClient } from "./supabase/admin.server";
 type Client = Awaited<ReturnType<typeof createActionClient>>;
 type Of<T extends Command["type"]> = Extract<Command, { type: T }>;
 
+// Le refus original part au journal avant sa traduction : un refus qu'aucune
+// règle ne traduit arrivait à l'écran en « n'a pas pu être enregistrée », et le
+// serveur n'en gardait rien — impossible de savoir ce que la base avait dit.
 function fail(error: DatabaseFailure): never {
+  console.error("Refus de la base :", error.code ?? "sans code", error.message ?? "");
   throw new Error(frenchMessage(error));
 }
 
@@ -457,6 +461,8 @@ async function sendInvitationEmail(
 // l'autre n'accuse l'adresse : elle n'y est pour rien.
 const LIMITED = "Supabase limite le nombre d’emails envoyés par heure : ce message n’est pas parti.";
 const RETRY_LATER = "Renvoyez-la plus tard depuis la liste des invitations.";
+// Le compte existait et la base l'a rattaché à l'enregistrement de l'invitation.
+export const EXISTING_ACCOUNT = "Compte existant rattaché au centre — aucun message n’était nécessaire";
 
 async function writeInvitation(client: Client, session: AttachedSession, command: Of<"invite">) {
   // L'invitation enregistre qui est attendu, et c'est la base qui rattache :
@@ -501,6 +507,9 @@ async function writeInvitation(client: Client, session: AttachedSession, command
   if (outcome === "limited") throw new Error(`L’invitation est enregistrée. ${LIMITED} ${RETRY_LATER}`);
   if (outcome === "unsent")
     throw new Error(`L’invitation est enregistrée, mais le message n’a pas pu partir. ${RETRY_LATER}`);
+  // « Invitation envoyée » était faux ici : rien n'est parti, et rien ne devait
+  // partir. Le gestionnaire attendait un message que l'agent ne recevrait pas.
+  if (outcome === "exists") return EXISTING_ACCOUNT;
 }
 
 /**

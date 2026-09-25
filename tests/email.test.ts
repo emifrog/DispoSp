@@ -17,8 +17,8 @@ describe("Message envoyé à un agent", () => {
     expect(built.to).toBe("agent@example.org");
     expect(built.subject).toBe("Campagne ouverte : Disponibilités d’octobre 2026");
     // La barre finale ne doit pas se retrouver doublée dans le lien.
-    expect(built.text).toContain("https://dispo-sp.example.fr\n");
-    expect(built.html).toContain('href="https://dispo-sp.example.fr"');
+    expect(built.text).toContain("https://dispo-sp.example.fr/mes-disponibilites\n");
+    expect(built.html).toContain('href="https://dispo-sp.example.fr/mes-disponibilites"');
     expect(built.text).toContain("Renseigner mes disponibilités");
   });
 
@@ -31,11 +31,42 @@ describe("Message envoyé à un agent", () => {
     expect(published.html).toContain("Planning publié");
   });
 
+  // Les désistements portaient « Renseigner mes disponibilités » et menaient à
+  // la racine : le gestionnaire prévenu d'une demande était invité à saisir
+  // ses propres disponibilités.
+  it.each([
+    ["CAMPAIGN_OPENED", "Renseigner mes disponibilités", "/mes-disponibilites"],
+    ["CAMPAIGN_REMINDER", "Renseigner mes disponibilités", "/mes-disponibilites"],
+    ["SCHEDULE_PUBLISHED", "Consulter mon planning", "/mon-planning"],
+    ["WITHDRAWAL_REQUESTED", "Examiner la demande", "/demandes"],
+    ["WITHDRAWAL_DECIDED", "Consulter mon planning", "/mon-planning"],
+  ])("mène %s à son propre écran", (kind, call, path) => {
+    const built = message(notice({ kind }), "https://x.fr/");
+    expect(built.text).toContain(`${call} : https://x.fr${path}\n`);
+    expect(built.html).toContain(`href="https://x.fr${path}"`);
+    expect(built.html).toContain(`>${call}</a>`);
+    // Le logo, lui, reste à la racine.
+    expect(built.html).toContain('src="https://x.fr/logo-disposp.png"');
+  });
+
+  it("ne promet rien de précis pour un genre qu’il ne connaît pas", () => {
+    const built = message(notice({ kind: "INCONNU" }), "https://x.fr");
+    expect(built.text).toContain("Ouvrir DispoSP : https://x.fr\n");
+    expect(built.text).not.toContain("Renseigner mes disponibilités");
+  });
+
   it("tient sans corps, plutôt que d’écrire « null »", () => {
     const built = message(notice({ body: null }), "https://x.fr");
     expect(built.text).not.toContain("null");
     expect(built.html).not.toContain("null");
     expect(built.subject).toBeTruthy();
+  });
+
+  it("commence par l’appel quand il n’y a pas de corps, sans lignes vides en tête", () => {
+    for (const body of [null, "", "   "]) {
+      const built = message(notice({ kind: "WITHDRAWAL_DECIDED", body }), "https://x.fr");
+      expect(built.text.startsWith("Consulter mon planning : https://x.fr/mon-planning")).toBe(true);
+    }
   });
 
   // L'image est distante : beaucoup de messageries la bloquent par défaut. Elle

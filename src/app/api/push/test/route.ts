@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { crossSite } from "@/lib/cross-site";
 import { pushConfigured, sendTestPush } from "@/lib/push.server";
 import { readSession } from "@/lib/session.server";
 import { createActionClient } from "@/lib/supabase/server";
@@ -12,7 +13,10 @@ import { createActionClient } from "@/lib/supabase/server";
  * seule preuve possible, et il ne peut atteindre que les appareils de
  * l'appelant : les policies ne lui rendent que ses propres abonnements.
  */
-export async function POST() {
+export async function POST(request: Request) {
+  // Un envoi que n'importe quel site pouvait déclencher sur les appareils de
+  // l'agent connecté, à chaque visite : même contrôle que /deconnexion.
+  if (crossSite(request)) return new NextResponse("Requête refusée", { status: 403 });
   if (!pushConfigured()) return new NextResponse("Notifications non configurées", { status: 503 });
   const session = await readSession();
   if (!session?.membership) return new NextResponse("Non authentifié", { status: 401 });

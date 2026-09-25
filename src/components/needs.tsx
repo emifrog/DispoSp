@@ -6,6 +6,7 @@ import { useApp } from "./provider";
 import { AdministrationOnly, PageTitle, Panel, SegmentedTabs } from "./common";
 import { Button } from "./ui/button";
 import { Modal } from "./ui/dialog";
+import { useConfirmation } from "./ui/confirm";
 import {
   dateLabel,
   hours,
@@ -137,7 +138,11 @@ function NeedCell({
     );
   const minima = Object.entries(need.qualifications).filter(([, count]) => count > 0);
   return (
-    <Link className="need-cell" href={href} aria-label={`${label} : ${need.total} agents attendus`}>
+    <Link
+      className="need-cell"
+      href={href}
+      aria-label={`${label} : ${need.total} ${plural(need.total, "agent")} ${plural(need.total, "attendu")}`}
+    >
       <strong>{need.total}</strong>
       {minima.length > 0 && <small>{minima.map(([name, count]) => `${count} ${name}`).join(" · ")}</small>}
     </Link>
@@ -165,10 +170,11 @@ function BulkDialog({
   const [minima, setMinima] = useState<Record<string, number>>({ ...suggestedRequirement.qualifications });
   const offered = [...new Set([...catalogue, ...Object.keys(minima)])].sort((a, b) => a.localeCompare(b, "fr"));
 
+  const [confirm, confirmation] = useConfirmation();
+  // « Certains jours » sans jour coché ne retient rien : il retombait sur le
+  // mois entier, et « Appliquer » remplaçait les besoins des trente et un jours.
   const chosen =
-    scope === "all" || !weekdays.length
-      ? days
-      : days.filter(d => weekdays.includes(((new Date(`${d}T12:00:00`).getDay() + 6) % 7) + 1));
+    scope === "all" ? days : days.filter(d => weekdays.includes(((new Date(`${d}T12:00:00`).getDay() + 6) % 7) + 1));
   // Le total doit pouvoir accueillir les minima : la base le vérifie aussi, mais
   // l'apprendre après 62 écritures serait désagréable.
   const required = Object.values(minima).reduce((a, b) => Math.max(a, b), 0);
@@ -283,24 +289,40 @@ function BulkDialog({
         </div>
       )}
 
+      {/* Remplacer les besoins de soixante créneaux ne se défait pas d'un
+          clic : la boîte redit combien, avant d'écrire. */}
       <Button
         className="full-width"
         disabled={!chosen.length || !shifts.length || impossible}
-        onClick={async () => {
-          const ok = await run({
-            type: "requirements",
-            campaignId,
-            dates: chosen,
-            shifts,
-            total,
-            qualifications: minima,
-          });
-          if (ok) onClose();
-        }}
+        aria-describedby={scope === "weekdays" && !weekdays.length ? "bulk-no-weekday" : undefined}
+        onClick={() =>
+          confirm({
+            title: `Remplacer les besoins de ${chosen.length * shifts.length} ${plural(chosen.length * shifts.length, "créneau", "créneaux")} ?`,
+            description: `${total} ${plural(total, "agent")} ${plural(total, "attendu")} sur ${chosen.length} ${plural(chosen.length, "journée")}. Les besoins déjà enregistrés sur ces créneaux sont remplacés.`,
+            confirmLabel: "Appliquer",
+            onConfirm: async () => {
+              const ok = await run({
+                type: "requirements",
+                campaignId,
+                dates: chosen,
+                shifts,
+                total,
+                qualifications: minima,
+              });
+              if (ok) onClose();
+            },
+          })
+        }
       >
         <Wand2 size={17} />
         Appliquer
       </Button>
+      {scope === "weekdays" && !weekdays.length && (
+        <p id="bulk-no-weekday" className="muted small button-hint">
+          Cochez au moins un jour de la semaine.
+        </p>
+      )}
+      {confirmation}
     </Modal>
   );
 }

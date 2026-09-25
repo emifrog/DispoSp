@@ -4,6 +4,7 @@ import { ArrowRight, Check, CircleAlert, Inbox, Moon, Sun, X } from "lucide-reac
 import { useApp } from "./provider";
 import { AdministrationOnly, Avatar, PageTitle, Panel } from "./common";
 import { Button } from "./ui/button";
+import { useConfirmation } from "./ui/confirm";
 import { dateLabel, hours, plural, shiftKey, type AppState } from "@/lib/domain";
 import { CAMPAIGN_PARAM } from "@/lib/campaign-param";
 
@@ -101,6 +102,9 @@ function Row({
   // Accepté mais toujours au planning publié : le remplacement reste à faire,
   // et c'est la seule chose que cet écran ne peut pas faire lui-même.
   const stillOn = withdrawal.state === "ACCEPTED" && published?.agents.includes(withdrawal.userId);
+  const [confirm, confirmation] = useConfirmation();
+  const who = agent?.name ?? "L’agent";
+  const slot = `à la garde ${withdrawal.shift === "DAY" ? "de jour" : "de nuit"} du ${dateLabel(withdrawal.date, { weekday: "long", day: "numeric", month: "long" })}`;
 
   return (
     <article>
@@ -137,11 +141,20 @@ function Row({
           </p>
         )}
       </div>
+      {/* Trancher prévient l'agent et ne se reprend pas : la réponse est
+          confirmée avant de partir. */}
       {withdrawal.state === "PENDING" ? (
         <span className="withdrawal-actions">
           <Button
             size="sm"
-            onClick={() => run({ type: "decideWithdrawal", withdrawalId: withdrawal.id, accepted: true })}
+            onClick={() =>
+              confirm({
+                title: "Accepter le désistement ?",
+                description: `${who} ne sera plus attendu ${slot}, et en est prévenu. Sa place reste à reprendre au planning : tant qu’il y figure, la garde ne peut pas être republiée.`,
+                confirmLabel: "Accepter",
+                onConfirm: () => run({ type: "decideWithdrawal", withdrawalId: withdrawal.id, accepted: true }),
+              })
+            }
           >
             <Check size={15} />
             Accepter
@@ -149,11 +162,20 @@ function Row({
           <Button
             size="sm"
             variant="secondary"
-            onClick={() => run({ type: "decideWithdrawal", withdrawalId: withdrawal.id, accepted: false })}
+            onClick={() =>
+              confirm({
+                title: "Refuser le désistement ?",
+                description: `${who} reste attendu ${slot}, et en est prévenu.`,
+                confirmLabel: "Refuser",
+                danger: true,
+                onConfirm: () => run({ type: "decideWithdrawal", withdrawalId: withdrawal.id, accepted: false }),
+              })
+            }
           >
             <X size={15} />
             Refuser
           </Button>
+          {confirmation}
         </span>
       ) : (
         <span className={`pill ${statePills[withdrawal.state]}`}>{stateLabels[withdrawal.state]}</span>

@@ -18,6 +18,7 @@ import { useApp } from "./provider";
 import { PageTitle, Panel, Legend, ProgressRing, SegmentedTabs } from "./common";
 import { Button } from "./ui/button";
 import { Modal } from "./ui/dialog";
+import { useConfirmation } from "./ui/confirm";
 import {
   entryKey,
   filledDays,
@@ -53,7 +54,9 @@ export function Availability() {
   // L'accueil pointe ici avec ?saisie=rapide. L'initialiseur d'état suffit : il
   // ne s'exécute qu'au montage, donc refermer la boîte ne la rouvre pas, et
   // aucun effet n'a à courir après le rendu pour la faire apparaître.
-  const [quick, setQuick] = useState(() => params.get("saisie") === "rapide");
+  // Sur une campagne fermée, non : le bouton « Saisie rapide » y est éteint, et
+  // l'adresse ouvrait quand même une boîte dont l'enregistrement serait refusé.
+  const [quick, setQuick] = useState(() => params.get("saisie") === "rapide" && open);
   const [quickMode, setQuickMode] = useState<"period" | "weekdays">("period");
   // Le modèle se compose avant d’être enregistré : tant qu’il diffère de ce que
   // la base porte, l’appliquer n’aurait pas le sens que l’écran montre.
@@ -66,11 +69,14 @@ export function Availability() {
   const [end, setEnd] = useState(days[days.length - 1]);
   const [weekdays, setWeekdays] = useState<number[]>([]);
   const leading = (new Date(`${days[0]}T12:00:00`).getDay() + 6) % 7;
+  // « Jours de la semaine » sans jour coché ne retient rien : il retombait sur
+  // toute la période, et l'enregistrement écrasait le mois entier.
   const chosen = quick
     ? days.filter(
-        d => d >= start && d <= end && (!weekdays.length || weekdays.includes(new Date(`${d}T12:00`).getDay())),
+        d => d >= start && d <= end && (quickMode === "period" || weekdays.includes(new Date(`${d}T12:00`).getDay())),
       )
     : selected.filter(d => days.includes(d));
+  const [confirm, confirmation] = useConfirmation();
   const overwritten = chosen.filter(d => state.entries[entryKey(campaignId, actor.id, d)]).length;
   const icons = { DAY: Sun, NIGHT: Moon, FULL_24H: Clock3, UNAVAILABLE: X };
   // Awaited on purpose: the dialog stays open when the database refuses, so the
@@ -151,7 +157,7 @@ export function Availability() {
       {!open && (
         <div className="warning">
           <CircleAlert size={19} />
-          Cette campagne est clôturée. Vos disponibilités restent consultables.
+          Cette campagne est fermée. Vos disponibilités restent consultables.
         </div>
       )}
       <div className="availability-layout">
@@ -227,7 +233,7 @@ export function Availability() {
           <Panel title="Validation de la réponse" subtitle="La saisie ne vaut pas validation.">
             <p className="muted">
               {days.length - filled > 0
-                ? `${days.length - filled} jours restent à renseigner. Pensez à indiquer vos indisponibilités.`
+                ? `${days.length - filled} ${plural(days.length - filled, "jour")} ${plural(days.length - filled, "reste", "restent")} à renseigner. Pensez à indiquer vos indisponibilités.`
                 : "Tous les jours sont renseignés. Vous pouvez valider votre réponse."}
             </p>
             <Button
@@ -271,7 +277,7 @@ export function Availability() {
             </div>
             <p className="muted small">
               {planned.length
-                ? `${planned.length} ${plural(planned.length, "jour")} ${plural(planned.length, "serait", "seraient")} renseignés sur ${monthLabel(campaign.month)}.`
+                ? `${planned.length} ${plural(planned.length, "jour")} ${plural(planned.length, "serait renseigné", "seraient renseignés")} sur ${monthLabel(campaign.month)}.`
                 : "Aucun jour de semaine renseigné : le modèle ne s’applique à rien."}
             </p>
             <div className="template-buttons">
@@ -292,7 +298,14 @@ export function Availability() {
               <Button
                 className="full-width"
                 disabled={!open || !planned.length || templateChanged}
-                onClick={() => run({ type: "applyTemplate", campaignId })}
+                onClick={() =>
+                  confirm({
+                    title: `Appliquer le modèle à ${monthLabel(campaign.month)} ?`,
+                    description: `${planned.length} ${plural(planned.length, "jour")} ${plural(planned.length, "sera renseigné", "seront renseignés")} selon votre modèle, en remplaçant ce qui y figure${validated ? ", et votre réponse sera à valider de nouveau" : ""}. Les autres jours ne bougent pas.`,
+                    confirmLabel: "Appliquer le modèle",
+                    onConfirm: () => run({ type: "applyTemplate", campaignId }),
+                  })
+                }
               >
                 <Repeat size={17} />
                 Appliquer à {monthLabel(campaign.month)}
@@ -401,7 +414,9 @@ export function Availability() {
                 <small>
                   {chosen.length
                     ? `Du ${dateLabel(chosen[0], { weekday: "long", day: "numeric", month: "long" })} au ${dateLabel(chosen[chosen.length - 1], { weekday: "long", day: "numeric", month: "long" })}`
-                    : "Aucun jour ne correspond à cette sélection."}
+                    : quickMode === "weekdays" && !weekdays.length
+                      ? "Cochez au moins un jour de la semaine."
+                      : "Aucun jour ne correspond à cette sélection."}
                 </small>
               </span>
             </div>
@@ -447,6 +462,7 @@ export function Availability() {
           Enregistrer {chosen.length > 1 ? `les ${chosen.length} jours` : "la disponibilité"}
         </Button>
       </Modal>
+      {confirmation}
     </>
   );
 }

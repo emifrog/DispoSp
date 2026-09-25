@@ -1,4 +1,7 @@
+import type { Metadata } from "next";
 import { SignInForm } from "@/components/auth";
+
+export const metadata: Metadata = { title: "Connexion" };
 
 /**
  * Ce que les deux routes de vérification renvoient ici.

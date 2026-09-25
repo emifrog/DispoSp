@@ -6,7 +6,7 @@ import { useApp } from "./provider";
 import { PageTitle, Panel, SegmentedTabs } from "./common";
 import { Button } from "./ui/button";
 import { Modal } from "./ui/dialog";
-import { download, personalCalendar } from "@/lib/exports";
+import { download, upcomingCalendar } from "@/lib/exports";
 import {
   dateLabel,
   hours,
@@ -15,6 +15,7 @@ import {
   monthLabel,
   plural,
   publishedShiftsOf,
+  shiftKey,
   type PublishedShift as Assigned,
   type Shift,
 } from "@/lib/domain";
@@ -47,9 +48,37 @@ export function PersonalPlanning() {
   const all = publishedShiftsOf(state, actor.id);
   const assigned = all.filter(a => a.campaign.id === campaignId);
   const upcoming = all.filter(a => a.date >= today);
-  const past = assigned.filter(a => a.date < today).reverse();
+  // L'historique se lit sur les publications elles-mêmes : `publishedShiftsOf`
+  // écarte, à raison, une garde dont le désistement a été accepté, mais tant
+  // que l'agent figure à la version publiée, elle a bien été la sienne. Elle
+  // s'affiche donc, marquée comme telle — l'onglet la disait « Effectuée ».
+  const past = days
+    .filter(date => date < today)
+    .flatMap(date =>
+      (["DAY", "NIGHT"] as const).flatMap(shift => {
+        const published = state.publications[shiftKey(campaignId, date, shift)];
+        return published?.agents.includes(actor.id)
+          ? [{ campaign, date, shift, revision: published.revision, publishedAt: published.publishedAt }]
+          : [];
+      }),
+    )
+    .reverse();
+  const withdrawnFromShift = (s: Assigned) =>
+    state.withdrawals.some(
+      w =>
+        w.campaignId === s.campaign.id &&
+        w.date === s.date &&
+        w.shift === s.shift &&
+        w.userId === actor.id &&
+        w.state === "ACCEPTED",
+    );
   const next = upcoming[0];
   const shown = tab === "past" ? past : upcoming;
+  // Les gardes à venir de toutes les campagnes, comme l'onglet « À venir » :
+  // l'export ne portait que le mois choisi, souvent celui qui attend encore
+  // une réponse et n'a aucune garde publiée.
+  const exportUpcoming = () =>
+    download(upcomingCalendar(state, actor.id), `gardes-a-venir-${today}.ics`, "text/calendar;charset=utf-8");
 
   return (
     <>
@@ -57,17 +86,7 @@ export function PersonalPlanning() {
         title="Mon planning"
         description={`Vos gardes telles qu’elles ont été publiées. Calendrier et historique : ${monthLabel(campaign.month)}.`}
         action={
-          <Button
-            variant="secondary"
-            disabled={!assigned.length}
-            onClick={() =>
-              download(
-                personalCalendar(state, campaign, actor.id),
-                `planning-${campaign.month}.ics`,
-                "text/calendar;charset=utf-8",
-              )
-            }
-          >
+          <Button variant="secondary" disabled={!upcoming.length} onClick={exportUpcoming}>
             <Download size={17} />
             Exporter mon calendrier
           </Button>
@@ -163,7 +182,9 @@ export function PersonalPlanning() {
                     </small>
                   </div>
                   {tab === "past" ? (
-                    <span className="pill pill-gray">Effectuée</span>
+                    <span className="pill pill-gray">
+                      {withdrawnFromShift(s) ? "Désistement accepté" : "Effectuée"}
+                    </span>
                   ) : (
                     <WithdrawalState
                       withdrawal={state.withdrawals.find(
@@ -231,23 +252,13 @@ export function PersonalPlanning() {
       )}
 
       <div className="planning-exports">
-        <button
-          className="shortcut shortcut-primary"
-          disabled={!assigned.length}
-          onClick={() =>
-            download(
-              personalCalendar(state, campaign, actor.id),
-              `planning-${campaign.month}.ics`,
-              "text/calendar;charset=utf-8",
-            )
-          }
-        >
+        <button className="shortcut shortcut-primary" disabled={!upcoming.length} onClick={exportUpcoming}>
           <span className="shortcut-icon">
             <CalendarDays size={20} />
           </span>
           <span>
-            <strong>Ajouter tout à mon calendrier</strong>
-            <small>Exporter mes gardes vers Google, Apple ou Outlook</small>
+            <strong>Ajouter mes gardes à venir à mon calendrier</strong>
+            <small>Toutes campagnes confondues, vers Google, Apple ou Outlook</small>
           </span>
           <Download size={18} />
         </button>

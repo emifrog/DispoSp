@@ -41,6 +41,25 @@ describe("File d’emails", () => {
     expect(emailConfigured()).toBe(false);
   });
 
+  // Sans la clé du serveur, la file ne se lit pas : se dire configuré
+  // programmait après chaque commande un envoi voué à lever.
+  it.each(["SUPABASE_SECRET_KEY", "NEXT_PUBLIC_SUPABASE_URL"])("n’est pas configurée sans %s", name => {
+    vi.stubEnv(name, "");
+    expect(emailConfigured()).toBe(false);
+  });
+
+  it("nomme ce qui manque, sans jamais en écrire la valeur", async () => {
+    vi.stubEnv("SUPABASE_SECRET_KEY", "");
+    const failure = await dispatchEmails().catch((error: Error) => error);
+    expect((failure as Error).message).toContain("SUPABASE_SECRET_KEY");
+    expect((failure as Error).message).not.toContain("re_test");
+  });
+
+  it("garde la cause d’un refus de la base dans l’erreur qu’il lève", async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: "permission denied for function claim_email_deliveries" } });
+    await expect(dispatchEmails()).rejects.toThrow("permission denied for function claim_email_deliveries");
+  });
+
   it("refuse de tourner sans la clé du serveur : la file ne se lit pas sous une session", async () => {
     vi.stubEnv("SUPABASE_SECRET_KEY", "");
     await expect(dispatchEmails()).rejects.toThrow("non configuré");

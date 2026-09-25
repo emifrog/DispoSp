@@ -46,16 +46,34 @@ export const labels: Record<Availability, { label: string; short: string; classN
   FULL_24H: { label: "24 h", short: "24", className: "full" },
   UNAVAILABLE: { label: "Indisponible", short: "X", className: "unavailable" },
 };
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+/**
+ * Un jour qui existe au calendrier. La forme seule laissait passer
+ * « 2026-02-30 », que PostgreSQL refuse ensuite avec un message sur le type
+ * `date` qu'aucune traduction ne couvre. Calculé en UTC : aucun fuseau ne
+ * peut faire glisser le jour.
+ */
+export const isCalendarDate = (value: string) => {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+};
+const isoDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(isCalendarDate, "Cette date n’existe pas.");
+// La même règle pour le formulaire et pour la commande : le serveur ne doit pas
+// accepter ce que l'écran refuse, une action serveur se postant sans lui.
+const closesBeforeMonth = (v: { month: string; closesOn: string }) => v.closesOn < `${v.month}-01`;
+const CLOSES_BEFORE_MONTH = "La clôture doit précéder le mois concerné.";
 export const campaignFormSchema = z
   .object({
     name: z.string().trim().min(3, "Au moins 3 caractères."),
     month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Choisissez un mois."),
     closesOn: isoDate,
   })
-  .refine(v => v.closesOn < `${v.month}-01`, {
+  .refine(closesBeforeMonth, {
     path: ["closesOn"],
-    message: "La clôture doit précéder le mois concerné.",
+    message: CLOSES_BEFORE_MONTH,
   });
 export const stateSchema = z.object({
   version: z.literal(1),
@@ -149,6 +167,9 @@ export const stateSchema = z.object({
         /** Ce désistement écarte-t-il encore l'agent de cette garde ? Accepté,
             et postérieur à l'affectation qui tient encore au brouillon. */
         blocking: z.boolean().default(false),
+        /** L'instant de la décision, pour la comparer à celui de la publication.
+            Facultatif : un état construit sans lui se rabat sur `blocking`. */
+        decidedAt: z.string().nullable().optional(),
       }),
     )
     .default([]),
@@ -314,13 +335,46 @@ export function publishedShiftsOf(state: AppState, userId: string): PublishedShi
       monthDays(campaign.month).flatMap(date =>
         (["DAY", "NIGHT"] as const).flatMap(shift => {
           const published = state.publications[shiftKey(campaign.id, date, shift)];
-          return published?.agents.includes(userId)
+          return published?.agents.includes(userId) &&
+            !relievedFrom(state, userId, campaign.id, date, shift, published.publishedAt)
             ? [{ campaign, date, shift, revision: published.revision, publishedAt: published.publishedAt }]
             : [];
         }),
       ),
     )
     .sort((a, b) => a.date.localeCompare(b.date) || (a.shift === b.shift ? 0 : a.shift === "DAY" ? -1 : 1));
+}
+/**
+ * Une garde publiée que l'agent ne tient plus : son désistement a été accepté
+ * après la publication qui l'y nomme encore.
+ *
+ * Le publié ne change qu'à la republication. Entre les deux, l'agent lisait
+ * toujours la garde sur l'accueil, dans « Prochaine garde » et dans l'agenda
+ * exporté — alors qu'on venait de lui répondre qu'il n'était plus attendu.
+ *
+ * Accepté ne suffit pas : si l'encadrement le réaffecte ensuite et republie,
+ * c'est une décision neuve, postérieure, et la garde est de nouveau la sienne.
+ * D'où la comparaison des deux instants, et non le seul état. Sans l'instant
+ * de la décision, `blocking` en tient lieu — la même règle, lue sur le
+ * brouillon.
+ */
+export function relievedFrom(
+  state: AppState,
+  userId: string,
+  campaignId: string,
+  date: string,
+  shift: Shift,
+  publishedAt: string,
+) {
+  return state.withdrawals.some(
+    w =>
+      w.state === "ACCEPTED" &&
+      w.userId === userId &&
+      w.campaignId === campaignId &&
+      w.date === date &&
+      w.shift === shift &&
+      (w.decidedAt ? Date.parse(publishedAt) < Date.parse(w.decidedAt) : w.blocking),
+  );
 }
 export const isValidated = (state: AppState, campaignId: string, userId: string) =>
   Boolean(state.responses[responseKey(campaignId, userId)]);
@@ -483,7 +537,38 @@ export function coverage(
 }
 
 const shiftSchema = z.enum(["DAY", "NIGHT"]);
-const id = z.string().min(1).max(64);
+/**
+ * Un identifiant de la base : huit, quatre, quatre, quatre et douze chiffres
+ * hexadécimaux. `z.guid()` plutôt que `z.uuid()` : ce dernier exige aussi la
+ * version et la variante de la RFC, que les identifiants fixes des jeux
+ * d'essai (`10000000-0000-0000-0000-000000000001`) n'ont pas. N'importe quel
+ * texte de 64 caractères passait jusqu'ici, et PostgreSQL le refusait avec un
+ * message sur le type `uuid` qu'aucune traduction ne couvre.
+ */
+const id = z.guid();
+/**
+ * Les minima par qualification, clés nettoyées.
+ *
+ * « SAP » et « SAP » suivi d'une espace étaient deux clés : la base créait une
+ * qualification fantôme pour la seconde, que personne ne détenait, et le
+ * créneau devenait impossible à couvrir. Une clé vide, ou deux clés qui ne
+ * diffèrent que par leurs espaces, sont refusées plutôt que devinées.
+ */
+const minima = z.record(z.string().max(60), z.number().int().min(0).max(100)).transform((value, context) => {
+  const named = new Map<string, number>();
+  for (const [name, count] of Object.entries(value)) {
+    const clean = name.trim();
+    if (!clean || named.has(clean)) {
+      context.addIssue({
+        code: "custom",
+        message: clean ? `Qualification « ${clean} » en double.` : "Qualification sans nom.",
+      });
+      return z.NEVER;
+    }
+    named.set(clean, count);
+  }
+  return Object.fromEntries(named);
+});
 // A server action is a public endpoint: its payload is parsed, never trusted.
 // The Command type is inferred from here so the two can never drift apart.
 export const commandSchema = z.discriminatedUnion("type", [
@@ -510,7 +595,7 @@ export const commandSchema = z.discriminatedUnion("type", [
     date: isoDate,
     shift: shiftSchema,
     total: z.number().int().min(1).max(100),
-    qualifications: z.record(z.string().max(60), z.number().int().min(0).max(100)),
+    qualifications: minima,
   }),
   // Le même besoin posé d'un coup sur plusieurs journées. 62 est le plafond
   // atteignable : un mois de 31 jours, jour et nuit.
@@ -520,16 +605,20 @@ export const commandSchema = z.discriminatedUnion("type", [
     dates: z.array(isoDate).min(1).max(31),
     shifts: z.array(shiftSchema).min(1).max(2),
     total: z.number().int().min(1).max(100),
-    qualifications: z.record(z.string().max(60), z.number().int().min(0).max(100)),
+    qualifications: minima,
   }),
-  z.object({
-    type: z.literal("campaign"),
-    name: z.string().trim().min(3),
-    month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
-    closesOn: isoDate,
-    // L'équipe conviée ; celle de qui ouvre, sinon.
-    teamId: id.optional(),
-  }),
+  z
+    .object({
+      type: z.literal("campaign"),
+      name: z.string().trim().min(3),
+      month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+      closesOn: isoDate,
+      // L'équipe conviée ; celle de qui ouvre, sinon.
+      teamId: id.optional(),
+    })
+    // La règle du formulaire, tenue aussi ici : une clôture pendant le mois
+    // concerné laissait les agents répondre sur des jours déjà passés.
+    .refine(closesBeforeMonth, { path: ["closesOn"], message: CLOSES_BEFORE_MONTH }),
   z.object({ type: z.literal("close"), campaignId: id, closed: z.boolean() }),
   z.object({
     type: z.literal("member"),
@@ -577,7 +666,12 @@ export const commandSchema = z.discriminatedUnion("type", [
     days: z.record(z.string().regex(/^[1-7]$/), availabilitySchema.nullable()),
   }),
   z.object({ type: z.literal("applyTemplate"), campaignId: id }),
-  z.object({ type: z.literal("team"), teamId: z.string().max(64).optional(), name: z.string().trim().min(1).max(60) }),
+  // Sans identifiant, ou vide : une équipe à créer.
+  z.object({
+    type: z.literal("team"),
+    teamId: z.union([z.literal(""), id]).optional(),
+    name: z.string().trim().min(1).max(60),
+  }),
   z.object({
     type: z.literal("settings"),
     dayStart: z.number().int().min(0).max(23),
@@ -597,6 +691,9 @@ export const auditFamilies = [
     entities: ["availability_entry", "campaign_participant", "availability_template"],
   },
   { key: "planning", label: "Planning", entities: ["schedule_assignment", "schedule_shift"] },
+  // Absents jusqu'ici : le filtre par sujet ne les trouvait pas, et la colonne
+  // Sujet de l'export restait vide sur leurs lignes.
+  { key: "withdrawals", label: "Désistements", entities: ["shift_withdrawal"] },
   { key: "needs", label: "Besoins", entities: ["staffing_requirement"] },
   { key: "campaigns", label: "Campagnes", entities: ["availability_campaign"] },
   {

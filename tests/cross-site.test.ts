@@ -18,6 +18,15 @@ describe("Requête inter-sites", () => {
     ).toBe(false);
   });
 
+  // Deux relais : chacun ajoute son hôte, le premier est celui du navigateur.
+  it("ne retient que la première valeur de x-forwarded-host, comme Next", () => {
+    const behind = (origin: string) =>
+      post({ host: "10.0.0.5:3000", "x-forwarded-host": "disposp.sdis.fr, disposp-interne:3000", origin });
+    expect(crossSite(behind("https://disposp.sdis.fr"))).toBe(false);
+    expect(crossSite(behind("https://piege.example.com"))).toBe(true);
+    expect(crossSite(behind("http://disposp-interne:3000"))).toBe(true);
+  });
+
   it("refuse un POST venu d'un autre site", () => {
     expect(crossSite(post({ host: "disposp.example.fr", origin: "https://piege.example.com" }))).toBe(true);
     expect(crossSite(post({ host: "disposp.example.fr", "sec-fetch-site": "cross-site" }))).toBe(true);

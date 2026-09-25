@@ -18,14 +18,13 @@ import {
   Users,
 } from "lucide-react";
 import { useApp } from "./provider";
-import { PageTitle, Panel, Avatar, SegmentedTabs } from "./common";
+import { PageTitle, Panel, Avatar, SegmentedTabs, gradeAndFonction } from "./common";
 import { Button } from "./ui/button";
 import { Modal } from "./ui/dialog";
 import {
   availableAgents,
   coverage,
   dateLabel,
-  gradeLabel,
   grades,
   hours,
   monthDays,
@@ -90,6 +89,7 @@ export function Planning() {
   const unavailable = result.invalid.filter(a => !inactive.has(a.id) && !withdrawn.has(a.id));
   const published = state.publications[key];
   const changed = published && JSON.stringify([...published.agents].sort()) !== JSON.stringify([...assignedIds].sort());
+  const upToDate = Boolean(published) && !changed;
   function openNeeds() {
     setTotal((need ?? suggestedRequirement).total);
     setQualifications({ ...(need ?? suggestedRequirement).qualifications });
@@ -113,7 +113,7 @@ export function Planning() {
         <div className="agent-info">
           <strong>{agent.name}</strong>
           <small>
-            {gradeLabel(agent)} · {agent.team.replace("Équipe ", "")}
+            {gradeAndFonction(agent)} · {agent.team.replace("Équipe ", "")}
           </small>
           {reason && <small className="text-red">{reason}</small>}
           <div className="qualification-tags">
@@ -375,10 +375,22 @@ export function Planning() {
           <p className="small muted">
             Un agent peut satisfaire plusieurs minima de qualification. Il compte une seule fois dans l’effectif.
           </p>
-          <Button className="full-width" disabled={!result.covered} onClick={() => setPublishOpen(true)}>
+          {/* Republier une version identique renverrait la même notification à
+              chaque agent affecté, pour rien : le bouton attend un changement. */}
+          <Button
+            className="full-width"
+            disabled={!result.covered || upToDate}
+            aria-describedby={upToDate ? "publish-up-to-date" : undefined}
+            onClick={() => setPublishOpen(true)}
+          >
             <Send size={16} />
             Publier ce créneau
           </Button>
+          {published && upToDate && (
+            <p id="publish-up-to-date" className="muted small button-hint">
+              Déjà publié tel quel en version {published.revision} : modifiez les affectations pour republier.
+            </p>
+          )}
           <p className="save-caption">Le brouillon est enregistré à chaque modification.</p>
         </Panel>
       </div>

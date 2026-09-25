@@ -270,7 +270,11 @@ export function AvailabilityTable() {
             {incomplete} {plural(incomplete, "agent")} {plural(incomplete, "n’a", "n’ont")} pas fini
           </span>
         ) : (
-          <span className="pill pill-green">Tous les mois sont complets</span>
+          // Le mois est un, ce sont les agents qui ont fini — ceux que les
+          // filtres montrent, pas forcément tout le centre.
+          <span className="pill pill-green">
+            {data.length === 1 ? "Saisie complète" : "Tous les agents affichés ont fini"}
+          </span>
         )}
       </div>
       {view === "day" && <DayView agents={data} days={days} campaignId={campaignId} />}

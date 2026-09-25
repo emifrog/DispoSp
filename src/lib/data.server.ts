@@ -1,5 +1,5 @@
 import "server-only";
-import { loadedSince, type AppState } from "./domain";
+import { entryKey, loadedSince, type AppState } from "./domain";
 import { buildState, campaignsToLoad, paged as pagedRows, taken, type Raw } from "./data-mapping";
 import type { AttachedSession } from "./session";
 import { createReadClient } from "./supabase/server";
@@ -31,10 +31,34 @@ const PAGE = 500;
  *
  * Le compte exact qu'il réclame coûte un dénombrement par table. C'est le prix
  * d'une lecture dont on sait qu'elle est complète, et il se paie sur des tables
- * qui tiennent en quelques milliers de lignes pour un centre.
+ * qui tiennent en quelques milliers de lignes pour un centre — une fois par
+ * lecture, sur la première page : les suivantes ne le redemandaient que pour
+ * qu'on l'ignore.
+ *
+ * `query` reçoit l'option de compte à passer à `select` et rend la requête sans
+ * sa plage, que le pager pose. `key` dit ce qui fait l'unicité d'une ligne.
  */
-const paged = <K extends ListKey>(what: string, page: (from: number, to: number) => PromiseLike<Counted>) =>
-  pagedRows<Raw[K][number]>(what, PAGE, page) as Promise<Raw[K]>;
+type Query = PromiseLike<Counted> & {
+  range(from: number, to: number): Query;
+  abortSignal(signal: AbortSignal): Query;
+};
+const exact = { count: "exact" as const };
+const paged = <K extends ListKey>(
+  what: string,
+  query: (count: typeof exact | undefined) => Query,
+  key: (row: Raw[K][number]) => string,
+) =>
+  pagedRows<Raw[K][number]>(
+    what,
+    PAGE,
+    (from, to, request) => {
+      const page = query(request.count ? exact : undefined).range(from, to);
+      // Un signal, même jamais déclenché, soustrait la requête à la mémorisation
+      // de fetch : la relecture obtient la base, pas la réponse gardée.
+      return request.fresh ? page.abortSignal(new AbortController().signal) : page;
+    },
+    key,
+  ) as Promise<Raw[K]>;
 
 // Everything below runs under RLS as the signed-in user: an agent legitimately
 // sees only their own membership and entries, a manager sees their team's.
@@ -45,7 +69,6 @@ const paged = <K extends ListKey>(what: string, page: (from: number, to: number)
 export async function loadState(session: AttachedSession, asked?: string | null): Promise<AppState> {
   const supabase = await createReadClient();
   const organizationId = session.membership.organizationId;
-  const exact = { count: "exact" as const };
 
   const [
     organization,
@@ -61,45 +84,53 @@ export async function loadState(session: AttachedSession, asked?: string | null)
     supabase.from("organizations").select("name, day_start, night_start").eq("id", organizationId).maybeSingle(),
     // Deactivated members are loaded too: the administration screen has to show
     // them to bring anyone back. buildState keeps the two rosters apart.
-    paged<"members">("membres", (from, to) =>
-      supabase
-        .from("memberships")
-        .select(
-          "user_id, role, team_id, active, profiles(display_name, grade, fonction, matricule, phone), teams(name)",
-          exact,
-        )
-        .eq("organization_id", organizationId)
-        .order("user_id")
-        .range(from, to),
+    paged<"members">(
+      "membres",
+      count =>
+        supabase
+          .from("memberships")
+          .select(
+            "user_id, role, team_id, active, profiles(display_name, grade, fonction, matricule, phone), teams(name)",
+            count,
+          )
+          .eq("organization_id", organizationId)
+          .order("user_id"),
+      row => row.user_id,
     ),
-    paged<"memberQualifications">("qualifications des agents", (from, to) =>
-      supabase
-        .from("user_qualifications")
-        .select("user_id, qualifications(name)", exact)
-        .eq("organization_id", organizationId)
-        .order("user_id")
-        .order("qualification_id")
-        .range(from, to),
+    paged<"memberQualifications">(
+      "qualifications des agents",
+      count =>
+        supabase
+          .from("user_qualifications")
+          .select("user_id, qualifications(name)", count)
+          .eq("organization_id", organizationId)
+          .order("user_id")
+          .order("qualification_id"),
+      row => `${row.user_id}/${row.qualifications?.name}`,
     ),
-    paged<"campaigns">("campagnes", (from, to) =>
-      supabase
-        .from("availability_campaigns")
-        .select("id, name, team_id, starts_on, opens_at, closes_at, locked, day_start, night_start", exact)
-        .eq("organization_id", organizationId)
-        // `starts_on` seul n'est pas unique : deux campagnes du même mois se
-        // chevaucheraient entre deux pages, ou disparaîtraient.
-        .order("starts_on", { ascending: true })
-        .order("id")
-        .range(from, to),
+    paged<"campaigns">(
+      "campagnes",
+      count =>
+        supabase
+          .from("availability_campaigns")
+          .select("id, name, team_id, starts_on, opens_at, closes_at, locked, day_start, night_start", count)
+          .eq("organization_id", organizationId)
+          // `starts_on` seul n'est pas unique : deux campagnes du même mois se
+          // chevaucheraient entre deux pages, ou disparaîtraient.
+          .order("starts_on", { ascending: true })
+          .order("id"),
+      row => row.id,
     ),
-    paged<"teams">("équipes", (from, to) =>
-      supabase
-        .from("teams")
-        .select("id, name", exact)
-        .eq("organization_id", organizationId)
-        .order("name")
-        .order("id")
-        .range(from, to),
+    paged<"teams">(
+      "équipes",
+      count =>
+        supabase
+          .from("teams")
+          .select("id, name", count)
+          .eq("organization_id", organizationId)
+          .order("name")
+          .order("id"),
+      row => row.id,
     ),
     // Volontairement plafonnées : l'écran n'en montre qu'un extrait récent, et
     // le dit. Ce n'est pas une troncature subie.
@@ -108,27 +139,27 @@ export async function loadState(session: AttachedSession, asked?: string | null)
       .select("id, kind, subject, body, created_at, read_at")
       .order("created_at", { ascending: false })
       .limit(50),
-    paged<"qualificationCatalogue">("catalogue de qualifications", (from, to) =>
-      supabase
-        .from("qualifications")
-        .select("name", exact)
-        .eq("organization_id", organizationId)
-        .order("name")
-        .range(from, to),
+    paged<"qualificationCatalogue">(
+      "catalogue de qualifications",
+      count =>
+        supabase.from("qualifications").select("name", count).eq("organization_id", organizationId).order("name"),
+      row => row.name,
     ),
     // RLS limite déjà au propriétaire : le modèle de quelqu un ne regarde que lui.
     supabase.from("availability_templates").select("weekday, availability_type").order("weekday"),
     // Readable by administrators only; anyone else gets an empty list from RLS
     // rather than a refusal, which is exactly what the screen should show.
-    paged<"invitations">("invitations", (from, to) =>
-      supabase
-        .from("invitations")
-        .select("id, email, display_name, role, team_id, created_at", exact)
-        .eq("organization_id", organizationId)
-        .is("accepted_at", null)
-        .order("created_at", { ascending: false })
-        .order("id")
-        .range(from, to),
+    paged<"invitations">(
+      "invitations",
+      count =>
+        supabase
+          .from("invitations")
+          .select("id, email, display_name, role, team_id, created_at", count)
+          .eq("organization_id", organizationId)
+          .is("accepted_at", null)
+          .order("created_at", { ascending: false })
+          .order("id"),
+      row => row.id,
     ),
   ]);
 
@@ -138,46 +169,49 @@ export async function loadState(session: AttachedSession, asked?: string | null)
     // Tous les participants, archives comprises : une ligne par agent et par
     // mois, que l'écran des campagnes compte et que le sélecteur d'un agent
     // filtre. C'est le détail jour par jour qui pèse, pas eux.
-    paged<"participants">("participants aux campagnes", (from, to) =>
-      supabase
-        .from("campaign_participants")
-        .select("campaign_id, user_id, validated_at", exact)
-        .eq("organization_id", organizationId)
-        .order("campaign_id")
-        .order("user_id")
-        .range(from, to),
+    paged<"participants">(
+      "participants aux campagnes",
+      count =>
+        supabase
+          .from("campaign_participants")
+          .select("campaign_id, user_id, validated_at", count)
+          .eq("organization_id", organizationId)
+          .order("campaign_id")
+          .order("user_id"),
+      row => `${row.campaign_id}/${row.user_id}`,
     ),
     // La plus volumineuse de toutes : agents × jours × campagnes.
-    paged<"entries">("disponibilités", (from, to) =>
-      supabase
-        .from("availability_entries")
-        .select("campaign_id, user_id, date, availability_type, comment", exact)
-        .in("campaign_id", campaignIds)
-        .order("campaign_id")
-        .order("user_id")
-        .order("date")
-        .range(from, to),
+    paged<"entries">(
+      "disponibilités",
+      count =>
+        supabase
+          .from("availability_entries")
+          .select("campaign_id, user_id, date, availability_type, comment", count)
+          .in("campaign_id", campaignIds)
+          .order("campaign_id")
+          .order("user_id")
+          .order("date"),
+      row => entryKey(row.campaign_id, row.user_id, row.date),
     ),
-    paged<"requirements">("besoins", (from, to) =>
-      supabase
-        .from("staffing_requirements")
-        .select(
-          "campaign_id, date, shift_code, headcount, staffing_requirement_qualifications(minimum, qualifications(name))",
-          exact,
-        )
-        .in("campaign_id", campaignIds)
-        .order("campaign_id")
-        .order("date")
-        .order("shift_code")
-        .range(from, to),
+    paged<"requirements">(
+      "besoins",
+      count =>
+        supabase
+          .from("staffing_requirements")
+          .select(
+            "campaign_id, date, shift_code, headcount, staffing_requirement_qualifications(minimum, qualifications(name))",
+            count,
+          )
+          .in("campaign_id", campaignIds)
+          .order("campaign_id")
+          .order("date")
+          .order("shift_code"),
+      row => `${row.campaign_id}/${row.date}/${row.shift_code}`,
     ),
-    paged<"schedules">("plannings", (from, to) =>
-      supabase
-        .from("schedules")
-        .select("id, campaign_id", exact)
-        .in("campaign_id", campaignIds)
-        .order("id")
-        .range(from, to),
+    paged<"schedules">(
+      "plannings",
+      count => supabase.from("schedules").select("id, campaign_id", count).in("campaign_id", campaignIds).order("id"),
+      row => row.id,
     ),
     // Plafonné aussi, et l'écran d'historique le signale quand la période
     // demandée précède les deux cents actions chargées.
@@ -196,40 +230,49 @@ export async function loadState(session: AttachedSession, asked?: string | null)
   // les lignes dont le créneau appartient à l'un de ces plannings.
   const scheduleIds = (schedules as { id: string }[]).map(s => s.id);
   const [shifts, assignments, withdrawals] = await Promise.all([
-    paged<"shifts">("créneaux", (from, to) =>
-      supabase
-        .from("schedule_shifts")
-        .select("id, schedule_id, date, shift_code, published_revision, published_at", exact)
-        .eq("organization_id", organizationId)
-        .in("schedule_id", scheduleIds)
-        .order("id")
-        .range(from, to),
+    paged<"shifts">(
+      "créneaux",
+      count =>
+        supabase
+          .from("schedule_shifts")
+          .select("id, schedule_id, date, shift_code, published_revision, published_at", count)
+          .eq("organization_id", organizationId)
+          .in("schedule_id", scheduleIds)
+          .order("id"),
+      row => row.id,
     ),
-    paged<"assignments">("affectations", (from, to) =>
-      supabase
-        .from("schedule_assignments")
-        .select("schedule_shift_id, user_id, revision, status, assigned_at, schedule_shifts!inner(schedule_id)", exact)
-        .eq("organization_id", organizationId)
-        .in("schedule_shifts.schedule_id", scheduleIds)
-        .order("schedule_shift_id")
-        .order("user_id")
-        .order("revision")
-        .range(from, to),
+    paged<"assignments">(
+      "affectations",
+      count =>
+        supabase
+          .from("schedule_assignments")
+          .select(
+            "schedule_shift_id, user_id, revision, status, assigned_at, schedule_shifts!inner(schedule_id)",
+            count,
+          )
+          .eq("organization_id", organizationId)
+          .in("schedule_shifts.schedule_id", scheduleIds)
+          .order("schedule_shift_id")
+          .order("user_id")
+          .order("revision"),
+      row => `${row.schedule_shift_id}/${row.user_id}/${row.revision}`,
     ),
     // RLS décide qui voit quoi : un agent n'obtient que les siens, qui encadre
     // obtient ceux du centre. L'écran n'a rien à filtrer.
-    paged<"withdrawals">("désistements", (from, to) =>
-      supabase
-        .from("shift_withdrawals")
-        .select(
-          "id, schedule_shift_id, user_id, reason, state, created_at, decided_at, schedule_shifts!inner(schedule_id)",
-          exact,
-        )
-        .eq("organization_id", organizationId)
-        .in("schedule_shifts.schedule_id", scheduleIds)
-        .order("created_at", { ascending: false })
-        .order("id")
-        .range(from, to),
+    paged<"withdrawals">(
+      "désistements",
+      count =>
+        supabase
+          .from("shift_withdrawals")
+          .select(
+            "id, schedule_shift_id, user_id, reason, state, created_at, decided_at, schedule_shifts!inner(schedule_id)",
+            count,
+          )
+          .eq("organization_id", organizationId)
+          .in("schedule_shifts.schedule_id", scheduleIds)
+          .order("created_at", { ascending: false })
+          .order("id"),
+      row => row.id,
     ),
   ]);
 

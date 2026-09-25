@@ -102,12 +102,27 @@ describe("Classeur Excel", () => {
     expect(cell("Couverture", 2, 2)).toBe("Jour");
   });
 
+  // C11 de l'analyse du 25 septembre : le fichier circule hors de
+  // l'application, et « Disponibles / Affectés / Écart / Niveau » ne disait ni
+  // quelle couverture il mesurait, ni sur quel planning.
+  it("nomme la couverture qu’il mesure, et le planning sur lequel il la compte", () => {
+    const headers = [5, 6, 7, 8].map(column => String(cell("Couverture", 1, column)));
+    expect(headers[0]).toBe("Disponibles (couverture potentielle, réponses validées)");
+    expect(headers[1]).toBe("Affectés (couverture planifiée — brouillon)");
+    expect(headers[2]).toContain("brouillon");
+    expect(headers[3]).toContain("planifiée");
+    const indicators: string[] = [];
+    book.getWorksheet("Statistiques")?.eachRow(row => indicators.push(String(row.getCell(1).value ?? "")));
+    for (const label of indicators.filter(l => /^Créneaux (couverts|à la limite|en déficit)/.test(l)))
+      expect(label).toMatch(/couverture planifiée — brouillon/);
+  });
+
   it("ventile l’équité par agent, sous les indicateurs", () => {
     const sheet = book.getWorksheet("Statistiques");
     const labelsRead: string[] = [];
     sheet?.eachRow(row => labelsRead.push(String(row.getCell(1).value ?? "")));
     expect(labelsRead).toContain("Taux de réponse");
-    expect(labelsRead).toContain("Créneaux à la limite");
+    expect(labelsRead).toContain("Créneaux à la limite (couverture planifiée — brouillon)");
     expect(labelsRead).toContain("Équité — agent");
     for (const agent of agents) expect(labelsRead).toContain(agent.name);
   });

@@ -33,10 +33,16 @@ function flushQueues() {
     // Les deux files sont indépendantes : l'une qui échoue n'arrête pas l'autre.
     // Les notifications restent dans la file et dans le centre de messages : un
     // envoi manqué ne doit pas annuler l'écriture qui l'a provoqué.
-    if (push) await dispatchPush().catch(() => console.error("Le traitement Web Push a échoué."));
-    if (email) await dispatchEmails().catch(() => console.error("Le traitement des emails a échoué."));
+    // La cause part avec la ligne : « a échoué » seul ne disait pas s'il fallait
+    // regarder la configuration, la base ou le service d'envoi. Le message
+    // seulement — jamais l'objet d'erreur, qui peut porter la requête et sa clé.
+    if (push) await dispatchPush().catch(error => console.error("Le traitement Web Push a échoué :", cause(error)));
+    if (email)
+      await dispatchEmails().catch(error => console.error("Le traitement des emails a échoué :", cause(error)));
   });
 }
+
+const cause = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 // A Server Action is a public endpoint reachable by anyone who can POST to the
 // application: the payload is parsed here, and the identity is read from the
@@ -44,7 +50,15 @@ function flushQueues() {
 export async function submitCommand(payload: unknown): Promise<CommandResult> {
   const parsed = commandSchema.safeParse(payload);
   if (!parsed.success) return { ok: false, message: "La demande est incomplète ou mal formée." };
-  const session = await readSession();
+  let session: Awaited<ReturnType<typeof readSession>>;
+  try {
+    session = await readSession();
+  } catch (error) {
+    // Auth ou la base n'a pas répondu : l'agent n'est pas déconnecté, et lui
+    // dire que sa session a expiré l'enverrait se reconnecter pour rien. Les
+    // messages levés par readSession sont déjà écrits pour l'écran.
+    return { ok: false, message: error instanceof Error ? error.message : "La connexion n’a pas pu être vérifiée." };
+  }
   if (!session) return { ok: false, message: "Votre session a expiré. Reconnectez-vous." };
   if (!session.membership) return { ok: false, message: "Votre compte n’est rattaché à aucun centre." };
   try {

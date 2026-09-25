@@ -32,6 +32,10 @@ import {
   plural,
   type Shift,
 } from "@/lib/domain";
+
+/** Le signe de chaque niveau, repris par la légende et par les cases. */
+const levelGlyphs = { covered: "✓", tight: "=", deficit: "−" } as const;
+
 export function Dashboard() {
   const { state, campaignId, campaign, run } = useApp();
   const [mode, setMode] = useState<"potential" | "planned">("potential");
@@ -97,9 +101,11 @@ export function Dashboard() {
             {dateLabel(campaign.closesOn)}
           </span>
         </div>
+        {/* Le point vivant ne dit « en cours » qu'à une campagne ouverte : sur
+            une campagne fermée, il annonçait une activité qui n'a plus lieu. */}
         <span className={`pill ${isOpen(campaign) ? "pill-green" : "pill-gray"}`}>
-          <span className="live-dot" />
-          {isOpen(campaign) ? "En cours" : "Clôturée"}
+          {isOpen(campaign) && <span className="live-dot" />}
+          {isOpen(campaign) ? "En cours" : "Fermée"}
         </span>
         <Link href="/campagnes">
           Gérer la campagne
@@ -206,15 +212,23 @@ export function Dashboard() {
           <div className="coverage-legend">
             <span>
               <i className="covered" />
+              <b aria-hidden="true">{levelGlyphs.covered}</b>
               Couvert
             </span>
             <span>
               <i className="tight" />
+              <b aria-hidden="true">{levelGlyphs.tight}</b>
               Limite
             </span>
             <span>
               <i className="deficit" />
+              <b aria-hidden="true">{levelGlyphs.deficit}</b>
               Déficit
+            </span>
+            <span>
+              <i className="deficit" />
+              <b aria-hidden="true">Q</b>
+              Qualification manquante
             </span>
             <span>
               <i className="unset" />
@@ -245,6 +259,19 @@ export function Dashboard() {
                   const c = coverage(state, campaignId, date, shift, mode);
                   const level = coverageLevel(c);
                   const slot = `${dateLabel(date)} ${shift === "DAY" ? "jour" : "nuit"}`;
+                  // L'effectif peut être réuni et le créneau en déficit : il
+                  // manque alors une qualification, que la case doit nommer.
+                  const lacking = c.defined ? c.qualifications.filter(q => q.actual < q.need).map(q => q.name) : [];
+                  const headcountShort = c.defined && c.actual < (c.need ?? 0);
+                  // Ni l'un ni l'autre : une affectation invalide (planifiée),
+                  // qui reste un déficit.
+                  const glyph =
+                    level === "deficit"
+                      ? `${headcountShort || !lacking.length ? levelGlyphs.deficit : ""}${lacking.length ? "Q" : ""}`
+                      : level === "unset"
+                        ? ""
+                        : levelGlyphs[level];
+                  const missing = lacking.length ? `, qualification manquante : ${lacking.join(", ")}` : "";
                   return (
                     <Link
                       key={date}
@@ -252,15 +279,20 @@ export function Dashboard() {
                       href={`/planning?date=${date}&shift=${shift}`}
                       aria-label={
                         c.defined
-                          ? `${slot} : ${c.actual} sur ${c.need}, ${coverageLevelLabels[level].toLowerCase()}`
+                          ? `${slot} : ${c.actual} sur ${c.need}, ${coverageLevelLabels[level].toLowerCase()}${missing}`
                           : `${slot} : besoins non définis`
                       }
                       title={
                         c.defined
-                          ? `${c.actual}/${c.need} agents · ${level === "tight" ? "Couvert sans marge" : coverageLevelLabels[level]}`
+                          ? `${c.actual}/${c.need} agents · ${level === "tight" ? "Couvert sans marge" : coverageLevelLabels[level]}${missing}`
                           : "Besoins non définis pour ce créneau"
                       }
                     >
+                      {glyph && (
+                        <i className="heatmap-glyph" aria-hidden="true">
+                          {glyph}
+                        </i>
+                      )}
                       {c.actual}
                       <small>/{c.defined ? c.need : "—"}</small>
                     </Link>

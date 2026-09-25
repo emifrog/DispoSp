@@ -1,6 +1,8 @@
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { buildState, campaignsToLoad, taken, READ_FAILED, type Raw } from "../src/lib/data-mapping";
 import {
+  auditFamilies,
   campaignAgents,
   coverage,
   entryKey,
@@ -314,6 +316,27 @@ describe("Construction de l’état depuis la base", () => {
     expect(pending.withdrawals[0].blocking).toBe(false);
   });
 
+  // Les deux horodatages étaient comparés comme du texte : juste tant que la
+  // base écrit les deux avec le même décalage et la même précision.
+  it("compare décision et affectation comme des instants, quels que soient décalage et précision", () => {
+    const withdrawal = {
+      id: "w1",
+      schedule_shift_id: SHIFT_DAY,
+      user_id: "u1",
+      reason: "",
+      state: "ACCEPTED",
+      created_at: "2026-09-18T07:00:00Z",
+    };
+    const decided = (decided_at: string) =>
+      buildState(raw({ withdrawals: [{ ...withdrawal, decided_at }] }), "S").withdrawals[0].blocking;
+    // L'affectation date de 08:00 UTC. 09:30 à Paris, c'est 07:30 UTC : avant.
+    expect(decided("2026-09-18T09:30:00+02:00")).toBe(false);
+    // Une demi-seconde après, écrite avec des microsecondes : après.
+    expect(decided("2026-09-18T08:00:00.500000+00:00")).toBe(true);
+    // 10:30 à Paris, 08:30 UTC : après, quoi qu'en dise l'ordre des chaînes.
+    expect(decided("2026-09-18T10:30:00+02:00")).toBe(true);
+  });
+
   it("retire de la couverture planifiée un agent qui s’est désisté", () => {
     const withdrawn = buildState(
       raw({
@@ -382,6 +405,7 @@ describe("Construction de l’état depuis la base", () => {
         reason: "Convocation",
         state: "PENDING",
         createdAt: "2026-10-05T08:00:00Z",
+        decidedAt: null,
       },
     ]);
   });
@@ -539,5 +563,164 @@ describe("Fenêtre de chargement", () => {
     expect(archived).toMatchObject({ archived: true, loaded: false });
     const [asked] = buildState(raw(), "Secours", { since: "2099-01-01", loaded: [CAMPAIGN] }).campaigns;
     expect(asked).toMatchObject({ archived: true, loaded: true });
+  });
+});
+
+/**
+ * Chaque couple entité/action que les migrations écrivent au journal.
+ *
+ * Même principe que le test qui vérifie la traduction de chaque refus : la
+ * liste est relue dans les migrations, pas recopiée ici. Un déclencheur qui
+ * ajoute une action sans libellé ferait apparaître un code brut à l'écran —
+ * c'est ce qui est arrivé aux désistements —, et une entité sans famille
+ * échapperait au filtre par sujet comme à la colonne Sujet de l'export.
+ */
+describe("Journal d’audit : libellés de tout ce que la base écrit", () => {
+  const folder = new URL("../supabase/migrations/", import.meta.url);
+  const sql = readdirSync(folder)
+    .filter(file => file.endsWith(".sql"))
+    .sort()
+    .map(file => readFileSync(new URL(file, folder), "utf8"))
+    .join("\n")
+    // Les commentaires d'abord : ils citent parfois du code.
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/--[^\n]*/g, "");
+
+  /** Les arguments de premier niveau d'une liste qui s'ouvre à `start`, jusqu'à la parenthèse fermante. */
+  function argumentsFrom(text: string, start: number) {
+    const found: string[] = [];
+    let depth = 0;
+    let quoted = false;
+    let current = "";
+    for (let index = start; index < text.length; index++) {
+      const char = text[index];
+      if (char === "'") quoted = !quoted;
+      else if (!quoted && char === "(") depth++;
+      else if (!quoted && char === ")" && depth-- === 0) {
+        found.push(current.trim());
+        return found;
+      } else if (!quoted && char === "," && depth === 0) {
+        found.push(current.trim());
+        current = "";
+        continue;
+      }
+      current += char;
+    }
+    throw new Error("Liste d’arguments non refermée");
+  }
+
+  /**
+   * Les actions qu'une expression peut produire : ses littéraux en capitales,
+   * moins les comparaisons à `TG_OP`. Une action recopiée d'une colonne
+   * (`new.state`) prend les valeurs que la contrainte de la table autorise.
+   */
+  function actionsOf(expression: string, name: string) {
+    const actions = [...expression.replace(/TG_OP\s*=\s*'[A-Z]+'/g, "").matchAll(/'([A-Z_]+)'/g)].map(m => m[1]);
+    for (const [, column] of expression.matchAll(/new\.(\w+)/g)) {
+      const table = sql.match(
+        new RegExp(String.raw`on public\.(\w+)\s+for each row execute function private\.${name}\(`),
+      )?.[1];
+      const definition = sql.match(new RegExp(String.raw`create table public\.${table} \(([\s\S]*?)\n\);`))?.[1] ?? "";
+      const allowed = definition.match(
+        new RegExp(String.raw`${column} text[^\n]*check \(${column} in \(([^)]*)\)\)`),
+      )?.[1];
+      expect(allowed, `${name} : valeurs de ${table}.${column}`).toBeTruthy();
+      actions.push(...[...allowed!.matchAll(/'([A-Z_]+)'/g)].map(m => m[1]));
+    }
+    return actions;
+  }
+
+  const pairs = new Set<string>();
+  for (const block of sql.matchAll(
+    /create (?:or replace )?function private\.(\w+)\([^)]*\)[\s\S]*?\$\$([\s\S]*?)\$\$/g,
+  )) {
+    const [, name, body] = block;
+    for (const insert of body.matchAll(/insert into public\.audit_logs\s*\(([^)]*)\)\s*values\s*\(/g)) {
+      const columns = insert[1].split(",").map(column => column.trim());
+      const values = argumentsFrom(body, insert.index! + insert[0].length);
+      const entity = values[columns.indexOf("entity")];
+      const action = values[columns.indexOf("action")];
+      const literal = entity.match(/^'(\w+)'$/)?.[1];
+      if (literal) {
+        for (const each of actionsOf(action, name)) pairs.add(`${literal}/${each}`);
+        continue;
+      }
+      // L'entité vient d'une variable : une branche par table, chacune pose
+      // `entity := '…'` puis `action := …;`.
+      const branches = body.split(/entity := '/).slice(1);
+      expect(branches.length, name).toBeGreaterThan(0);
+      for (const branch of branches) {
+        const table = branch.slice(0, branch.indexOf("'"));
+        const assigned = branch.match(/action := ([\s\S]*?);/)?.[1];
+        expect(assigned, `${name} : action de ${table}`).toBeTruthy();
+        for (const each of actionsOf(assigned!, name)) pairs.add(`${table}/${each}`);
+      }
+    }
+  }
+
+  it("retrouve dans les migrations ce que le journal contient", () => {
+    // Garde-fou du garde-fou : une extraction vide ferait passer le reste.
+    expect(pairs.size).toBeGreaterThanOrEqual(30);
+    for (const known of [
+      "availability_entry/SET",
+      "campaign_participant/UNVALIDATE",
+      "schedule_shift/PUBLISH",
+      "membership/DEACTIVATE",
+      "invitation/ACCEPT",
+      "shift_withdrawal/CREATE",
+      "shift_withdrawal/ACCEPTED",
+      "shift_withdrawal/CANCELLED",
+    ])
+      expect(pairs, known).toContain(known);
+  });
+
+  it("donne un libellé français à chaque couple", () => {
+    const rows = [...pairs].map((pair, index) => {
+      const [entity, action] = pair.split("/");
+      return {
+        id: index,
+        occurred_at: "2026-09-25T08:00:00Z",
+        action,
+        entity,
+        actor_id: null,
+        old_value: null,
+        new_value: { user_id: "u1", date: "2026-10-01", shift_code: "DAY", headcount: 2 },
+      };
+    });
+    const state = buildState(raw({ audit: rows }), "S");
+    const raw_codes = state.audit.filter(line => line.action.includes(" · ")).map(line => line.action);
+    expect(raw_codes).toEqual([]);
+  });
+
+  it("range chaque entité dans une famille du filtre", () => {
+    const families = new Set(auditFamilies.flatMap(family => [...family.entities] as string[]));
+    const orphans = [...new Set([...pairs].map(pair => pair.split("/")[0]))].filter(entity => !families.has(entity));
+    expect(orphans).toEqual([]);
+  });
+
+  it("montre les désistements sous leur nom, avec l’agent concerné", () => {
+    const state = buildState(
+      raw({
+        audit: [
+          {
+            id: 1,
+            occurred_at: "2026-09-25T08:00:00Z",
+            action: "ACCEPTED",
+            entity: "shift_withdrawal",
+            actor_id: "u1",
+            old_value: { user_id: "u2", state: "PENDING", reason: "Enfant malade" },
+            new_value: { user_id: "u2", state: "ACCEPTED", reason: "Enfant malade" },
+          },
+        ],
+      }),
+      "S",
+    );
+    expect(state.audit[0]).toMatchObject({
+      action: "Désistement accepté",
+      actor: "Chef Un",
+      entity: "shift_withdrawal",
+    });
+    // Le motif peut être personnel : il ne passe pas dans l'historique.
+    expect(state.audit[0].detail).not.toContain("Enfant");
   });
 });

@@ -12,7 +12,10 @@ const roboto = Roboto({
   fallback: ["Segoe UI", "Arial", "Helvetica", "sans-serif"],
 });
 export const metadata: Metadata = {
-  title: "DispoSP — Disponibilités & planning",
+  // Chaque page donne son nom, suivi de celui de l'application : tous les
+  // onglets s'appelaient pareil, et l'historique du navigateur comme le lecteur
+  // d'écran à l'arrivée sur une page ne disaient pas laquelle c'était.
+  title: { template: "%s · DispoSP", default: "DispoSP — Disponibilités & planning" },
   description: "La disponibilité de chacun, la force du collectif. Planification des équipes de sapeurs-pompiers.",
   robots: { index: false, follow: false },
   applicationName: "DispoSP",

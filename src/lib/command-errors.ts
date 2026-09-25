@@ -106,6 +106,12 @@ const byMessage: [RegExp, (match: RegExpMatchArray) => string][] = [
   // Déjà en français dans la base : les fonctions Web Push parlent à l'agent.
   [/^Aucune session ouverte/, () => "Votre session a expiré. Reconnectez-vous."],
   [/^Compte rattaché à aucun centre actif/, () => "Votre compte n’est rattaché à aucun centre actif."],
+  // Les besoins (25 septembre) : l'effectif et les minima se gardent l'un l'autre.
+  [
+    /^Headcount is below a qualification minimum/,
+    () => "L’effectif requis ne peut pas descendre sous un minimum par qualification. Baissez d’abord ce minimum.",
+  ],
+  [/^Qualification name is empty/, () => "Une qualification sans nom ne peut pas être exigée."],
 ];
 
 const byCode: Record<string, string> = {

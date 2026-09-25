@@ -255,3 +255,99 @@ describe("Bascule du centre d’essai vers un vrai centre", () => {
     await expect(live.exec(bascule())).rejects.toThrow("existe déjà");
   });
 });
+
+/**
+ * `passer-en-gestionnaire.sql` écarte le déclencheur membership_change pour
+ * changer un rôle depuis l'éditeur SQL — et avec lui la règle du dernier
+ * administrateur. Le script la reprend lui-même (analyse du 25 septembre).
+ */
+describe("Passage d’un compte en gestionnaire", () => {
+  const org = "10000000-0000-0000-0000-0000000000a7";
+  const team = "20000000-0000-0000-0000-0000000000a7";
+  const admin = "30000000-0000-0000-0000-0000000000a7";
+  const second = "30000000-0000-0000-0000-0000000000a8";
+  const nouveau = "30000000-0000-0000-0000-0000000000a9";
+  let live: PGlite;
+
+  /** Le script tel qu'il est livré, avec les seules valeurs qu'on demande d'adapter. */
+  const passer = (email: string, nom = "Nom Adapté") =>
+    live.exec(
+      provisioningScript("passer-en-gestionnaire.sql")
+        .replaceAll("'gestionnaire@exemple.fr'", `'${email}'`)
+        .replace("'Prénom Nom'", `'${nom}'`),
+    );
+  const roles = async () =>
+    (
+      await live.query<{ email: string; role: string; active: boolean }>(
+        `select u.email, m.role, m.active from public.memberships m join auth.users u on u.id = m.user_id
+          order by u.email`,
+      )
+    ).rows;
+
+  beforeAll(async () => {
+    live = await freshDatabase();
+    await live.exec(`
+      insert into auth.users(id,email,email_confirmed_at) values
+        ('${admin}','admin@a7.test',now()), ('${second}','second@a7.test',now()), ('${nouveau}','nouveau@a7.test',now());
+      insert into public.profiles(user_id,display_name) values ('${admin}','Admin'), ('${second}','Second');
+      insert into public.organizations(id,name) values ('${org}','Centre A7');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values
+        ('${org}','${admin}','${team}','ADMIN',true),
+        ('${org}','${second}','${team}','AGENT',true);`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("ne porte plus d’adresse ni de nom réels", () => {
+    const script = provisioningScript("passer-en-gestionnaire.sql");
+    // Seule l'adresse d'exemple, partout où le script en nomme une.
+    expect(script.match(/[\w.+-]+@[\w-]+\.[\w.-]+/g)).toEqual(["gestionnaire@exemple.fr", "gestionnaire@exemple.fr"]);
+    expect(script).toMatch(/nom\s+constant text := 'Prénom Nom';/);
+  });
+
+  it("refuse de rétrograder le dernier administrateur actif, et rend le déclencheur", async () => {
+    await expect(passer("admin@a7.test")).rejects.toThrow("dernier administrateur actif");
+    expect(await roles()).toEqual([
+      { email: "admin@a7.test", role: "ADMIN", active: true },
+      { email: "second@a7.test", role: "AGENT", active: true },
+    ]);
+    expect((await live.query("select tgenabled from pg_trigger where tgname = 'membership_change'")).rows).toEqual([
+      { tgenabled: "O" },
+    ]);
+  });
+
+  it("passe un agent en gestionnaire", async () => {
+    await passer("second@a7.test");
+    expect((await roles()).find(r => r.email === "second@a7.test")).toEqual({
+      email: "second@a7.test",
+      role: "GESTIONNAIRE",
+      active: true,
+    });
+  });
+
+  it("rétrograde un administrateur quand un autre reste actif", async () => {
+    // Nommer un second administrateur, comme le ferait le premier depuis l'application.
+    await live.exec(`alter table public.memberships disable trigger membership_change;
+      update public.memberships set role='ADMIN' where user_id='${second}';
+      alter table public.memberships enable trigger membership_change;`);
+    await passer("admin@a7.test");
+    expect(await roles()).toEqual([
+      { email: "admin@a7.test", role: "GESTIONNAIRE", active: true },
+      { email: "second@a7.test", role: "ADMIN", active: true },
+    ]);
+  });
+
+  it("rattache en gestionnaire un compte qui n’avait rien", async () => {
+    await passer("nouveau@a7.test", "Nouveau Venu");
+    expect((await roles()).find(r => r.email === "nouveau@a7.test")).toEqual({
+      email: "nouveau@a7.test",
+      role: "GESTIONNAIRE",
+      active: true,
+    });
+    expect((await live.query("select display_name from public.profiles where user_id=$1", [nouveau])).rows).toEqual([
+      { display_name: "Nouveau Venu" },
+    ]);
+  });
+});

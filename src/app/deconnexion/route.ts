@@ -13,6 +13,24 @@ export async function POST(request: Request) {
   // Cette session seulement. Sans `scope`, Supabase les révoque toutes : se
   // déconnecter du poste partagé du centre déconnectait aussi le téléphone de
   // l'agent, qui ne recevait plus rien jusqu'à sa prochaine connexion.
-  await supabase.auth.signOut({ scope: "local" });
-  return NextResponse.redirect(new URL(SIGN_IN_PATH, request.url), { status: 303 });
+  const { error } = await supabase.auth.signOut({ scope: "local" });
+  const response = NextResponse.redirect(new URL(SIGN_IN_PATH, request.url), { status: 303 });
+  if (error) {
+    /*
+     * Supabase n'efface les cookies qu'une fois la session relue avec succès.
+     * Quand cette lecture échoue, il rend l'erreur et laisse tout en place :
+     * sur le poste partagé du centre, l'agent suivant héritait de la session
+     * de celui qui venait de « se déconnecter ». Les cookies de session sont
+     * donc effacés ici, quoi qu'ait répondu Supabase. Le jeton reste valable
+     * jusqu'à son expiration côté serveur, mais ce navigateur ne le porte plus.
+     */
+    console.error("Déconnexion incomplète côté Supabase :", error.message);
+    // Tous les `sb-*`, morceaux compris : un jeton long se découpe en
+    // `sb-…-auth-token.0`, `.1`, et un seul reste suffit à le reconstituer.
+    for (const pair of request.headers.get("cookie")?.split(";") ?? []) {
+      const name = pair.split("=")[0].trim();
+      if (name.startsWith("sb-")) response.cookies.set(name, "", { path: "/", maxAge: 0 });
+    }
+  }
+  return response;
 }

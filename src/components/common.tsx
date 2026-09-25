@@ -1,6 +1,15 @@
 import type { ReactNode } from "react";
 import { ShieldCheck, type LucideIcon } from "lucide-react";
-import { type Agent, type Availability, labels } from "@/lib/domain";
+import { type Agent, type Availability, gradeLabel, labels } from "@/lib/domain";
+
+/**
+ * Le grade, puis la fonction quand elle est renseignée.
+ *
+ * La fiche les distingue — le grade suit la personne, la fonction se tient sur
+ * un engin —, mais aucun écran ne montrait la fonction : saisie, elle
+ * disparaissait. Elle se lit désormais partout où le grade se lit.
+ */
+export const gradeAndFonction = (agent: Agent) => [gradeLabel(agent), agent.fonction].filter(Boolean).join(" · ");
 
 /**
  * L'anneau de progression de la maquette.

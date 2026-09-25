@@ -19,8 +19,8 @@
 
 do $$
 declare
-  compte constant text := 'xav.robart@gmail.com';
-  nom    constant text := 'Xavier Robart';
+  compte constant text := 'gestionnaire@exemple.fr';
+  nom    constant text := 'Prénom Nom';
   -- Nom de l'équipe de rattachement. Laisser null pour prendre la première du
   -- centre ; ignoré si le compte est déjà rattaché, on ne le déplace pas.
   equipe constant text := null;
@@ -29,6 +29,7 @@ declare
   centre uuid;
   section uuid;
   actuel text;
+  actif boolean;
   rattachements int;
   centres int;
 begin
@@ -47,7 +48,7 @@ begin
     raise exception 'Le compte % est rattaché à % centres. readSession n''en lit qu''un (maybeSingle) : retirez le rattachement de trop avant de continuer.', compte, rattachements;
   end if;
 
-  select organization_id, role into centre, actuel from public.memberships where user_id = cible;
+  select organization_id, role, active into centre, actuel, actif from public.memberships where user_id = cible;
 
   if centre is null then
     -- Aucun rattachement : il faut choisir un centre, et le script refuse de
@@ -88,6 +89,16 @@ begin
     -- Le DDL est transactionnel sous Postgres : si la suite échoue, la
     -- désactivation est annulée avec le reste. Le déclencheur ne peut pas rester
     -- éteint derrière un échec.
+    --
+    -- Écarter le déclencheur écarte aussi sa règle du dernier administrateur
+    -- (20260922100000). Elle est donc reprise ici : sans administrateur actif,
+    -- plus personne ne change un rôle ni n'invite un administrateur depuis
+    -- l'application, et le centre est verrouillé de l'intérieur.
+    if actuel = 'ADMIN' and actif and private.active_administrators(centre) <= 1 then
+      raise exception
+        'Le compte % est le dernier administrateur actif du centre : nommez-en un autre avant de le passer en GESTIONNAIRE.',
+        compte;
+    end if;
     alter table public.memberships disable trigger membership_change;
     update public.memberships set role = 'GESTIONNAIRE', active = true
       where organization_id = centre and user_id = cible;
@@ -114,4 +125,4 @@ $$;
 --     join public.memberships m on m.user_id = u.id
 --     join public.organizations o on o.id = m.organization_id
 --     join public.teams t on t.id = m.team_id
---    where u.email = 'xav.robart@gmail.com';
+--    where u.email = 'gestionnaire@exemple.fr';

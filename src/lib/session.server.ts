@@ -3,7 +3,11 @@ import { connection } from "next/server";
 import { cache } from "react";
 import { taken } from "./data-mapping";
 import { createReadClient } from "./supabase/server";
+import { authOutage, outageCause } from "./supabase/outage";
 import type { Session } from "./session";
+
+/** Ce que lit l'agent quand la session n'a pas pu être vérifiée : il n'est pas déconnecté. */
+export const SESSION_UNVERIFIED = "La connexion n’a pas pu être vérifiée. Réessayez dans un instant.";
 
 // Returns null for a visitor without a session. Every
 // query below runs under RLS as the signed-in user: an empty result is the
@@ -36,7 +40,18 @@ async function read(): Promise<Session | null> {
   const supabase = await createReadClient();
   const {
     data: { user },
+    error,
   } = await supabase.auth.getUser();
+  /*
+   * Une panne d'Auth n'est pas une déconnexion. Rendre `null` ici faisait
+   * répondre « Votre session a expiré » à chaque action d'un agent toujours
+   * connecté. La frontière d'erreur, elle, dit « réessayez ». Le détail part
+   * au journal, pas à l'écran.
+   */
+  if (!user && authOutage(error)) {
+    console.error("Supabase Auth injoignable :", outageCause(error));
+    throw new Error(SESSION_UNVERIFIED);
+  }
   if (!user) return null;
 
   const [profile, membership] = await Promise.all([

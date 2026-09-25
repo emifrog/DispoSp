@@ -55,8 +55,11 @@ export function NoCampaign({ session, manages }: { session: AttachedSession; man
           <CalendarPlus size={22} />
           <h3>{manages ? "Ouvrir la première campagne" : "Que faire en attendant"}</h3>
           <p>
+            {/* L'écran Campagnes est lui-même derrière cet écran : il demande
+                une campagne pour s'afficher. L'y renvoyer menait en boucle ici.
+                La première s'ouvre donc hors de l'application. */}
             {manages
-              ? "Depuis l’écran Campagnes, « Nouvelle campagne » ouvre le mois, prépare les créneaux Jour et Nuit et invite les membres actifs de l’équipe."
+              ? "L’écran Campagnes n’est accessible qu’une fois une première campagne ouverte. Demandez à l’administrateur du projet de l’ouvrir : il exécute pour cela le script supabase/provisioning/premiere-campagne.sql dans l’éditeur SQL de Supabase. Les suivantes s’ouvriront depuis l’application."
               : "Rien de votre côté. Rapprochez-vous de votre encadrement si vous pensez devoir figurer dans une campagne en cours."}
           </p>
         </div>

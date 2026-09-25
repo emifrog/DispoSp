@@ -149,10 +149,15 @@ async function currentSubscription(): Promise<PushSubscription | null> {
 // il répond « non », et le client rectifie à l'hydratation. C'est la seule
 // plateforme qu'il faille reconnaître — elle est aussi la seule à refuser les
 // notifications hors de l'application installée.
+//
+// Depuis iPadOS 13, Safari se présente sur iPad comme un Mac de bureau : seul
+// l'écran tactile l'en distingue — aucun Mac n'en a.
 const useApple = () =>
   useSyncExternalStore(
     () => () => {},
-    () => /iPad|iPhone|iPod/.test(navigator.userAgent),
+    () =>
+      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1),
     () => false,
   );
 

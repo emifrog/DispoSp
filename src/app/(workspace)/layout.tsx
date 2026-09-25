@@ -16,8 +16,8 @@ const actorFor = (session: AttachedSession): Actor => ({
   id: session.userId,
   role: session.membership.role === "AGENT" ? "AGENT" : "MANAGER",
 });
-// The four roles of §2 travel separately: the business rules only ask whether
-// someone manages, the screens also need to know whether they administer.
+// Le rôle voyage aussi à part : les règles métier ne demandent que si quelqu'un
+// encadre, les écrans ont besoin de savoir s'il administre.
 const memberRoleOf = (session: AttachedSession): MemberRole =>
   memberRoles.includes(session.membership.role as MemberRole) ? (session.membership.role as MemberRole) : "AGENT";
 

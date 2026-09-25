@@ -10,8 +10,12 @@ export function crossSite(request: Request) {
   const origin = request.headers.get("origin");
   if (!origin) return false;
   // Derrière un hébergeur, `request.url` peut porter l'adresse interne ; l'hôte
-  // demandé par le navigateur est dans les en-têtes.
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  // demandé par le navigateur est dans les en-têtes. Chaque relais ajoute le
+  // sien à `x-forwarded-host` : seule la première valeur est celle du
+  // navigateur, et c'est aussi la seule que Next retient. Comparer l'en-tête
+  // entier refusait tout POST légitime derrière deux relais.
+  const forwarded = request.headers.get("x-forwarded-host")?.split(",")[0].trim();
+  const host = forwarded || request.headers.get("host");
   try {
     return new URL(origin).host !== host;
   } catch {

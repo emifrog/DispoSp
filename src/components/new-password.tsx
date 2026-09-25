@@ -140,6 +140,8 @@ export function NewPasswordForm({ variant = "reset" }: { variant?: keyof typeof 
                     type={visible ? "text" : "password"}
                     autoComplete="new-password"
                     disabled={status !== "ready"}
+                    aria-invalid={form.formState.errors.password ? true : undefined}
+                    aria-describedby={form.formState.errors.password ? "new-password-error" : undefined}
                     {...form.register("password")}
                   />
                   <button
@@ -154,7 +156,9 @@ export function NewPasswordForm({ variant = "reset" }: { variant?: keyof typeof 
                 </span>
               </div>
               {form.formState.errors.password && (
-                <p className="field-error">{form.formState.errors.password.message}</p>
+                <p id="new-password-error" className="field-error">
+                  {form.formState.errors.password.message}
+                </p>
               )}
               <label className="field">
                 Confirmation
@@ -164,12 +168,16 @@ export function NewPasswordForm({ variant = "reset" }: { variant?: keyof typeof 
                     type={visible ? "text" : "password"}
                     autoComplete="new-password"
                     disabled={status !== "ready"}
+                    aria-invalid={form.formState.errors.confirmation ? true : undefined}
+                    aria-describedby={form.formState.errors.confirmation ? "confirmation-error" : undefined}
                     {...form.register("confirmation")}
                   />
                 </span>
               </label>
               {form.formState.errors.confirmation && (
-                <p className="field-error">{form.formState.errors.confirmation.message}</p>
+                <p id="confirmation-error" className="field-error">
+                  {form.formState.errors.confirmation.message}
+                </p>
               )}
               {failure && (
                 <p className="field-error" role="alert">

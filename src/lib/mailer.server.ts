@@ -10,8 +10,18 @@ const MAX_PASSES = 20;
 /** Un service d'envoi qui ne répond pas en dix secondes ne répondra pas mieux en trente. */
 const TIMEOUT_MS = 10_000;
 
+/**
+ * Tout ce que l'envoi réclame, et pas seulement Resend : la file se lit sous
+ * la clé secrète du projet. Sans elle, chaque commande programmait un envoi
+ * qui levait aussitôt « non configuré », et le journal s'en remplissait sans
+ * qu'un seul message parte. Même règle que `pushMisconfiguration`.
+ */
+const REQUIRED = ["RESEND_API_KEY", "RESEND_FROM", "APP_URL", "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SECRET_KEY"];
+/** Les noms des variables absentes — des noms seulement, jamais leurs valeurs. */
+const missing = () => REQUIRED.filter(name => !process.env[name]);
+
 export function emailConfigured() {
-  return Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM && process.env.APP_URL);
+  return missing().length === 0;
 }
 
 /**
@@ -55,7 +65,7 @@ export async function dispatchEmails() {
   const from = process.env.RESEND_FROM;
   const appUrl = process.env.APP_URL;
   if (!key || !from || !appUrl || !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY)
-    throw new Error("Envoi des emails non configuré");
+    throw new Error(`Envoi des emails non configuré : ${missing().join(", ")} manquant(s)`);
   const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -63,7 +73,9 @@ export async function dispatchEmails() {
   let sent = 0;
   for (let pass = 0; pass < MAX_PASSES; pass++) {
     const { data, error } = await client.rpc("claim_email_deliveries", { batch: BATCH });
-    if (error) throw new Error("Réservation des envois impossible");
+    // Le message de la base, pour savoir où chercher : il part au journal du
+    // serveur, jamais à l'écran.
+    if (error) throw new Error(`Réservation des envois impossible : ${error.message}`);
     const jobs = (data ?? []) as (Pending & { lease: string })[];
     // Un message après l'autre : Resend limite le débit, et un lot parti en
     // parallèle ne ferait que provoquer les refus qu'on cherche à éviter.
@@ -74,7 +86,7 @@ export async function dispatchEmails() {
         token: job.lease,
         http_status: status,
       });
-      if (failure) throw new Error("Résultat d’envoi non enregistré");
+      if (failure) throw new Error(`Résultat d’envoi non enregistré : ${failure.message}`);
       processed++;
       if (status >= 200 && status < 300) sent++;
     }

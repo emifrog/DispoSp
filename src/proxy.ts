@@ -10,7 +10,10 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // `\.` et non `\.` : dans une chaîne, `\.` vaut `.`, et le motif laissait
-  // passer tout chemin finissant par « png » ou « ico » sans point devant.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
+  // Deux barres obliques inverses dans le source, pour une seule dans le motif :
+  // écrit `\.`, le point perdait son échappement dans la chaîne JavaScript et
+  // valait « n'importe quel caractère ». /tableau-de-bordpng échappait alors au
+  // garde, comme tout chemin finissant par « png » ou « ico » sans point devant.
+  // tests/proxy.test.ts compile ce motif comme Next le fait.
+  matcher: ["/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
 };

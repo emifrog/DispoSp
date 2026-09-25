@@ -1,9 +1,12 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { Button } from "@/components/ui/button";
 import { linkRoutes, type LinkKind } from "@/lib/auth-link";
 import { SIGN_IN_PATH } from "@/lib/supabase/config";
+
+export const metadata: Metadata = { title: "Continuer depuis le lien reçu" };
 
 /**
  * La page qu'ouvre un lien d'invitation ou de réinitialisation.

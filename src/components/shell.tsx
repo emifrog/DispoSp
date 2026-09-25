@@ -36,6 +36,14 @@ const managerNav = [
   { href: "/campagnes", label: "Campagnes", icon: Megaphone },
   { href: "/agents", label: "Agents & équipes", icon: Users },
 ];
+// Les écrans d'administration : la barre latérale les range sous leur propre
+// titre, et seul qui administre les voit.
+const adminNav = [
+  { href: "/demandes", label: "Demandes", icon: Inbox },
+  { href: "/statistiques", label: "Statistiques", icon: TrendingUp },
+  { href: "/historique", label: "Historique", icon: History },
+  { href: "/parametres", label: "Paramètres", icon: Settings2 },
+];
 // L'ordre compte deux fois : la barre latérale montre tout, la barre du bas sur
 // mobile ne garde que les quatre premiers. Notifications vient donc en dernier —
 // la cloche de la barre du haut y mène déjà, sur téléphone comme ailleurs.
@@ -70,9 +78,12 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
   const path = usePathname();
   const [menu, setMenu] = useState(false);
   const nav = actor.role === "MANAGER" ? managerNav : agentNav;
-  const managerOnly = [...managerNav.map(n => n.href), "/historique", "/parametres"].includes(path);
-  // §2 has four roles. A responsable manages their team but administers nothing,
-  // so the two administration entries would only lead to screens refusing them.
+  // Tous les écrans d'encadrement, administration comprise : « Demandes » et
+  // « Statistiques » manquaient, et un agent qui en tapait l'adresse voyait
+  // l'écran s'ouvrir. Les pages le renvoient aussi côté serveur ; ceci couvre
+  // la navigation déjà dans le navigateur.
+  const managerOnly = [...managerNav, ...adminNav].some(n => n.href === path);
+  const current = (href: string) => (path === href ? ("page" as const) : undefined);
   const space = roleLabels[memberRole].toUpperCase();
   const unread = state.notifications.filter(n => !n.readAt).length;
   // Une demande en attente bloque quelqu'un : elle se compte dans la barre,
@@ -105,7 +116,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
         <nav aria-label="Navigation principale">
           {nav.map(item => (
             <Link
-              aria-current={path === item.href ? "page" : undefined}
+              aria-current={current(item.href)}
               key={item.href}
               className={`nav-item ${path === item.href ? "active" : ""}`}
               href={item.href}
@@ -121,39 +132,21 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
           <>
             <span className="nav-caption nav-caption-second">ADMINISTRATION</span>
             <nav aria-label="Administration">
-              <Link
-                className={`nav-item ${path === "/demandes" ? "active" : ""}`}
-                href="/demandes"
-                onClick={() => setMenu(false)}
-              >
-                <Inbox size={19} />
-                Demandes
-                {pendingWithdrawals > 0 && <span className="nav-badge">{pendingWithdrawals}</span>}
-              </Link>
-              <Link
-                className={`nav-item ${path === "/statistiques" ? "active" : ""}`}
-                href="/statistiques"
-                onClick={() => setMenu(false)}
-              >
-                <TrendingUp size={19} />
-                Statistiques
-              </Link>
-              <Link
-                className={`nav-item ${path === "/historique" ? "active" : ""}`}
-                href="/historique"
-                onClick={() => setMenu(false)}
-              >
-                <History size={19} />
-                Historique
-              </Link>
-              <Link
-                className={`nav-item ${path === "/parametres" ? "active" : ""}`}
-                href="/parametres"
-                onClick={() => setMenu(false)}
-              >
-                <Settings2 size={19} />
-                Paramètres
-              </Link>
+              {adminNav.map(item => (
+                <Link
+                  aria-current={current(item.href)}
+                  key={item.href}
+                  className={`nav-item ${path === item.href ? "active" : ""}`}
+                  href={item.href}
+                  onClick={() => setMenu(false)}
+                >
+                  <item.icon size={19} />
+                  {item.label}
+                  {item.href === "/demandes" && pendingWithdrawals > 0 && (
+                    <span className="nav-badge">{pendingWithdrawals}</span>
+                  )}
+                </Link>
+              ))}
             </nav>
           </>
         )}
@@ -185,21 +178,13 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
           </div>
           <div className="breadcrumb">
             Espace de travail <span>/</span>{" "}
-            <strong>
-              {[
-                ...managerNav,
-                ...agentNav,
-                { href: "/demandes", label: "Demandes" },
-                { href: "/statistiques", label: "Statistiques" },
-                { href: "/historique", label: "Historique" },
-                { href: "/parametres", label: "Paramètres" },
-              ].find(n => n.href === path)?.label ?? "DispoSP"}
-            </strong>
+            <strong>{[...managerNav, ...agentNav, ...adminNav].find(n => n.href === path)?.label ?? "DispoSP"}</strong>
           </div>
           <div className="topbar-actions">
             {/* Everyone receives notices: a manager is an agent too, and it is
                 their own publications that reach them. */}
             <Link
+              aria-current={current("/notifications")}
               className={`bell ${path === "/notifications" ? "active" : ""}`}
               href="/notifications"
               aria-label={unread ? `Notifications, ${unread} non ${unread > 1 ? "lues" : "lue"}` : "Notifications"}
@@ -209,9 +194,9 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
             </Link>
             {/* Le rôle plutôt qu'un « Connecté » : l'agent sait qu'il est
                 connecté — il vient de saisir son mot de passe —, mais il ne
-                sait pas toujours ce que son rôle lui ouvre. Sur un téléphone,
-                le bandeau n'a pas la place : le rôle s'y lit dans le menu
-                (« Espace … »), en tête de la navigation. */}
+                sait pas toujours ce que son rôle lui ouvre. Sur un téléphone
+                aussi, plus serré : dans le menu seul, il ne se lisait qu'une
+                fois le menu ouvert. */}
             <span className={`role-tag ${roleTones[session.membership.role] ?? ""}`}>
               <span className="sr-only">Rôle : </span>
               {roleLabels[session.membership.role] ?? session.membership.role}
@@ -228,13 +213,14 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
             </form>
           </div>
         </header>
-        {/*<div className="context-banner">
-          {session.membership.organizationName} · {session.membership.teamName} — vos saisies sont enregistrées en base,
-          sous les droits de votre rôle.
-        </div>*/}
+        {/* À l'impression, un groupe d'en-tête de tableau, qui revient en haut
+            de chaque feuille ; le bandeau lui-même est l'élément qu'il
+            enveloppe, un tel groupe ne portant ni marge ni flex. */}
         <div className="print-header" aria-hidden="true">
-          <Brand width={132} />
-          <span>{state.organization.name}</span>
+          <div>
+            <Brand width={132} />
+            <span>{state.organization.name}</span>
+          </div>
         </div>
         <main id="main" tabIndex={-1}>
           <div className="campaign-context">
@@ -266,7 +252,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
           {actor.role === "AGENT" && managerOnly ? (
             <div className="empty-state">
               <ShieldCheck />
-              <h1>Espace responsable</h1>
+              <h1>Espace encadrement</h1>
               <p>Votre espace agent contient vos disponibilités et votre planning publié.</p>
               <Button asChild>
                 <Link href="/mes-disponibilites">Mes disponibilités</Link>
@@ -298,14 +284,10 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
             children
           )}
         </main>
-        {/*<footer className="page-footer">
-          <span>DispoSP · Plus loin, ensemble.</span>
-          <span>Horaires en heure de Paris</span>
-        </footer>*/}
       </div>
       <nav className="mobile-nav" aria-label="Navigation mobile">
         {nav.slice(0, 4).map(n => (
-          <Link key={n.href} href={n.href} className={path === n.href ? "active" : ""}>
+          <Link key={n.href} href={n.href} aria-current={current(n.href)} className={path === n.href ? "active" : ""}>
             <n.icon size={21} />
             <span>{n.label}</span>
           </Link>

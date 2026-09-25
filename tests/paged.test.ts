@@ -158,3 +158,85 @@ describe("Lecture page par page", () => {
     spy.mockRestore();
   });
 });
+
+describe("Lecture page par page pendant que la table change", () => {
+  /**
+   * Une ligne insérée en tête après la première page : les plages suivantes,
+   * calculées sur l'ancien compte, reprennent la dernière ligne de la page
+   * précédente. « Au moins autant que le compte » acceptait ce doublon — un
+   * agent apparaissait deux fois — et perdait la ligne nouvelle.
+   */
+  it("ne rend jamais une ligne deux fois quand une insertion décale les pages", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let all = Array.from({ length: 1023 }, (_, i) => ({ i }));
+    const requests: { from: number; count: boolean; fresh: boolean }[] = [];
+    const page = (from: number, to: number, request: { count: boolean; fresh: boolean }) => {
+      requests.push({ from, ...request });
+      const answer = { data: all.slice(from, to + 1), error: null, count: request.count ? all.length : null };
+      // L'insertion a lieu juste après la lecture de la première page.
+      if (requests.length === 1) all = [{ i: -1 }, ...all];
+      return Promise.resolve(answer);
+    };
+    const rows = await paged<{ i: number }>("membres", 500, page, row => String(row.i));
+    const ids = rows.map(r => r.i);
+    expect(new Set(ids).size).toBe(ids.length);
+    // La relecture voit la table telle qu'elle est devenue, nouvelle ligne comprise.
+    expect(ids).toEqual(all.map(r => r.i));
+    // Et elle s'est faite sans la mémorisation de fetch, qui aurait rendu
+    // la première page d'avant l'insertion.
+    expect(requests.filter(r => r.fresh).length).toBeGreaterThan(0);
+    expect(requests.filter(r => r.fresh).every(r => r.count)).toBe(true);
+    spy.mockRestore();
+  });
+
+  it("relit quand une ligne a disparu pendant la lecture, au lieu de rendre un trou", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let all = Array.from({ length: 1200 }, (_, i) => ({ i }));
+    let calls = 0;
+    const page = (from: number, to: number, request: { count: boolean }) => {
+      const answer = { data: all.slice(from, to + 1), error: null, count: request.count ? all.length : null };
+      if (++calls === 1) all = all.filter(r => r.i !== 3);
+      return Promise.resolve(answer);
+    };
+    const rows = await paged<{ i: number }>("disponibilités", 500, page);
+    expect(rows.map(r => r.i)).toEqual(all.map(r => r.i));
+    spy.mockRestore();
+  });
+
+  // Le compte ne sert qu'à la première page : les plages en viennent. Le
+  // redemander à chaque page coûtait un dénombrement de la table par page.
+  it("ne demande le compte exact qu’à la première page", async () => {
+    const asked: { from: number; count: boolean }[] = [];
+    const all = Array.from({ length: 1700 }, (_, i) => ({ i }));
+    const page = (from: number, to: number, request: { count: boolean }) => {
+      asked.push({ from, count: request.count });
+      return Promise.resolve({ data: all.slice(from, to + 1), error: null, count: request.count ? all.length : null });
+    };
+    expect(await paged<{ i: number }>("disponibilités", 500, page)).toHaveLength(1700);
+    expect(asked).toEqual([
+      { from: 0, count: true },
+      { from: 500, count: false },
+      { from: 1000, count: false },
+      { from: 1500, count: false },
+    ]);
+  });
+
+  it("écarte un doublon de la lecture à la file, en gardant la lecture la plus récente", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    // Le serveur plafonne à 100 : lecture à la file. Une insertion en tête
+    // après la première page fait revenir la ligne 99 en tête de la suivante.
+    let all = Array.from({ length: 250 }, (_, i) => ({ id: i, v: "avant" }));
+    let calls = 0;
+    const page = (from: number, to: number) => {
+      const size = Math.min(to - from + 1, 100);
+      const answer = { data: all.slice(from, from + size), error: null, count: all.length };
+      if (++calls === 1) all = [{ id: -1, v: "nouveau" }, ...all.map(r => ({ ...r, v: "après" }))];
+      return Promise.resolve(answer);
+    };
+    const rows = await paged<{ id: number; v: string }>("membres", 500, page, row => String(row.id));
+    const ids = rows.map(r => r.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(rows.find(r => r.id === 99)?.v).toBe("après");
+    spy.mockRestore();
+  });
+});

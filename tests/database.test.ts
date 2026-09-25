@@ -1019,41 +1019,28 @@ describe("File d’envoi ouverte par 0006", () => {
     ]);
   });
 
-  it("ne livre la file qu’à qui encadre le centre", async () => {
-    await be(agent);
-    expect((await live.query("select * from public.pending_notifications($1)", [org])).rows).toHaveLength(0);
-    await be(manager);
-    const { rows } = await live.query<{ email: string; kind: string; subject: string }>(
-      "select email, kind, subject from public.pending_notifications($1)",
-      [org],
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ email: "nouvelle@example.org", kind: "CAMPAIGN_OPENED" });
-  });
-
-  it("marque comme envoyé, une seule fois, et seulement pour son centre", async () => {
-    await be(manager);
-    const ids = (await live.query<{ id: string }>("select id from public.pending_notifications($1)", [org])).rows.map(
-      r => r.id,
-    );
-    expect(
-      (await live.query<{ mark_notifications_sent: number }>("select public.mark_notifications_sent($1)", [ids]))
-        .rows[0].mark_notifications_sent,
-    ).toBe(1);
-    // Rejouer n’envoie rien de plus : la file est vide.
-    expect(
-      (await live.query<{ mark_notifications_sent: number }>("select public.mark_notifications_sent($1)", [ids]))
-        .rows[0].mark_notifications_sent,
-    ).toBe(0);
-    expect((await live.query("select * from public.pending_notifications($1)", [org])).rows).toHaveLength(0);
-    // Un agent ne peut pas étouffer un envoi qui ne le concerne pas.
+  // Depuis 20260925180000, la file de 0006 n'est plus joignable par une
+  // session : l'application passe par claim_email_deliveries(), réservée au
+  // serveur (voir « File d’emails réservée par le serveur »). Un gestionnaire
+  // y lisait les avis en attente de son centre, et pouvait marquer la file
+  // envoyée — les emails ne partaient plus.
+  it("ne livre plus la file à une session, pas même d’encadrement", async () => {
     await live.exec("reset role");
-    await live.query("update public.notifications set sent_at = null");
-    await be(agent);
+    const ids = (
+      await live.query<{ id: string }>("select id from public.notifications where organization_id=$1", [org])
+    ).rows.map(r => r.id);
+    expect(ids).toHaveLength(1);
+    for (const who of [agent, manager]) {
+      await be(who);
+      await expect(live.query("select * from public.pending_notifications($1)", [org])).rejects.toThrow(
+        /permission denied/,
+      );
+      await expect(live.query("select public.mark_notifications_sent($1)", [ids])).rejects.toThrow(/permission denied/);
+    }
+    await live.exec("reset role");
     expect(
-      (await live.query<{ mark_notifications_sent: number }>("select public.mark_notifications_sent($1)", [ids]))
-        .rows[0].mark_notifications_sent,
-    ).toBe(0);
+      (await live.query("select email_status, sent_at from public.notifications where organization_id=$1", [org])).rows,
+    ).toEqual([{ email_status: "pending", sent_at: null }]);
   });
 
   it("ne relance que ceux qui n’ont pas validé, et pas deux fois", async () => {
@@ -2848,6 +2835,64 @@ describe("Retrait d’un compte — désistements, gardes affectées, invitation
     await live.query("delete from auth.users where id=$1", [manager]);
   });
 
+  // Analyse du 25 septembre : réattribuer decided_by déclenchait l'audit des
+  // désistements, qui inscrivait une seconde « décision » REFUSED, sans auteur,
+  // datée du retrait — une décision que personne n'a prise ce jour-là.
+  it("passe les décisions au relais sans inscrire au journal une décision que personne n’a prise", async () => {
+    const decisions = () => count("from public.audit_logs where entity='shift_withdrawal'");
+    const before = await decisions();
+    await remove("chef@example.org");
+    expect((await live.query("select decided_by from public.shift_withdrawals")).rows).toEqual([{ decided_by: admin }]);
+    expect(await decisions()).toBe(before);
+    // Le déclencheur est rétabli : une vraie décision s'inscrit toujours.
+    expect((await live.query("select tgenabled from pg_trigger where tgname = 'audit_withdrawals'")).rows).toEqual([
+      { tgenabled: "O" },
+    ]);
+    await live.exec("update public.shift_withdrawals set state='PENDING', decided_by=null, decided_at=null");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [admin]);
+    await live.exec("set role authenticated");
+    await live.exec("update public.shift_withdrawals set state='ACCEPTED'");
+    await live.exec("reset role");
+    expect(
+      (await live.query("select actor_id from public.audit_logs where entity='shift_withdrawal' and action='ACCEPTED'"))
+        .rows,
+    ).toEqual([{ actor_id: admin }]);
+  });
+
+  // Analyse du 25 septembre : une invitation en attente vers la même adresse,
+  // dans un autre centre, survivait au retrait avec nom, téléphone et matricule.
+  it("efface aussi les invitations en attente vers son adresse, dans tous les centres", async () => {
+    const elsewhere = "10000000-0000-0000-0000-0000000000e9";
+    const yankee = "20000000-0000-0000-0000-0000000000e9";
+    const chiefY = "30000000-0000-0000-0000-0000000000e9";
+    await live.exec(`
+      insert into public.organizations(id,name) values ('${elsewhere}','Centre Y');
+      insert into public.teams(id,organization_id,name) values ('${yankee}','${elsewhere}','Yankee');
+      insert into auth.users(id,email,email_confirmed_at) values ('${chiefY}','chef.y@example.org',now());
+      insert into public.profiles(user_id,display_name) values ('${chiefY}','Chef Y');
+      insert into public.memberships values ('${elsewhere}','${chiefY}','${yankee}','GESTIONNAIRE',true);
+      -- Posée avant que l'agent confirme son adresse ici : accept_invitation_now
+      -- la refuserait aujourd'hui, pas une invitation déjà là.
+      alter table public.invitations disable trigger accept_invitation_now;
+      insert into public.invitations(organization_id,team_id,email,display_name,role,invited_by,phone,matricule)
+        values ('${elsewhere}','${yankee}','agent@example.org','Agent','AGENT','${chiefY}','0611111111','Y-1'),
+               ('${elsewhere}','${yankee}','autre.personne@example.org','Autre','AGENT','${chiefY}',null,null);
+      alter table public.invitations enable trigger accept_invitation_now;`);
+    await remove("agent@example.org");
+    expect(await count("from public.invitations where email='agent@example.org'")).toBe(0);
+    // Ni dans les invitations, ni dans la ligne que leur effacement inscrit au journal.
+    expect(
+      await count(
+        `from public.audit_logs where old_value::text like '%0611111111%' or old_value::text like '%Y-1%'
+           or new_value::text like '%0611111111%' or entity_id='agent@example.org'`,
+      ),
+    ).toBe(0);
+    // L'invitation d'une autre adresse, dans le même centre, reste.
+    expect(
+      (await live.query("select email from public.invitations where organization_id=$1", [elsewhere])).rows,
+    ).toEqual([{ email: "autre.personne@example.org" }]);
+  });
+
   // RGPD, 23 septembre : le déclencheur de saisie refuse toute suppression sur
   // une campagne close — y compris celle du script. Un agent qui avait répondu
   // à une campagne passée, soit presque tous, ne pouvait pas être retiré.
@@ -2988,9 +3033,12 @@ describe("File d’emails réservée par le serveur", () => {
       { email_status: "sending", email_attempts: 1 },
       { email_status: "skipped", email_attempts: 0 },
     ]);
-    // Une session d'encadrement ne voit plus la ligne en cours d'envoi non plus.
+    // Une session d'encadrement ne voit pas la file du tout : depuis
+    // 20260925180000, l'ancienne fonction de 0006 lui est fermée.
     await be(manager);
-    expect((await live.query("select id from public.pending_notifications($1)", [org])).rows).toHaveLength(0);
+    await expect(live.query("select id from public.pending_notifications($1)", [org])).rejects.toThrow(
+      /permission denied/,
+    );
   });
 
   it("marque envoyé sur 2xx, reprend sur 5xx, abandonne sur 4xx", async () => {
@@ -4081,5 +4129,256 @@ describe("Migration 20260925150000 — gardes d’application", () => {
     const early = await upTo(target - 1);
     await expect(early.exec(migration())).rejects.toThrow("20260925090000_participants_en_cours.sql");
     await early.close();
+  }, 90000);
+});
+
+// Points mineurs de l'analyse du 25 septembre, corrigés par 20260925180000.
+// Chacun reproduit le défaut tel que l'audit l'avait constaté
+// (.local/audit-20260925/sql/open-items.test.ts), puis vérifie ce qui reste
+// permis.
+describe("Correctifs mineurs du 25 septembre", () => {
+  const org = "10000000-0000-0000-0000-0000000000f5";
+  const team = "20000000-0000-0000-0000-0000000000f5";
+  const manager = "30000000-0000-0000-0000-0000000000f5";
+  const agent = "30000000-0000-0000-0000-0000000000f6";
+  const campaign = "40000000-0000-0000-0000-0000000000f5";
+  const schedule = "60000000-0000-0000-0000-0000000000f5";
+  const shift = "70000000-0000-0000-0000-0000000000f5";
+  let live: PGlite;
+  const be = async (id: string | null) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id ?? ""]);
+    if (id) await live.exec("set role authenticated");
+  };
+  const seed = `
+    insert into auth.users(id,email,email_confirmed_at) values
+      ('${manager}','chef@f5.test',now()), ('${agent}','agent@f5.test',now());
+    insert into public.profiles(user_id,display_name) values ('${manager}','Chef'), ('${agent}','Agent');
+    insert into public.organizations(id,name) values ('${org}','Centre F5');
+    insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+    insert into public.memberships values
+      ('${org}','${manager}','${team}','GESTIONNAIRE',true),
+      ('${org}','${agent}','${team}','AGENT',true);
+    insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+      values ('${campaign}','${org}','${team}','Novembre','2099-11-01','2099-11-01',now()-interval '1 day',now()+interval '10 days');
+    insert into public.schedules(id,organization_id,campaign_id,team_id) values ('${schedule}','${org}','${campaign}','${team}');
+    insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code,published_revision,published_at)
+      values ('${shift}','${org}','${schedule}','2099-11-01','DAY',1,now());
+    insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,revision,status,assigned_by)
+      values ('${org}','${shift}','${agent}',1,'CONFIRMED','${manager}');`;
+  const requirement = (total: number, minima: Record<string, number>) =>
+    live.query("select public.set_staffing_requirement($1,'2099-11-01','DAY',$2,$3)", [
+      campaign,
+      total,
+      JSON.stringify(minima),
+    ]);
+  const requirementState = async () => {
+    await be(null);
+    const headcount = (await live.query<{ headcount: number }>("select headcount from public.staffing_requirements"))
+      .rows;
+    const minima = (
+      await live.query<{ name: string; minimum: number }>(
+        `select q.name, rq.minimum from public.staffing_requirement_qualifications rq
+           join public.qualifications q on q.id = rq.qualification_id order by q.name`,
+      )
+    ).rows;
+    return { headcount, minima };
+  };
+
+  beforeEach(async () => {
+    live = await freshDatabase();
+    await live.exec(seed);
+  }, 30000);
+  afterEach(async () => {
+    await live.close();
+  });
+
+  it("refuse à l’encadrement de retirer la demande d’un agent à sa place", async () => {
+    await be(agent);
+    await live.query(
+      "insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id,reason) values ($1,$2,$3,'Empêché')",
+      [org, shift, agent],
+    );
+    await be(manager);
+    await expect(
+      live.query("update public.shift_withdrawals set state='CANCELLED' where user_id=$1", [agent]),
+    ).rejects.toThrow("row-level security");
+    await be(null);
+    expect((await live.query("select state from public.shift_withdrawals")).rows).toEqual([{ state: "PENDING" }]);
+    // Trancher reste permis, et retirer reste le geste de l'agent.
+    await be(manager);
+    await live.query("update public.shift_withdrawals set state='REFUSED' where user_id=$1", [agent]);
+    await be(agent);
+    await live.query(
+      "insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id,reason) values ($1,$2,$3,'Empêché, encore')",
+      [org, shift, agent],
+    );
+    await live.query("update public.shift_withdrawals set state='CANCELLED' where user_id=$1 and state='PENDING'", [
+      agent,
+    ]);
+    await be(null);
+    expect((await live.query("select state, decided_by from public.shift_withdrawals order by state")).rows).toEqual([
+      { state: "CANCELLED", decided_by: null },
+      { state: "REFUSED", decided_by: manager },
+    ]);
+  });
+
+  it("ferme l’ancienne file d’emails à toute session", async () => {
+    await be(null);
+    const rights = (
+      await live.query<{ fn: string; authenticated: boolean; anon: boolean }>(
+        `select p.proname as fn,
+                has_function_privilege('authenticated', p.oid, 'execute') as authenticated,
+                has_function_privilege('anon', p.oid, 'execute') as anon
+           from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname in ('pending_notifications', 'mark_notifications_sent')
+          order by 1`,
+      )
+    ).rows;
+    expect(rights).toEqual([
+      { fn: "mark_notifications_sent", authenticated: false, anon: false },
+      { fn: "pending_notifications", authenticated: false, anon: false },
+    ]);
+  });
+
+  it("ne laisse aucune fonction à anon, même sous les privilèges par défaut de Supabase", async () => {
+    // Supabase accorde par défaut à anon l'exécution de toute fonction créée
+    // dans public : seul un retrait nommé la lui ôte. Le montage des autres
+    // parcours n'émule pas ce défaut, d'où cette base-ci.
+    const supabase = new PGlite();
+    await supabase.exec(baseAuthSchema);
+    await supabase.exec(`
+      alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+      alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
+      alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+      grant usage on schema public to anon;`);
+    for (const m of MIGRATIONS)
+      await supabase.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    const open = (
+      await supabase.query<{ fn: string }>(
+        `select p.oid::regprocedure::text as fn from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname in ('public', 'private') and has_function_privilege('anon', p.oid, 'execute') order by 1`,
+      )
+    ).rows.map(row => row.fn);
+    expect(open).toEqual([]);
+    // Les deux que l'audit avait relevées restent ouvertes à une session.
+    expect(
+      (
+        await supabase.query<{ member: boolean; requirement: boolean }>(
+          `select has_function_privilege('authenticated', 'public.save_member(uuid,uuid,uuid,text,boolean,text,text,text,text,text,text[])', 'execute') as member,
+                  has_function_privilege('authenticated', 'public.set_staffing_requirement(uuid,date,text,integer,jsonb)', 'execute') as requirement`,
+        )
+      ).rows,
+    ).toEqual([{ member: true, requirement: true }]);
+    await supabase.close();
+  }, 60000);
+
+  it("refuse de baisser l’effectif sous un minimum par une mise à jour directe", async () => {
+    await be(manager);
+    await requirement(3, { SAP: 2 });
+    await expect(
+      live.query("update public.staffing_requirements set headcount=1 where campaign_id=$1", [campaign]),
+    ).rejects.toThrow("Headcount is below a qualification minimum");
+    expect(await requirementState()).toEqual({ headcount: [{ headcount: 3 }], minima: [{ name: "SAP", minimum: 2 }] });
+    // Égal au minimum, ou au-dessus : permis.
+    await be(manager);
+    await live.query("update public.staffing_requirements set headcount=2 where campaign_id=$1", [campaign]);
+    await live.query("update public.staffing_requirements set headcount=6 where campaign_id=$1", [campaign]);
+    expect((await requirementState()).headcount).toEqual([{ headcount: 6 }]);
+  });
+
+  it("laisse set_staffing_requirement baisser l’effectif et le minimum d’un même geste", async () => {
+    await be(manager);
+    await requirement(3, { SAP: 2 });
+    await requirement(1, { SAP: 1 });
+    expect(await requirementState()).toEqual({ headcount: [{ headcount: 1 }], minima: [{ name: "SAP", minimum: 1 }] });
+    // Baisser l'effectif en retirant le minimum.
+    await be(manager);
+    await requirement(4, { SAP: 4 });
+    await requirement(1, {});
+    expect(await requirementState()).toEqual({ headcount: [{ headcount: 1 }], minima: [] });
+    // Le refus d'un minimum trop haut reste entier : rien ne change.
+    await be(manager);
+    await requirement(3, { SAP: 2 });
+    await expect(requirement(1, { SAP: 2 })).rejects.toThrow("Qualification minimum exceeds the required headcount");
+    expect(await requirementState()).toEqual({ headcount: [{ headcount: 3 }], minima: [{ name: "SAP", minimum: 2 }] });
+  });
+
+  it("refuse une seconde campagne du même mois qui ne commencerait pas le premier", async () => {
+    await be(manager);
+    await expect(
+      live.query(
+        `insert into public.availability_campaigns(organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+         values ($1,$2,'Novembre bis','2099-11-02','2099-11-30',now(),now()+interval '1 day')`,
+        [org, team],
+      ),
+    ).rejects.toThrow("availability_campaigns_starts_on_first_day");
+    await be(null);
+    expect(
+      (await live.query<{ n: number }>("select count(*)::int as n from public.availability_campaigns")).rows[0].n,
+    ).toBe(1);
+  });
+
+  it("nettoie les noms de qualification, sans fantôme ni doublon, et refuse un nom vide", async () => {
+    await be(manager);
+    await requirement(4, { SAP: 1 });
+    await requirement(4, { "SAP ": 1, " SAP": 2, "Chef\t": 1 });
+    expect(await requirementState()).toEqual({
+      headcount: [{ headcount: 4 }],
+      minima: [
+        { name: "Chef", minimum: 1 },
+        { name: "SAP", minimum: 2 },
+      ],
+    });
+    expect((await live.query("select name from public.qualifications order by name")).rows).toEqual([
+      { name: "Chef" },
+      { name: "SAP" },
+    ]);
+    await be(manager);
+    await expect(requirement(4, { "  ": 1 })).rejects.toThrow("Qualification name is empty");
+    expect((await requirementState()).minima).toHaveLength(2);
+  });
+});
+
+describe("Migration 20260925180000 — gardes d’application", () => {
+  const target = MIGRATIONS.indexOf("20260925180000_correctifs_mineurs.sql");
+  const migration = () =>
+    readFileSync(new URL(`../supabase/migrations/${MIGRATIONS[target]}`, import.meta.url), "utf8");
+  const upTo = async (count: number) => {
+    const db = new PGlite();
+    await db.exec(baseAuthSchema);
+    for (const m of MIGRATIONS.slice(0, count))
+      await db.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    return db;
+  };
+
+  it("refuse un second passage et un passage avant sa dépendance", async () => {
+    expect(target).toBeGreaterThan(0);
+    const applied = await upTo(target + 1);
+    await expect(applied.exec(migration())).rejects.toThrow("déjà été appliquée");
+    await applied.close();
+    const early = await upTo(target - 1);
+    await expect(early.exec(migration())).rejects.toThrow("20260925150000_desistements_notification.sql");
+    await early.close();
+  }, 90000);
+
+  it("ne s’applique pas sur une base qui porte une campagne commencée en cours de mois, et dit pourquoi", async () => {
+    const org = "10000000-0000-0000-0000-0000000000f7";
+    const team = "20000000-0000-0000-0000-0000000000f7";
+    const db = await upTo(target);
+    await db.exec(`
+      insert into public.organizations(id,name) values ('${org}','Centre F7');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.availability_campaigns(organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at) values
+        ('${org}','${team}','Novembre','2099-11-01','2099-11-30',now(),now()+interval '1 day'),
+        ('${org}','${team}','Novembre bis','2099-11-02','2099-11-30',now(),now()+interval '1 day');`);
+    await expect(db.exec(migration())).rejects.toThrow("ne commence pas le premier du mois");
+    // Rien n'a été appliqué : la transaction est annulée en entier, comme dans
+    // l'éditeur SQL, qui la clôt après le refus.
+    await db.exec("rollback");
+    expect((await db.query("select to_regproc('private.check_requirement_headcount') as fn")).rows).toEqual([
+      { fn: null },
+    ]);
+    await db.close();
   }, 90000);
 });

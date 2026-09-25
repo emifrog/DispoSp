@@ -19,8 +19,17 @@
   --subtle: #5f6e84;
   --border: #e6ebf3;
   --background: #f6f8fc;
-  --green: #189271;
-  --red: #d75655;
+  /* Le vert et le rouge des textes d'état — une erreur de formulaire, une
+     qualification atteinte ou manquante. Ils étaient à 3,9:1 sur le blanc ;
+     assombris, ils passent 6,2 et 5,4. Le rouge sert aussi de fond à la
+     pastille de la cloche, dont le blanc gagne d'autant. */
+  --green: #1b6e4f;
+  --red: #c0392f;
+  /* L'anneau de focus. Le bleu clair d'avant ne faisait que 2,3:1 sur le blanc,
+     sous les 3:1 qu'exige un indicateur non textuel. Celui-ci passe 4,3 sur le
+     blanc, 4,0 sur le fond de page et 3,4 sur le bleu nuit de la barre
+     latérale : une seule teinte suffit aux trois. */
+  --focus: #2f74f0;
 }
 * {
   box-sizing: border-box;
@@ -71,7 +80,7 @@ svg {
   flex-shrink: 0;
 }
 :focus-visible {
-  outline: 3px solid #79aaff;
+  outline: 3px solid var(--focus);
   outline-offset: 3px;
 }
 input,
@@ -177,13 +186,6 @@ label {
   display: block;
   color: #edf3ff;
   font-size: 12px;
-}
-.workspace small {
-  color: #8ba1be;
-  font-size: 11px;
-}
-.workspace > svg {
-  margin-left: auto;
 }
 .nav-caption {
   font-size: 9px;
@@ -325,12 +327,6 @@ label {
   color: white;
   background: var(--navy);
 }
-.role-switch select {
-  border: 0;
-  padding: 5px 18px 5px 6px;
-  font-size: 11px;
-  background: #f7f9fc;
-}
 .topbar-divider {
   height: 28px;
   width: 1px;
@@ -351,23 +347,6 @@ label {
 .user-name strong {
   display: block;
   font-size: 12px;
-}
-.context-banner {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  background: #edf3ff;
-  border-bottom: 1px solid #e0eafb;
-  padding: 7px 36px;
-  font-size: 10px;
-  color: var(--muted);
-}
-.context-banner a {
-  display: flex;
-  align-items: center;
-  min-height: 26px;
-  gap: 5px;
-  color: #356db5;
 }
 .main-shell main {
   max-width: 1560px;
@@ -431,7 +410,7 @@ label {
   line-height: 1.3;
 }
 .page-heading p {
-  color: #64758c;
+  color: var(--muted);
   font-size: 12.5px;
   margin-top: 6px;
 }
@@ -480,7 +459,7 @@ label {
   color: var(--blue);
 }
 .button-danger {
-  color: #c74649;
+  color: #b3262e;
   background: #fff0f0;
   border-color: #f8d4d4;
 }
@@ -536,7 +515,7 @@ label {
   white-space: nowrap;
 }
 .pill-green {
-  color: #21846b;
+  color: #1b6e4f;
   background: #eaf7f1;
 }
 .pill-blue {
@@ -548,7 +527,7 @@ label {
   background: #edf1f6;
 }
 .pill-orange {
-  color: #b47b2e;
+  color: #8a5a0e;
   background: #fff4e4;
 }
 /* Ce qui manque et qui a une échéance, pas ce qui est cassé : la maquette la
@@ -1031,9 +1010,11 @@ label {
 .equity-table tbody tr:last-child td {
   border-bottom: none;
 }
-/* A zero is context, not news: it should not compete with the figures. */
+/* Un zéro est un contexte, pas une nouvelle : il ne rivalise pas avec les
+   chiffres. Il reste pourtant un chiffre à lire — le gris pâle d'avant tombait
+   à 1,8:1 ; celui des légendes suffit à l'effacer. */
 .equity-table td.nil {
-  color: #b6c1cf;
+  color: var(--subtle);
 }
 .heatmap-scroll {
   overflow-x: auto;
@@ -1093,6 +1074,27 @@ label {
 .heatmap-cell small {
   font-size: 8px;
   font-weight: 400;
+}
+/* Le niveau dit par un signe, pas seulement par la teinte : ✓ couvert, = sans
+   marge, − effectif manquant, Q qualification manquante. Un « 8/8 » en rouge,
+   pour qui ne distingue pas le rouge du vert, ressemblait à un créneau couvert.
+   Dans la couleur du texte de la case, donc au même contraste. */
+.heatmap-cell {
+  position: relative;
+}
+.heatmap-glyph {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1;
+}
+.coverage-legend b {
+  font-weight: 700;
+  min-width: 1ch;
+  text-align: center;
 }
 .panel-footnote {
   border-top: 1px solid #eff2f7;
@@ -1244,19 +1246,19 @@ label {
   font-size: 10px;
   font-weight: 650;
   background: #edf2fb;
-  color: #5e7faa;
+  color: #3f5f8c;
 }
 .avatar-1 {
   background: #f0ecf9;
-  color: #8a74b6;
+  color: #62489c;
 }
 .avatar-2 {
   background: #fbeee5;
-  color: #ae8973;
+  color: #80533a;
 }
 .avatar-3 {
   background: #e9f2ef;
-  color: #739a8f;
+  color: #3b6a5c;
 }
 .next-step {
   display: flex;
@@ -1313,13 +1315,6 @@ label {
 /* Réservé au papier : à l'écran, la marque est déjà dans la barre latérale. */
 .print-header {
   display: none;
-}
-.page-footer {
-  padding: 0 36px 24px;
-  font-size: 9px;
-  color: var(--subtle);
-  display: flex;
-  justify-content: space-between;
 }
 .mobile-only,
 .mobile-nav {
@@ -1554,7 +1549,7 @@ label {
   gap: 9px;
   background: #fff5eb;
   border: 1px solid #f7e3cd;
-  color: #af7c43;
+  color: #8a5a0e;
   border-radius: 7px;
   padding: 12px 14px;
   margin-bottom: 18px;
@@ -1565,7 +1560,7 @@ label {
   gap: 9px;
   align-items: center;
   background: #eaf7f0;
-  color: #368a6b;
+  color: #1b6e4f;
   padding: 12px;
   border-radius: 7px;
   font-size: 12px;
@@ -1823,7 +1818,7 @@ label {
   outline: none;
 }
 .search-field:focus-within {
-  outline: 2px solid #8bb6ff;
+  outline: 2px solid var(--focus);
 }
 .planning-grid .search-field {
   margin: 0 15px 13px;
@@ -1857,6 +1852,11 @@ label {
   color: var(--subtle);
   margin: 2px 0 6px;
 }
+/* La cause d'une affectation qui ne passera pas la publication. La règle
+   ci-dessus, plus spécifique que `.text-red`, l'écrivait en gris. */
+.agent-info > small.text-red {
+  color: var(--red);
+}
 .qualification-tags {
   display: flex;
   flex-wrap: wrap;
@@ -1871,11 +1871,11 @@ label {
 }
 .qualification-tags .chief {
   background: #f2ecfc;
-  color: #9b77c4;
+  color: #6b3fa6;
 }
 .qualification-tags .driver {
   background: #fff2e7;
-  color: #bd905c;
+  color: #8a5a0e;
 }
 .agent-card .button {
   flex-shrink: 0;
@@ -2213,12 +2213,16 @@ label {
   white-space: nowrap;
   padding: 3px 5px;
 }
-.responded {
-  color: #539b80;
+/* Rattachées à la pastille de la matrice : la classe nue `.pending` teintait
+   aussi la carte « Réponse non validée » de la vue par journée, dont les noms
+   s'écrivaient en beige sur beige — 2,5:1. Les deux pastilles prennent le vert
+   et l'ambre des niveaux de couverture, au-dessus de 5,5:1. */
+.response-dot.responded {
+  color: #1b6e4f;
   background: #eef9f3;
 }
-.pending {
-  color: #b89a66;
+.response-dot.pending {
+  color: #8a5a0e;
   background: #fff7e9;
 }
 .availability-table tfoot td {
@@ -3372,9 +3376,6 @@ fieldset.field legend {
   .topbar {
     padding: 0 25px;
   }
-  .context-banner {
-    padding: 7px 25px;
-  }
   .breadcrumb {
     display: none;
   }
@@ -3409,11 +3410,6 @@ fieldset.field legend {
   .response-overview {
     gap: 20px;
     padding: 10px 22px 22px;
-  }
-  .donut {
-    width: 115px;
-    height: 115px;
-    padding: 10px;
   }
   .planning-grid {
     grid-template-columns: 1fr 1fr;
@@ -3520,33 +3516,30 @@ fieldset.field legend {
   .topbar-actions {
     gap: 9px;
   }
-  /* Sur un téléphone, le bandeau ne garde que le menu, le logo, la cloche et
-     les initiales. Six éléments s'y serraient ; le rôle se lit dans le menu
-     (« Espace … »), et la déconnexion y a son bouton. */
+  /* Sur un téléphone, le bandeau ne garde que le menu, le logo, la cloche, le
+     rôle et les initiales ; la déconnexion a son bouton dans le menu. Le rôle
+     y restait masqué, à lire dans le menu fermé : c'est pourtant sur le
+     téléphone qu'on se demande si le compte ouvert est le bon. Il reste donc,
+     plus serré. */
   .user-name,
   .topbar-divider,
-  .role-tag,
   .topbar-signout {
     display: none;
   }
-  .role-switch select {
-    font-size: 10px;
-    max-width: 115px;
+  .role-tag {
+    font-size: 9px;
+    padding: 4px 6px;
   }
   .user-avatar {
     width: 30px;
     height: 30px;
     font-size: 10px;
   }
-  .context-banner {
-    padding: 8px 18px;
-    font-size: 9px;
-  }
-  .context-banner a {
-    display: none;
-  }
+  /* Le bas réserve la hauteur de la barre de navigation fixe : c'est le pied de
+     page, retiré depuis, qui la réservait, et la dernière ligne d'un écran
+     passait dessous. */
   .main-shell main {
-    padding: 20px 18px 30px;
+    padding: 20px 18px calc(95px + env(safe-area-inset-bottom));
   }
   .campaign-context {
     justify-content: space-between;
@@ -3679,22 +3672,8 @@ fieldset.field legend {
   .response-counts > a {
     font-size: 10px;
   }
-  .donut {
-    width: 104px;
-    height: 104px;
-    padding: 9px;
-  }
-  .donut strong {
-    font-size: 25px;
-  }
   .pending-list {
     margin: 0 16px;
-  }
-  .page-footer {
-    padding: 0 18px 95px;
-  }
-  .page-footer > span:last-child {
-    display: none;
   }
   .mobile-nav {
     position: fixed;
@@ -4136,9 +4115,13 @@ fieldset.field legend {
    planning personnel, eux, n'ont pas ce problème.
    --------------------------------------------------------------------------- */
 @media print {
+  /* La barre du bas aussi : une feuille A4 en portrait mesure moins de 760 px
+     de large, et la mise en page mobile s'appliquait au papier — la barre,
+     fixe, revenait au pied de chaque page. */
   .sidebar,
   .topbar,
-  .context-banner,
+  .mobile-nav,
+  .busy-bar,
   .skip-link,
   .campaign-context,
   .table-filters,
@@ -4150,10 +4133,27 @@ fieldset.field legend {
     display: none !important;
   }
   body,
-  .app-shell,
-  .main-shell {
+  .app-shell {
     display: block;
     background: #fff;
+  }
+  /* Sans la barre latérale, sa marge restait : 215 ou 242 px de blanc à
+     gauche de chaque page, retirés à la largeur utile.
+     Et la page devient un tableau d'une colonne, dont l'en-tête est le bandeau
+     d'impression : un en-tête de tableau revient en haut de chaque feuille, ce
+     que ni un bloc ordinaire ni un bloc fixe ne font sans chevaucher le
+     contenu. `fixed` pour que la largeur de la page borne la colonne, même
+     quand une grille déborde. */
+  .main-shell {
+    display: table;
+    table-layout: fixed;
+    width: 100%;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff;
+  }
+  .main-shell > main {
+    display: table-row-group;
   }
   main {
     padding: 0 !important;
@@ -4166,7 +4166,13 @@ fieldset.field legend {
   .page-heading {
     padding: 0 0 12px;
   }
+  /* Répété en haut de chaque feuille d'un tirage de plusieurs pages : c'est
+     l'en-tête du tableau ci-dessus. Le bandeau lui-même vit dans l'élément
+     qu'il enveloppe, un groupe d'en-tête ne portant ni marge ni flex. */
   .print-header {
+    display: table-header-group;
+  }
+  .print-header > div {
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
@@ -4178,10 +4184,6 @@ fieldset.field legend {
   .print-header span {
     font-size: 11px;
     color: #4a5c74;
-  }
-  /* Répété en haut de chaque feuille d'un tirage de plusieurs pages. */
-  .print-header img {
-    break-after: avoid;
   }
   .day-group,
   .notice-list li,
@@ -4321,9 +4323,25 @@ fieldset.field legend {
 .install-app.muted svg {
   color: var(--muted);
 }
+/* Les boutons passent à la ligne plutôt que de pousser la boîte : à 320 px,
+   « Non merci » sortait de l'invitation, qui défilait de trente pixels de
+   côté. Dans une boîte de dialogue, la marge intérieure est déjà la sienne. */
 .install-buttons {
   display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
   padding: 0 22px 14px;
+}
+.modal-content .install-buttons {
+  padding: 0;
+}
+.modal-content .install-app {
+  padding-left: 0;
+  padding-right: 0;
+}
+.install-buttons .button {
+  max-width: 100%;
+  white-space: normal;
 }
 
 /* Un lien seul reste une cible tactile, même quand il n'a l'air que d'un mot.
@@ -4333,4 +4351,21 @@ fieldset.field legend {
 .response-counts a {
   min-height: 26px;
   align-items: center;
+}
+
+/* La confirmation d'un geste qu'on ne défait pas d'un clic : renoncer d'abord,
+   à gauche, et le geste lui-même à droite, là où finit la lecture. */
+.confirm-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+.confirm-buttons .button {
+  white-space: normal;
+}
+/* Ce qui manque avant qu'un bouton s'allume, dit sous lui plutôt que deviné. */
+.button-hint {
+  margin: 8px 0 0;
 }

@@ -32,7 +32,8 @@ const attached: Session = {
     role: "AGENT",
   },
 };
-const command = { type: "readNotifications" as const, ids: ["n1"] };
+// Un identifiant au format de la base : le schéma refuse désormais tout le reste.
+const command = { type: "readNotifications" as const, ids: ["60000000-0000-0000-0000-000000000001"] };
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -69,7 +70,38 @@ describe("Action serveur", () => {
     dispatchEmails.mockResolvedValue({ processed: 1, sent: 1 });
     await expect(submitCommand(command)).resolves.toMatchObject({ ok: true });
     expect(dispatchEmails).toHaveBeenCalledOnce();
-    expect(console.error).toHaveBeenCalledWith("Le traitement Web Push a échoué.");
+    // Avec sa cause : « a échoué » seul ne disait pas où chercher.
+    expect(console.error).toHaveBeenCalledWith("Le traitement Web Push a échoué :", "service de remise indisponible");
+  });
+
+  it("journalise la cause d’un échec de la file email", async () => {
+    readSession.mockResolvedValue(attached);
+    runCommand.mockResolvedValue(undefined);
+    dispatchPush.mockResolvedValue({ processed: 0, sent: 0 });
+    dispatchEmails.mockRejectedValue(new Error("Réservation des envois impossible : permission denied"));
+    await expect(submitCommand(command)).resolves.toMatchObject({ ok: true });
+    expect(console.error).toHaveBeenCalledWith(
+      "Le traitement des emails a échoué :",
+      "Réservation des envois impossible : permission denied",
+    );
+  });
+
+  // Une panne d'Auth n'est pas une session expirée : l'agent ne doit pas être
+  // envoyé se reconnecter pour rien.
+  it("ne parle pas de session expirée quand la session n’a pas pu être vérifiée", async () => {
+    readSession.mockRejectedValue(new Error("La connexion n’a pas pu être vérifiée. Réessayez dans un instant."));
+    await expect(submitCommand(command)).resolves.toEqual({
+      ok: false,
+      message: "La connexion n’a pas pu être vérifiée. Réessayez dans un instant.",
+    });
+    expect(runCommand).not.toHaveBeenCalled();
+  });
+
+  it("refuse un identifiant qui n’a pas la forme de ceux de la base", async () => {
+    await expect(submitCommand({ type: "readNotifications", ids: ["n1"] })).resolves.toEqual({
+      ok: false,
+      message: "La demande est incomplète ou mal formée.",
+    });
   });
 
   it("ne vide rien après un refus, et rend le message tel quel", async () => {

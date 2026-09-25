@@ -149,10 +149,24 @@ function PasswordForm({
           Adresse électronique
           <span className="input-affix">
             <Mail size={17} />
-            <input type="email" autoComplete="email" placeholder="Votre email" {...form.register("email")} />
+            {/* L'erreur est reliée au champ, sur les trois formulaires : le
+                lecteur d'écran la lit en y revenant, au lieu de la laisser
+                en dessous, sans lien avec lui. */}
+            <input
+              type="email"
+              autoComplete="email"
+              placeholder="Votre email"
+              aria-invalid={form.formState.errors.email ? true : undefined}
+              aria-describedby={form.formState.errors.email ? "signin-email-error" : undefined}
+              {...form.register("email")}
+            />
           </span>
         </label>
-        {form.formState.errors.email && <p className="field-error">{form.formState.errors.email.message}</p>}
+        {form.formState.errors.email && (
+          <p id="signin-email-error" className="field-error">
+            {form.formState.errors.email.message}
+          </p>
+        )}
         {/* Association explicite plutôt qu'un label enveloppant : le bouton
             d'affichage porte « Afficher le mot de passe », et à l'intérieur du
             label il entrerait dans le nom accessible du champ. Deux commandes
@@ -166,6 +180,8 @@ function PasswordForm({
               type={visible ? "text" : "password"}
               autoComplete="current-password"
               placeholder="Votre mot de passe"
+              aria-invalid={form.formState.errors.password ? true : undefined}
+              aria-describedby={form.formState.errors.password ? "signin-password-error" : undefined}
               {...form.register("password")}
             />
             <button
@@ -179,7 +195,11 @@ function PasswordForm({
             </button>
           </span>
         </div>
-        {form.formState.errors.password && <p className="field-error">{form.formState.errors.password.message}</p>}
+        {form.formState.errors.password && (
+          <p id="signin-password-error" className="field-error">
+            {form.formState.errors.password.message}
+          </p>
+        )}
         <div className="sign-in-row">
           <label className="checkbox-inline">
             <input type="checkbox" checked={remember} onChange={e => setChoice(e.target.checked)} />
@@ -263,10 +283,21 @@ function SsoForm({ onBack }: { onBack: () => void }) {
           Adresse professionnelle
           <span className="input-affix">
             <Building2 size={17} />
-            <input type="email" autoComplete="email" placeholder="prenom.nom@sdis00.fr" {...form.register("email")} />
+            <input
+              type="email"
+              autoComplete="email"
+              placeholder="prenom.nom@sdis00.fr"
+              aria-invalid={form.formState.errors.email ? true : undefined}
+              aria-describedby={form.formState.errors.email ? "sso-email-error" : undefined}
+              {...form.register("email")}
+            />
           </span>
         </label>
-        {form.formState.errors.email && <p className="field-error">{form.formState.errors.email.message}</p>}
+        {form.formState.errors.email && (
+          <p id="sso-email-error" className="field-error">
+            {form.formState.errors.email.message}
+          </p>
+        )}
         {failure && (
           <p className="field-error" role="alert">
             {failure}
@@ -337,10 +368,21 @@ function ForgottenForm({ onBack }: { onBack: () => void }) {
           Adresse électronique
           <span className="input-affix">
             <Mail size={17} />
-            <input type="email" autoComplete="email" placeholder="votre@email.fr" {...form.register("email")} />
+            <input
+              type="email"
+              autoComplete="email"
+              placeholder="votre@email.fr"
+              aria-invalid={form.formState.errors.email ? true : undefined}
+              aria-describedby={form.formState.errors.email ? "forgotten-email-error" : undefined}
+              {...form.register("email")}
+            />
           </span>
         </label>
-        {form.formState.errors.email && <p className="field-error">{form.formState.errors.email.message}</p>}
+        {form.formState.errors.email && (
+          <p id="forgotten-email-error" className="field-error">
+            {form.formState.errors.email.message}
+          </p>
+        )}
         {failure && (
           <p className="field-error" role="alert">
             {failure}

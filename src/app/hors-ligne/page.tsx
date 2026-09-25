@@ -1,4 +1,7 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+
+export const metadata: Metadata = { title: "Hors ligne" };
 
 // La seule page que l'agent de service garde en mémoire. Elle ne contient
 // aucune donnée : c'est ce qui lui permet de ne jamais être périmée.

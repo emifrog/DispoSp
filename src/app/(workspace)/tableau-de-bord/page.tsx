@@ -1,6 +1,9 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { readSession } from "@/lib/session.server";
 import { Dashboard } from "@/components/dashboard";
+
+export const metadata: Metadata = { title: "Tableau de bord" };
 
 // Le tableau de bord parle de l'effectif. Un agent n'en voit qu'une ligne — la
 // sienne, les policies ne lui montrant pas les autres — et l'écran lui

@@ -20,9 +20,10 @@ import {
   X,
 } from "lucide-react";
 import { useApp } from "./provider";
-import { AdministrationOnly, Avatar, PageTitle, Panel } from "./common";
+import { AdministrationOnly, Avatar, PageTitle, Panel, gradeAndFonction } from "./common";
 import { Button } from "./ui/button";
 import { Modal } from "./ui/dialog";
+import { useConfirmation } from "./ui/confirm";
 import {
   campaignFormSchema,
   dateLabel,
@@ -35,7 +36,6 @@ import {
   auditFamilies,
   campaignAgents,
   fonctions,
-  gradeLabel,
   grades,
   memberRoles,
   monthLabel,
@@ -53,6 +53,8 @@ import { roleLabels } from "@/lib/session";
 export function Campaigns() {
   const { state, run, setCampaignId, agent } = useApp();
   const [open, setOpen] = useState(false);
+  const [confirm, confirmation] = useConfirmation();
+  const today = localDate();
   // L'équipe conviée : celle de qui ouvre, par défaut — le choix ne se montre
   // qu'à un centre qui en a plusieurs.
   const [teamId, setTeamId] = useState(agent.teamId || state.teams[0]?.id || "");
@@ -80,6 +82,7 @@ export function Campaigns() {
     form.reset(freshValues());
     setOpen(true);
   }
+  const errors = form.formState.errors;
   return (
     <>
       <PageTitle
@@ -141,10 +144,39 @@ export function Campaigns() {
                 <Button asChild onClick={() => setCampaignId(c.id)}>
                   <Link href="/disponibilites">Consulter les réponses</Link>
                 </Button>
-                <Button variant="secondary" onClick={() => run({ type: "close", campaignId: c.id, closed: !c.closed })}>
-                  {c.closed ? <UnlockKeyhole size={16} /> : <LockKeyhole size={16} />}
-                  {c.closed ? "Déverrouiller" : "Verrouiller la saisie"}
-                </Button>
+                {/* Une campagne dont la clôture est passée ne rouvre pas en la
+                    déverrouillant : la saisie s'arrête aussi à la date. Le
+                    bouton annonçait un succès sans que rien ne rouvre. */}
+                {c.closed && c.closesOn < today ? (
+                  <p className="muted small">
+                    Verrouillée, et sa clôture du {dateLabel(c.closesOn)} est passée : la déverrouiller ne rouvrirait
+                    pas la saisie.
+                  </p>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    onClick={() =>
+                      confirm(
+                        c.closed
+                          ? {
+                              title: "Déverrouiller la saisie ?",
+                              description: `Les agents conviés à ${c.name} pourront de nouveau modifier leurs disponibilités et valider leur réponse, jusqu’au ${dateLabel(c.closesOn)}.`,
+                              confirmLabel: "Déverrouiller",
+                              onConfirm: () => run({ type: "close", campaignId: c.id, closed: false }),
+                            }
+                          : {
+                              title: "Verrouiller la saisie ?",
+                              description: `Les agents conviés à ${c.name} ne pourront plus modifier leurs disponibilités ni valider leur réponse. Vous pourrez la déverrouiller tant que la clôture du ${dateLabel(c.closesOn)} n’est pas passée.`,
+                              confirmLabel: "Verrouiller la saisie",
+                              onConfirm: () => run({ type: "close", campaignId: c.id, closed: true }),
+                            },
+                      )
+                    }
+                  >
+                    {c.closed ? <UnlockKeyhole size={16} /> : <LockKeyhole size={16} />}
+                    {c.closed ? "Déverrouiller" : "Verrouiller la saisie"}
+                  </Button>
+                )}
               </div>
             </Panel>
           );
@@ -172,11 +204,22 @@ export function Campaigns() {
             }
           })}
         >
+          {/* Chaque erreur est reliée à son champ : un lecteur d'écran la lit en
+              y entrant, au lieu de la laisser plus bas, hors de portée. */}
           <label className="field">
             Nom de la campagne
-            <input {...form.register("name")} placeholder="Disponibilités de novembre" />
+            <input
+              {...form.register("name")}
+              placeholder="Disponibilités de novembre"
+              aria-invalid={errors.name ? true : undefined}
+              aria-describedby={errors.name ? "campaign-name-error" : undefined}
+            />
           </label>
-          {form.formState.errors.name && <p className="field-error">{form.formState.errors.name.message}</p>}
+          {errors.name && (
+            <p id="campaign-name-error" className="field-error">
+              {errors.name.message}
+            </p>
+          )}
           {/* Un centre à une seule équipe n'a rien à choisir : le champ ne se
               montre qu'à partir de la seconde. La campagne s'ouvrait toujours
               pour l'équipe de qui la créait, sans que l'écran le dise. */}
@@ -186,15 +229,34 @@ export function Campaigns() {
           <div className="form-grid">
             <label>
               Mois concerné
-              <input type="month" {...form.register("month")} />
+              <input
+                type="month"
+                {...form.register("month")}
+                aria-invalid={errors.month ? true : undefined}
+                aria-describedby={errors.month ? "campaign-month-error" : undefined}
+              />
             </label>
             <label>
               Clôture des réponses
-              <input type="date" min={localDate()} {...form.register("closesOn")} />
+              <input
+                type="date"
+                min={localDate()}
+                {...form.register("closesOn")}
+                aria-invalid={errors.closesOn ? true : undefined}
+                aria-describedby={errors.closesOn ? "campaign-closes-error" : undefined}
+              />
             </label>
           </div>
-          {form.formState.errors.month && <p className="field-error">{form.formState.errors.month.message}</p>}
-          {form.formState.errors.closesOn && <p className="field-error">{form.formState.errors.closesOn.message}</p>}
+          {errors.month && (
+            <p id="campaign-month-error" className="field-error">
+              {errors.month.message}
+            </p>
+          )}
+          {errors.closesOn && (
+            <p id="campaign-closes-error" className="field-error">
+              {errors.closesOn.message}
+            </p>
+          )}
           <p className="muted small">
             Horaires : {state.organization.dayStart} h–{state.organization.nightStart} h et{" "}
             {state.organization.nightStart} h–{state.organization.dayStart} h le lendemain.
@@ -205,6 +267,7 @@ export function Campaigns() {
           </Button>
         </form>
       </Modal>
+      {confirmation}
     </>
   );
 }
@@ -212,7 +275,10 @@ export function Campaigns() {
 export function Agents() {
   const { state, run, canAdminister } = useApp();
   const [search, setSearch] = useState("");
-  const [edited, setEdited] = useState<Agent | null>(null);
+  // « Réactiver » ouvre la même fiche, la case « Agent actif » déjà cochée :
+  // la fiche s'ouvrait décochée, et l'enregistrer tel quel ne réactivait rien.
+  const [edited, setEdited] = useState<{ agent: Agent; reactivate?: boolean } | null>(null);
+  const [confirm, confirmation] = useConfirmation();
   const [inviting, setInviting] = useState(false);
   const [team, setTeam] = useState<{ id?: string; name: string } | null>(null);
   // The database decides; this only keeps the screen from offering what it would
@@ -272,7 +338,15 @@ export function Agents() {
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => run({ type: "revokeInvitation", invitationId: invitation.id })}
+                  onClick={() =>
+                    confirm({
+                      title: "Annuler l’invitation ?",
+                      description: `Le lien d’activation envoyé à ${invitation.email} ne servira plus. Pour que ${invitation.name} rejoigne le centre, il faudra l’inviter de nouveau.`,
+                      confirmLabel: "Annuler l’invitation",
+                      danger: true,
+                      onConfirm: () => run({ type: "revokeInvitation", invitationId: invitation.id }),
+                    })
+                  }
                 >
                   Annuler
                 </Button>
@@ -288,7 +362,7 @@ export function Agents() {
             <Avatar agent={a} />
             <h2>{a.name}</h2>
             <p>
-              {gradeLabel(a)} · {a.team}
+              {gradeAndFonction(a)} · {a.team}
             </p>
             {(a.matricule || a.phone) && (
               <p className="muted small">{[a.matricule, a.phone].filter(Boolean).join(" · ")}</p>
@@ -299,7 +373,7 @@ export function Agents() {
               ))}
             </div>
             {administering && (
-              <Button size="sm" variant="secondary" onClick={() => setEdited(a)}>
+              <Button size="sm" variant="secondary" onClick={() => setEdited({ agent: a })}>
                 <Settings2 size={15} />
                 Modifier
               </Button>
@@ -316,10 +390,10 @@ export function Agents() {
                 <span>
                   <strong>{a.name}</strong>
                   <small>
-                    {gradeLabel(a)} · {a.team}
+                    {gradeAndFonction(a)} · {a.team}
                   </small>
                 </span>
-                <Button size="sm" variant="ghost" onClick={() => setEdited(a)}>
+                <Button size="sm" variant="ghost" onClick={() => setEdited({ agent: a, reactivate: true })}>
                   Réactiver
                 </Button>
               </div>
@@ -358,9 +432,10 @@ export function Agents() {
         </Panel>
       )}
 
-      {edited && <MemberDialog agent={edited} onClose={() => setEdited(null)} />}
+      {edited && <MemberDialog agent={edited.agent} reactivate={edited.reactivate} onClose={() => setEdited(null)} />}
       <InviteDialog open={inviting} onClose={() => setInviting(false)} />
       {team && <TeamDialog initial={team} onClose={() => setTeam(null)} />}
+      {confirmation}
     </>
   );
 }
@@ -478,7 +553,9 @@ function RoleField({
   frozen?: string;
   onChange: (next: { role: MemberRole }) => void;
 }) {
-  const offered = memberRoles.filter(r => r !== "ADMIN" || granter === "ADMIN");
+  // Le rôle en place est toujours proposé : sans son option, le champ figé
+  // d'un gestionnaire ouvrant la fiche d'un administrateur affichait « Agent ».
+  const offered = memberRoles.filter(r => r !== "ADMIN" || granter === "ADMIN" || r === role);
   return (
     <label className="field">
       Rôle
@@ -503,9 +580,11 @@ function RoleField({
   );
 }
 
-function MemberDialog({ agent, onClose }: { agent: Agent; onClose: () => void }) {
+function MemberDialog({ agent, reactivate, onClose }: { agent: Agent; reactivate?: boolean; onClose: () => void }) {
   const { state, run, memberRole, actor } = useApp();
+  const [confirm, confirmation] = useConfirmation();
   const self = agent.id === actor.id;
+  const wasActive = state.agents.some(a => a.id === agent.id);
   const roleFrozen = self
     ? "Personne ne change son propre rôle."
     : memberRole !== "ADMIN"
@@ -519,9 +598,12 @@ function MemberDialog({ agent, onClose }: { agent: Agent; onClose: () => void })
     phone: agent.phone,
     teamId: agent.teamId || (state.teams[0]?.id ?? ""),
     role: agent.role,
-    active: state.agents.some(a => a.id === agent.id),
+    active: wasActive || Boolean(reactivate),
     qualifications: agent.qualifications,
   });
+  const save = async () => {
+    if (await run({ type: "member", userId: agent.id, ...form })) onClose();
+  };
   const [added, setAdded] = useState("");
   // The catalogue plus whatever this agent already holds: a qualification
   // removed from the catalogue must not silently vanish from a record.
@@ -590,14 +672,26 @@ function MemberDialog({ agent, onClose }: { agent: Agent; onClose: () => void })
         Agent actif
         {self && <small className="muted"> — votre propre compte</small>}
       </label>
+      {/* Décocher « Agent actif » retire l'agent des synthèses et du vivier
+          d'affectation : on le dit avant d'enregistrer, pas après. */}
       <Button
         className="full-width"
-        onClick={async () => {
-          if (await run({ type: "member", userId: agent.id, ...form })) onClose();
-        }}
+        onClick={() =>
+          wasActive && !form.active
+            ? confirm({
+                title: `Désactiver ${agent.name} ?`,
+                description:
+                  "Il ne comptera plus dans aucune synthèse et ne pourra plus être affecté. Ses affectations déjà faites restent au brouillon, où la publication les refusera. Vous pourrez le réactiver.",
+                confirmLabel: "Désactiver et enregistrer",
+                danger: true,
+                onConfirm: save,
+              })
+            : save()
+        }
       >
         Enregistrer la fiche
       </Button>
+      {confirmation}
     </Modal>
   );
 }
@@ -897,7 +991,7 @@ export function Profile() {
     <>
       <PageTitle title="Mon profil" description="Fiche, rattachement et qualifications." />
       <div className="settings-width">
-        <Panel title={agent.name} subtitle={`${gradeLabel(agent)} · ${agent.team}`}>
+        <Panel title={agent.name} subtitle={`${gradeAndFonction(agent)} · ${agent.team}`}>
           <div className="profile-details">
             <Avatar agent={agent} />
             <div className="qualification-tags">

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { crossSite } from "@/lib/cross-site";
 import { pushSubscriptionSchema } from "@/lib/push";
 import { pushConfigured } from "@/lib/push.server";
 import { readSession } from "@/lib/session.server";
@@ -16,6 +17,12 @@ import { createActionClient } from "@/lib/supabase/server";
  * l'hôte de son choix. Le compte vient de la session, jamais du corps.
  */
 export async function POST(request: Request) {
+  // Comme /deconnexion : une route écrite à la main n'a pas le contrôle d'origine
+  // des actions serveur. Sans lui, une page tierce pouvait abonner l'appareil
+  // d'un agent connecté à l'adresse de remise de son choix, parmi les services
+  // connus. Le renouvellement que poste l'agent de service part de la même
+  // origine, et passe.
+  if (crossSite(request)) return new NextResponse("Requête refusée", { status: 403 });
   if (!pushConfigured()) return new NextResponse("Notifications non configurées", { status: 503 });
   const session = await readSession();
   if (!session?.membership) return new NextResponse("Non authentifié", { status: 401 });
@@ -44,6 +51,7 @@ export async function POST(request: Request) {
  * a pu se désabonner de son côté avant que l'application le sache.
  */
 export async function DELETE(request: Request) {
+  if (crossSite(request)) return new NextResponse("Requête refusée", { status: 403 });
   const session = await readSession();
   if (!session?.membership) return new NextResponse("Non authentifié", { status: 401 });
 

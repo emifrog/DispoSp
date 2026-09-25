@@ -1,4 +1,10 @@
+import type { Metadata } from "next";
 import { Agents } from "@/components/management";
-export default function Page() {
+import { refuseAgents } from "@/components/manager-page";
+
+export const metadata: Metadata = { title: "Agents & équipes" };
+
+export default async function Page() {
+  await refuseAgents();
   return <Agents />;
 }

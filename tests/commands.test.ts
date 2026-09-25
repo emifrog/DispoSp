@@ -18,10 +18,14 @@ const session: AttachedSession = {
     role: "RESPONSABLE",
   },
 };
+// Des identifiants au format de la base, comme le schéma des commandes l'exige.
+const BRAVO = "20000000-0000-0000-0000-00000000000b";
+const CAMPAGNE = "40000000-0000-0000-0000-000000000002";
 const command = { type: "campaign" as const, name: "Octobre", month: "2096-10", closesOn: "2096-09-25" };
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
 describe("Création de campagne depuis le serveur", () => {
@@ -45,8 +49,8 @@ describe("Création de campagne depuis le serveur", () => {
   // est bien du centre.
   it("ouvre pour l’équipe demandée quand le formulaire en nomme une", async () => {
     rpc.mockResolvedValue({ error: null });
-    await runCommand(session, { ...command, teamId: "bravo" });
-    expect(rpc).toHaveBeenCalledExactlyOnceWith("create_campaign", expect.objectContaining({ team: "bravo" }));
+    await runCommand(session, { ...command, teamId: BRAVO });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("create_campaign", expect.objectContaining({ team: BRAVO }));
   });
 
   it.each([
@@ -84,17 +88,17 @@ describe("Disponibilité habituelle depuis le serveur", () => {
   // un mois entièrement appliqué ou pas du tout.
   it("applique le mois en un seul appel", async () => {
     rpc.mockResolvedValue({ error: null });
-    await runCommand(agent, { type: "applyTemplate", campaignId: "campagne" });
-    expect(rpc).toHaveBeenCalledExactlyOnceWith("apply_availability_template", { campaign: "campagne" });
+    await runCommand(agent, { type: "applyTemplate", campaignId: CAMPAGNE });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("apply_availability_template", { campaign: CAMPAGNE });
   });
 
   it("traduit le refus de la base, sans jamais en montrer le texte", async () => {
     rpc.mockResolvedValue({ error: { message: "Availability template is empty", code: "P0002" } });
-    await expect(runCommand(agent, { type: "applyTemplate", campaignId: "campagne" })).rejects.toThrow(
+    await expect(runCommand(agent, { type: "applyTemplate", campaignId: CAMPAGNE })).rejects.toThrow(
       "Votre disponibilité habituelle est vide : renseignez-la d’abord.",
     );
     rpc.mockResolvedValue({ error: { message: "Campaign is closed", code: "P0001" } });
-    await expect(runCommand(agent, { type: "applyTemplate", campaignId: "campagne" })).rejects.toThrow(
+    await expect(runCommand(agent, { type: "applyTemplate", campaignId: CAMPAGNE })).rejects.toThrow(
       "La campagne est fermée : la saisie n’est plus possible.",
     );
   });

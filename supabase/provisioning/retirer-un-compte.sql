@@ -97,7 +97,14 @@ begin
   delete from public.availability_templates where user_id = cible;
   delete from public.user_qualifications where user_id = cible;
   delete from public.shift_withdrawals where user_id = cible;
+  -- Le relais reprend la décision, pas l'acte de décider : le déclencheur
+  -- d'audit écrirait sinon, pour chaque demande tranchée, une seconde ligne
+  -- « REFUSED » ou « ACCEPTED », sans auteur et datée du retrait. Il est
+  -- suspendu le temps de cette seule mise à jour, comme celui des saisies
+  -- plus haut.
+  alter table public.shift_withdrawals disable trigger audit_withdrawals;
   update public.shift_withdrawals set decided_by = releve where decided_by = cible;
+  alter table public.shift_withdrawals enable trigger audit_withdrawals;
   delete from public.schedule_assignments where user_id = cible;
   update public.schedule_assignments set assigned_by = releve where assigned_by = cible;
   delete from public.notifications where user_id = cible;
@@ -105,6 +112,12 @@ begin
   -- empêcherait sinon de supprimer le compte, et son adresse ne pourrait plus
   -- être réinvitée. Celles qu'il a faites passent au relais.
   delete from public.invitations where accepted_by = cible;
+  -- Une invitation encore en attente vers la même adresse, dans ce centre ou
+  -- dans un autre, garde nom, téléphone et matricule — et rattacherait de
+  -- nouveau la personne si elle recréait un compte. Elle part aussi ; la ligne
+  -- que son effacement inscrit au journal est nettoyée plus bas, comme les
+  -- autres, puisqu'elle est désignée par l'adresse.
+  delete from public.invitations where email = lower(btrim(compte)) and accepted_at is null;
   -- Le journal des envois d'invitation garde l'adresse, invitation effacée ou non.
   delete from private.invitation_sends where email = lower(btrim(compte));
   update public.invitations set invited_by = releve where invited_by = cible;

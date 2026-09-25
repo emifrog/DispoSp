@@ -10,12 +10,14 @@ import {
   isValidated,
   labels,
   LOADED_MONTHS,
+  localDate,
   monthDays,
   monthLabel,
   plural,
   responseKey,
   shiftKey,
   weekdayNames,
+  withdrawnFrom,
   type AppState,
   type Availability,
   type Shift,
@@ -127,7 +129,7 @@ function ByMonth({ state }: { state: AppState }) {
               <tr>
                 <th>Campagne</th>
                 <th>Réponses</th>
-                <th>Couverture</th>
+                <th>Couverture potentielle</th>
                 <th>Publiés</th>
               </tr>
             </thead>
@@ -247,7 +249,7 @@ function ByWeekday({ state, campaignId, month }: { state: AppState; campaignId: 
             </span>
             <span className="weekday-stats-coverage">
               {r.coverage === null ? <small className="muted">—</small> : <strong>{r.coverage} %</strong>}
-              <small>couverture</small>
+              <small>couverture potentielle</small>
             </span>
           </div>
         ))}
@@ -269,6 +271,7 @@ function ariaFor(name: string, counts: Record<Availability, number>, unfilled: n
 /** Ce que chaque agent a saisi et effectué, sur la campagne et sur la durée. */
 function ByAgent({ state, campaignId }: { state: AppState; campaignId: string }) {
   const days = monthDays(state.campaigns.find(c => c.id === campaignId)?.month ?? "");
+  const today = localDate();
   // La saisie du mois ne concerne que les participants ; les gardes, elles, se
   // comptent sur toutes les campagnes, donc sur tout l'effectif.
   const rows = campaignAgents(state, campaignId)
@@ -278,14 +281,24 @@ function ByAgent({ state, campaignId }: { state: AppState; campaignId: string })
       // fenêtre, pas sur le seul mois affiché : c'est l'engagement dans la
       // durée qui se lit ici. Une archive chargée à la demande n'y entre pas,
       // sans quoi le total changerait selon ce qu'on vient de consulter.
+      //
+      // Effectuées : passées, et tenues. Les gardes publiées à venir s'y
+      // comptaient, et un désistement accepté aussi, tant que la garde n'était
+      // pas republiée sans l'agent.
       const shifts = state.campaigns
         .filter(c => !c.archived)
         .reduce(
           (total, c) =>
             total +
-            monthDays(c.month).flatMap(date =>
-              SHIFTS.filter(shift => state.publications[shiftKey(c.id, date, shift)]?.agents.includes(agent.id)),
-            ).length,
+            monthDays(c.month)
+              .filter(date => date < today)
+              .flatMap(date =>
+                SHIFTS.filter(
+                  shift =>
+                    state.publications[shiftKey(c.id, date, shift)]?.agents.includes(agent.id) &&
+                    !withdrawnFrom(state, c.id, date, shift).has(agent.id),
+                ),
+              ).length,
           0,
         );
       return { agent, filled, shifts, validated: isValidated(state, campaignId, agent.id) };

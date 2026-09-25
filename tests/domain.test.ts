@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { assign, fillMonth, publish, sampleState, validate } from "./fixtures/centre";
 import {
   availableAgents,
+  commandSchema,
   defaultCampaign,
   draftAgents,
   entryKey,
@@ -20,8 +21,9 @@ import {
   shiftMonth,
   templateEntries,
   workload,
+  type AppState,
 } from "../src/lib/domain";
-import { auditCsv, personalCalendar, availabilityCsv } from "../src/lib/exports";
+import { auditCsv, personalCalendar, availabilityCsv, upcomingCalendar } from "../src/lib/exports";
 
 // Ce fichier porte sur les fonctions de lecture du domaine : ce que l'interface
 // calcule à partir d'un état. Les règles d'écriture — validation complète,
@@ -339,3 +341,168 @@ const shiftDay = (date: string) => {
   next.setUTCDate(next.getUTCDate() + 1);
   return next.toISOString().slice(0, 10);
 };
+
+/**
+ * Les schémas des commandes : une action serveur se poste sans l'écran, et ce
+ * que l'écran refuse, le serveur doit le refuser aussi.
+ */
+describe("Schéma des commandes", () => {
+  const campaign = "40000000-0000-0000-0000-000000000001";
+  const requirement = {
+    type: "requirement" as const,
+    campaignId: campaign,
+    date: "2026-10-01",
+    shift: "DAY" as const,
+    total: 4,
+  };
+
+  it("refuse une clôture qui ne précède pas le mois, comme le formulaire", () => {
+    const open = { type: "campaign" as const, name: "Octobre", month: "2026-10" };
+    expect(commandSchema.safeParse({ ...open, closesOn: "2026-09-30" }).success).toBe(true);
+    expect(commandSchema.safeParse({ ...open, closesOn: "2026-10-01" }).success).toBe(false);
+    expect(commandSchema.safeParse({ ...open, closesOn: "2026-10-15" }).success).toBe(false);
+  });
+
+  it("refuse une date qui n’existe pas au calendrier", () => {
+    expect(commandSchema.safeParse({ ...requirement, qualifications: {}, date: "2026-02-30" }).success).toBe(false);
+    expect(commandSchema.safeParse({ ...requirement, qualifications: {}, date: "2026-13-01" }).success).toBe(false);
+    expect(commandSchema.safeParse({ ...requirement, qualifications: {}, date: "2028-02-29" }).success).toBe(true);
+    expect(commandSchema.safeParse({ ...requirement, qualifications: {}, date: "2026-02-29" }).success).toBe(false);
+  });
+
+  it("n’accepte que des identifiants au format de la base", () => {
+    const validate = (campaignId: string) => commandSchema.safeParse({ type: "validate", campaignId }).success;
+    expect(validate(campaign)).toBe(true);
+    expect(validate("1ee74c18-b527-40cf-b6db-e41b711d9de9")).toBe(true);
+    expect(validate("campagne")).toBe(false);
+    expect(validate("40000000-0000-0000-0000-00000000000g")).toBe(false);
+    expect(validate("")).toBe(false);
+    // Une équipe à créer n'a pas encore d'identifiant.
+    expect(commandSchema.safeParse({ type: "team", teamId: "", name: "Bravo" }).success).toBe(true);
+    expect(commandSchema.safeParse({ type: "team", teamId: "bravo", name: "Bravo" }).success).toBe(false);
+  });
+
+  it("nettoie les noms de qualification, et refuse un nom vide ou en double", () => {
+    const parsed = commandSchema.safeParse({ ...requirement, qualifications: { " SAP ": 2, Chef: 1 } });
+    expect(parsed.success && parsed.data.type === "requirement" && parsed.data.qualifications).toEqual({
+      SAP: 2,
+      Chef: 1,
+    });
+    expect(commandSchema.safeParse({ ...requirement, qualifications: { SAP: 2, "SAP ": 1 } }).success).toBe(false);
+    expect(commandSchema.safeParse({ ...requirement, qualifications: { "  ": 1 } }).success).toBe(false);
+  });
+});
+
+/**
+ * Une garde dont le désistement est accepté n'est plus celle de l'agent, même
+ * tant que personne n'a republié. Elle restait sur l'accueil, dans « Prochaine
+ * garde » et dans l'agenda exporté.
+ */
+describe("Garde publiée après un désistement accepté", () => {
+  const date = "2026-10-02";
+  const withdrawal = (overrides: Partial<AppState["withdrawals"][number]> = {}) => ({
+    id: "w1",
+    shiftId: "s1",
+    campaignId,
+    date,
+    shift: "DAY" as const,
+    userId: julien,
+    reason: "",
+    state: "ACCEPTED" as const,
+    createdAt: "2026-09-19T08:00:00Z",
+    blocking: true,
+    decidedAt: "2026-09-19T09:00:00Z",
+    ...overrides,
+  });
+  // Publiée le 18 à 10 h UTC ; la décision du 19 vient après.
+  const published = () => {
+    const state = publish(sampleState(now), campaignId, date, "DAY", [julien, "marie"], 1, now);
+    publish(state, campaignId, "2026-10-05", "NIGHT", [julien], 1, now);
+    return state;
+  };
+
+  it("disparaît des gardes de l’agent, pas de celles des autres", () => {
+    const state = published();
+    state.withdrawals = [withdrawal()];
+    expect(publishedShiftsOf(state, julien).map(s => s.date)).toEqual(["2026-10-05"]);
+    expect(publishedShiftsOf(state, "marie").map(s => s.date)).toEqual([date]);
+  });
+
+  it("disparaît de l’agenda de la campagne", () => {
+    const state = published();
+    state.withdrawals = [withdrawal()];
+    const ics = personalCalendar(state, state.campaigns[0], julien);
+    expect(ics.match(/BEGIN:VEVENT/g)).toHaveLength(1);
+    expect(ics).not.toContain("20261002");
+  });
+
+  // Accepté, puis réaffecté et republié : une décision neuve, qui prime.
+  it("revient quand l’encadrement republie l’agent après sa décision", () => {
+    const state = published();
+    state.withdrawals = [withdrawal({ blocking: false })];
+    state.publications[shiftKey(campaignId, date, "DAY")].publishedAt = "2026-09-20T08:00:00.123456+00:00";
+    expect(publishedShiftsOf(state, julien).map(s => s.date)).toEqual([date, "2026-10-05"]);
+  });
+
+  it("ne bouge pas pour une demande en attente, refusée ou retirée", () => {
+    for (const state_ of ["PENDING", "REFUSED", "CANCELLED"] as const) {
+      const state = published();
+      state.withdrawals = [withdrawal({ state: state_, blocking: false, decidedAt: null })];
+      expect(publishedShiftsOf(state, julien), state_).toHaveLength(2);
+    }
+  });
+
+  it("se rabat sur `blocking` quand l’instant de la décision manque", () => {
+    const state = published();
+    state.withdrawals = [withdrawal({ decidedAt: undefined })];
+    expect(publishedShiftsOf(state, julien)).toHaveLength(1);
+  });
+});
+
+describe("Agenda des gardes à venir", () => {
+  it("rassemble les gardes à venir de toutes les campagnes, au format de l’agenda d’une campagne", () => {
+    const state = sampleState(now);
+    const september = { ...state.campaigns[0], id: "campaign-2026-09", month: "2026-09", name: "Septembre" };
+    state.campaigns.unshift(september);
+    publish(state, september.id, "2026-09-17", "DAY", [julien], 1, now);
+    publish(state, september.id, "2026-09-24", "NIGHT", [julien], 1, now);
+    publish(state, campaignId, "2026-10-24", "NIGHT", [julien], 2, now);
+    publish(state, campaignId, "2026-10-25", "DAY", ["marie"], 1, now);
+    const ics = upcomingCalendar(state, julien, "2026-09-18");
+    expect(ics.match(/BEGIN:VEVENT/g)).toHaveLength(2);
+    // Passée, elle n'est plus « à venir ».
+    expect(ics).not.toContain("20260917");
+    expect(ics).toContain("DTSTART:20260924T180000Z");
+    // La nuit du changement d'heure, comme dans l'agenda d'une campagne.
+    expect(ics).toContain("DTSTART:20261024T180000Z");
+    expect(ics).toContain("DTEND:20261025T070000Z");
+    expect(ics.startsWith("BEGIN:VCALENDAR\r\n")).toBe(true);
+    expect(ics.endsWith("END:VCALENDAR\r\n")).toBe(true);
+    for (const line of ics.split("\r\n")) expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75);
+    // Même événement, même identifiant que dans l'agenda de sa campagne :
+    // réimporter l'un après l'autre met à jour au lieu de dupliquer.
+    const single = personalCalendar(state, state.campaigns[1], julien);
+    const uid = (text: string) => text.replaceAll("\r\n ", "").match(/UID:campaign-2026-10[^\r]*/)?.[0];
+    expect(uid(ics)).toBe(uid(single));
+  });
+
+  it("n’exporte pas une garde dont le désistement est accepté", () => {
+    const state = publish(sampleState(now), campaignId, "2026-10-02", "DAY", [julien], 1, now);
+    state.withdrawals = [
+      {
+        id: "w1",
+        shiftId: "s1",
+        campaignId,
+        date: "2026-10-02",
+        shift: "DAY",
+        userId: julien,
+        reason: "",
+        state: "ACCEPTED",
+        createdAt: "2026-09-19T08:00:00Z",
+        blocking: true,
+        decidedAt: "2026-09-19T09:00:00Z",
+      },
+    ];
+    expect(upcomingCalendar(state, julien, "2026-09-18")).not.toContain("BEGIN:VEVENT");
+  });
+});

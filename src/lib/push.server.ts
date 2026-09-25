@@ -92,7 +92,8 @@ async function deliver(subscription: PushSubscriptionInput, payload: string): Pr
  * une campagne ouverte pour trente agents n'a pas à attendre trois clics.
  */
 export async function dispatchPush() {
-  if (!pushConfigured()) throw new Error("Push non configuré");
+  // La raison, et pas seulement le constat : c'est elle que le journal retient.
+  if (!pushConfigured()) throw new Error(`Push non configuré : ${pushMisconfiguration()}`);
   // Client privilégié dédié au worker, jamais partagé avec une commande utilisateur.
   const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SECRET_KEY!, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -101,7 +102,7 @@ export async function dispatchPush() {
   let sent = 0;
   for (let pass = 0; pass < MAX_PASSES; pass++) {
     const { data, error } = await client.rpc("claim_push_deliveries");
-    if (error) throw new Error("Réservation des envois impossible");
+    if (error) throw new Error(`Réservation des envois impossible : ${error.message}`);
     const jobs = (data ?? []) as {
       id: string;
       lease: string;
@@ -128,7 +129,7 @@ export async function dispatchPush() {
           token: job.lease,
           http_status: status,
         });
-        if (failure) throw new Error("Résultat d’envoi non enregistré");
+        if (failure) throw new Error(`Résultat d’envoi non enregistré : ${failure.message}`);
         if (status >= 200 && status < 300) sent++;
       }),
     );

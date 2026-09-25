@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // La déconnexion ne ferme que la session de l'appareil qui la demande.
-const { signOut } = vi.hoisted(() => ({ signOut: vi.fn(async () => ({ error: null })) }));
+const { signOut } = vi.hoisted(() => ({
+  signOut: vi.fn(async (): Promise<{ error: { message: string } | null }> => ({ error: null })),
+}));
 vi.mock("../src/lib/supabase/server", () => ({
   createActionClient: async () => ({ auth: { signOut } }),
 }));
@@ -14,7 +16,10 @@ const post = (headers: Record<string, string> = {}) =>
   });
 
 describe("Déconnexion", () => {
-  beforeEach(() => signOut.mockClear());
+  beforeEach(() => {
+    signOut.mockClear();
+    vi.restoreAllMocks();
+  });
 
   it("ne ferme que cette session : le téléphone reste connecté quand on quitte le poste du centre", async () => {
     const response = await POST(post());
@@ -27,5 +32,24 @@ describe("Déconnexion", () => {
     const response = await POST(post({ origin: "https://piege.example.com" }));
     expect(response.status).toBe(403);
     expect(signOut).not.toHaveBeenCalled();
+  });
+
+  // Supabase n'efface rien quand il n'a pas pu relire la session : sur le poste
+  // partagé, l'agent suivant héritait de celle qu'on croyait fermée.
+  it("efface les cookies de session même quand Supabase échoue", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    signOut.mockResolvedValueOnce({ error: { message: "fetch failed" } });
+    const response = await POST(
+      post({ cookie: "sb-projet-auth-token.0=aaa; sb-projet-auth-token.1=bbb; theme=sombre" }),
+    );
+    expect(response.status).toBe(303);
+    for (const name of ["sb-projet-auth-token.0", "sb-projet-auth-token.1"]) {
+      const cleared = response.cookies.get(name);
+      expect(cleared?.value, name).toBe("");
+      expect(cleared?.maxAge, name).toBe(0);
+    }
+    // Ce qui n'appartient pas à Supabase n'est pas touché.
+    expect(response.cookies.get("theme")).toBeUndefined();
+    expect(console.error).toHaveBeenCalledWith("Déconnexion incomplète côté Supabase :", "fetch failed");
   });
 });

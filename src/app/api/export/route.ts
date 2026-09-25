@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { buildWorkbook } from "@/lib/workbook";
 import { loadState } from "@/lib/data.server";
+import { defaultCampaign } from "@/lib/domain";
 import { readSession } from "@/lib/session.server";
 import type { AttachedSession } from "@/lib/session";
 
@@ -14,8 +15,16 @@ export async function GET(request: NextRequest) {
   const wanted = request.nextUrl.searchParams.get("campagne");
   // La campagne demandée, même archivée : son détail se lit avec le reste.
   const state = await loadState({ ...session, membership: session.membership } as AttachedSession, wanted);
-  const campaign = state.campaigns.find(c => c.id === wanted) ?? state.campaigns[0];
-  if (!campaign) return new NextResponse("Aucune campagne", { status: 404 });
+  /*
+   * Une campagne demandée et introuvable est un 404, jamais une autre : le
+   * repli sur la première exportait en silence le mois d'un autre — vu en
+   * production, un identifiant inconnu rendait 200 et le fichier d'octobre.
+   * L'écran passe toujours l'identifiant ; seule une adresse sans paramètre
+   * garde un repli, pour qui la tape à la main — la campagne par défaut des
+   * écrans, plutôt que la plus ancienne du centre.
+   */
+  const campaign = wanted ? state.campaigns.find(c => c.id === wanted) : defaultCampaign(state.campaigns);
+  if (!campaign) return new NextResponse(wanted ? "Campagne introuvable" : "Aucune campagne", { status: 404 });
 
   const buffer = await buildWorkbook(state, campaign).xlsx.writeBuffer();
   return new NextResponse(buffer as ArrayBuffer, {

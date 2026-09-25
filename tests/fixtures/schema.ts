@@ -35,6 +35,7 @@ export const MIGRATIONS = [
   "20260924090000_campagne_unique.sql",
   "20260925090000_participants_en_cours.sql",
   "20260925150000_desistements_notification.sql",
+  "20260925180000_correctifs_mineurs.sql",
 ];
 
 /**

@@ -1,4 +1,10 @@
+import type { Metadata } from "next";
 import { Needs } from "@/components/needs";
-export default function Page() {
+import { refuseAgents } from "@/components/manager-page";
+
+export const metadata: Metadata = { title: "Besoins du mois" };
+
+export default async function Page() {
+  await refuseAgents();
   return <Needs />;
 }

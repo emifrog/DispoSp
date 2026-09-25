@@ -86,8 +86,33 @@ describe("Envoi d’une invitation", () => {
         code: "email_exists",
       },
     });
-    await runCommand(session, invite);
+    await expect(runCommand(session, invite)).resolves.toBe(
+      "Compte existant rattaché au centre — aucun message n’était nécessaire",
+    );
     expect(adminRpc).toHaveBeenCalledExactlyOnceWith("release_invitation_send", { invitation });
+  });
+
+  // Le déclencheur a rattaché un compte confirmé dès l'enregistrement : rien à
+  // envoyer. « Invitation envoyée » faisait attendre un message qui ne viendrait pas.
+  it("dit qu’aucun message n’est parti quand le compte existant est déjà rattaché", async () => {
+    rpc.mockResolvedValue({ data: null, error: null });
+    await expect(runCommand(session, invite)).resolves.toBe(
+      "Compte existant rattaché au centre — aucun message n’était nécessaire",
+    );
+    expect(inviteUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it("ne rend aucun libellé propre quand le message part : « Invitation envoyée » est juste", async () => {
+    inviteUserByEmail.mockResolvedValue({ error: null });
+    await expect(runCommand(session, invite)).resolves.toBeUndefined();
+  });
+
+  // Un refus non traduit arrivait à l'écran en message générique, et le
+  // serveur n'en gardait aucune trace.
+  it("journalise le refus de la base avant de le traduire", async () => {
+    single.mockResolvedValue({ data: null, error: { code: "XX000", message: "Simulated internal failure" } });
+    await expect(runCommand(session, invite)).rejects.toThrow("La modification n’a pas pu être enregistrée.");
+    expect(console.error).toHaveBeenCalledWith("Refus de la base :", "XX000", "Simulated internal failure");
   });
 
   it("dit que l’invitation est enregistrée quand l’envoi est limité", async () => {
