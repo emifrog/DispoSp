@@ -4382,3 +4382,523 @@ describe("Migration 20260925180000 — gardes d’application", () => {
     await db.close();
   }, 90000);
 });
+
+// Bilan avant déploiement du 27 septembre : chaque parcours ci-dessous
+// échouait sur le schéma de 20260925180000.
+describe("Bilan du 27 septembre — un appareil qui se réinscrit ou change de main", () => {
+  const org = "10000000-0000-0000-0000-0000000000d0";
+  const team = "20000000-0000-0000-0000-0000000000d0";
+  const alice = "30000000-0000-0000-0000-0000000000d0";
+  const bob = "30000000-0000-0000-0000-0000000000d1";
+  const phone = "https://fcm.googleapis.com/fcm/send/tablette-du-centre";
+  const p256dh = "B".repeat(87);
+  const auth = "A".repeat(22);
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+  const register = async (claim?: boolean, keys = { p256dh, auth }) =>
+    (
+      await live.query<{ registered: boolean }>(
+        claim === undefined
+          ? "select public.register_push_subscription($1,$2,$3) as registered"
+          : "select public.register_push_subscription($1,$2,$3,$4) as registered",
+        claim === undefined ? [phone, keys.p256dh, keys.auth] : [phone, keys.p256dh, keys.auth, claim],
+      )
+    ).rows[0].registered;
+  const notify = async (user: string) => {
+    await live.exec("reset role");
+    await live.query(
+      "insert into public.notifications(organization_id,user_id,kind,subject) values ($1,$2,'SCHEDULE_PUBLISHED','Votre planning a été publié')",
+      [org, user],
+    );
+  };
+  const device = async () => {
+    await live.exec("reset role");
+    return (
+      await live.query<{ id: string; user_id: string; p256dh: string }>(
+        "select id, user_id, p256dh from public.push_subscriptions where endpoint=$1",
+        [phone],
+      )
+    ).rows;
+  };
+  const deliveries = async () => {
+    await live.exec("reset role");
+    return (
+      await live.query<{ user_id: string; status: string }>(
+        `select n.user_id, d.status from public.push_deliveries d
+           join public.notifications n on n.id = d.notification_id order by n.created_at`,
+      )
+    ).rows;
+  };
+
+  beforeEach(async () => {
+    live = await freshDatabase();
+    await live.exec(`
+      insert into auth.users(id) values ('${alice}'), ('${bob}');
+      insert into public.profiles(user_id,display_name) values ('${alice}','Alice'), ('${bob}','Bob');
+      insert into public.organizations(id,name) values ('${org}','Centre D0');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values
+        ('${org}','${alice}','${team}','AGENT',true),
+        ('${org}','${bob}','${team}','AGENT',true);`);
+  }, 30000);
+  afterEach(async () => {
+    await live.close();
+  });
+
+  it("garde l’abonnement et ses envois en attente quand le même compte le redit", async () => {
+    await be(alice);
+    expect(await register()).toBe(true);
+    const [before] = await device();
+    await notify(alice);
+    expect(await deliveries()).toEqual([{ user_id: alice, status: "pending" }]);
+    // L'ouverture de l'application, puis l'activation depuis le profil.
+    await be(alice);
+    expect(await register(false)).toBe(true);
+    await be(alice);
+    expect(await register(true)).toBe(true);
+    const [after] = await device();
+    expect(after.id).toBe(before.id);
+    expect(await deliveries()).toEqual([{ user_id: alice, status: "pending" }]);
+  });
+
+  it("laisse le serveur estampiller l’envoi en cours, et rafraîchit les clés", async () => {
+    await be(alice);
+    await register();
+    await notify(alice);
+    await live.exec("reset role");
+    await live.exec("set role service_role");
+    const [job] = (
+      await live.query<{ id: string; lease: string }>("select id, lease from public.claim_push_deliveries()")
+    ).rows;
+    // Le navigateur a renouvelé ses clés pendant l'envoi.
+    await be(alice);
+    await register(false, { p256dh: "C".repeat(87), auth });
+    await live.exec("reset role");
+    await live.exec("set role service_role");
+    await live.query("select public.finish_push_delivery($1,$2,201)", [job.id, job.lease]);
+    expect(await deliveries()).toEqual([{ user_id: alice, status: "sent" }]);
+    expect((await device())[0].p256dh).toBe("C".repeat(87));
+  });
+
+  it("ne passe pas l’appareil d’Alice à Bob parce qu’il s’est connecté dessus", async () => {
+    await be(alice);
+    await register();
+    await notify(alice);
+    // Bob n'a jamais accepté les notifications : l'application ne réclame pas.
+    await be(bob);
+    expect(await register(false)).toBe(false);
+    expect((await device()).map(d => d.user_id)).toEqual([alice]);
+    expect(await deliveries()).toEqual([{ user_id: alice, status: "pending" }]);
+  });
+
+  it("n’inscrit pas un appareil libre pour un compte qui ne le réclame pas", async () => {
+    await be(bob);
+    expect(await register(false)).toBe(false);
+    expect(await device()).toEqual([]);
+  });
+
+  it("le passe à celui qui le réclame, sans emporter les envois du précédent", async () => {
+    await be(alice);
+    await register();
+    await notify(alice);
+    await be(bob);
+    expect(await register(true)).toBe(true);
+    expect((await device()).map(d => d.user_id)).toEqual([bob]);
+    // Les gardes d'Alice ne s'affichent pas sur l'écran verrouillé de Bob.
+    expect(await deliveries()).toEqual([]);
+    await notify(bob);
+    expect(await deliveries()).toEqual([{ user_id: bob, status: "pending" }]);
+  });
+
+  it("ferme la nouvelle signature à anon, comme l’ancienne", async () => {
+    await live.exec("reset role");
+    expect(
+      (
+        await live.query<{ anon: boolean; authenticated: boolean; old: string | null }>(
+          `select has_function_privilege('anon', 'public.register_push_subscription(text,text,text,boolean)', 'execute') as anon,
+                  has_function_privilege('authenticated', 'public.register_push_subscription(text,text,text,boolean)', 'execute') as authenticated,
+                  to_regprocedure('public.register_push_subscription(text,text,text)')::text as old`,
+        )
+      ).rows,
+    ).toEqual([{ anon: false, authenticated: true, old: null }]);
+  });
+});
+
+describe("Bilan du 27 septembre — la republication prévient ceux qu’elle retire", () => {
+  const org = "10000000-0000-0000-0000-0000000000d2";
+  const team = "20000000-0000-0000-0000-0000000000d2";
+  const manager = "30000000-0000-0000-0000-0000000000d2";
+  const alice = "30000000-0000-0000-0000-0000000000d3";
+  const bob = "30000000-0000-0000-0000-0000000000d4";
+  const campaign = "40000000-0000-0000-0000-0000000000d2";
+  const schedule = "60000000-0000-0000-0000-0000000000d2";
+  const shift = "70000000-0000-0000-0000-0000000000d2";
+  const phone = "https://fcm.googleapis.com/fcm/send/telephone-d-alice";
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+  const publish = async () => {
+    await be(manager);
+    await live.query("select private.publish_schedule_shift($1)", [shift]);
+  };
+  const draft = async (...users: string[]) => {
+    await be(manager);
+    await live.query("delete from public.schedule_assignments where schedule_shift_id=$1 and revision=0", [shift]);
+    for (const user of users)
+      await live.query(
+        "insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,assigned_by) values ($1,$2,$3,$4)",
+        [org, shift, user, manager],
+      );
+  };
+  const notices = async (user: string) => {
+    await live.exec("reset role");
+    return (
+      await live.query<{ subject: string; body: string; email_status: string; pushes: number }>(
+        `select n.subject, n.body, n.email_status,
+                (select count(*)::int from public.push_deliveries d where d.notification_id = n.id) as pushes
+           from public.notifications n
+          where n.user_id = $1 and n.kind = 'SCHEDULE_PUBLISHED' order by n.created_at, n.subject`,
+        [user],
+      )
+    ).rows;
+  };
+
+  beforeEach(async () => {
+    live = await freshDatabase();
+    await live.exec(`
+      insert into auth.users(id,email) values
+        ('${manager}','chef@d2.test'), ('${alice}','alice@d2.test'), ('${bob}','bob@d2.test');
+      insert into public.profiles(user_id,display_name) values
+        ('${manager}','Chef'), ('${alice}','Alice'), ('${bob}','Bob');
+      insert into public.organizations(id,name) values ('${org}','Centre D2');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values
+        ('${org}','${manager}','${team}','GESTIONNAIRE',true),
+        ('${org}','${alice}','${team}','AGENT',true),
+        ('${org}','${bob}','${team}','AGENT',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        values ('${campaign}','${org}','${team}','Novembre','2099-11-01','2099-11-01',now()-interval '1 day',now()+interval '1 day');
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values
+        ('${org}','${campaign}','${alice}'), ('${org}','${campaign}','${bob}');
+      insert into public.schedules(id,organization_id,campaign_id,team_id) values ('${schedule}','${org}','${campaign}','${team}');
+      insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code)
+        values ('${shift}','${org}','${schedule}','2099-11-01','NIGHT');
+      insert into public.staffing_requirements(organization_id,campaign_id,date,shift_code,headcount)
+        values ('${org}','${campaign}','2099-11-01','NIGHT',1);`);
+    for (const agent of [alice, bob]) {
+      await be(agent);
+      await live.query(
+        "insert into public.availability_entries(campaign_id,user_id,date,availability_type) values ($1,$2,'2099-11-01','FULL_24H')",
+        [campaign, agent],
+      );
+      await live.query(
+        "update public.campaign_participants set validated_at=now() where campaign_id=$1 and user_id=$2",
+        [campaign, agent],
+      );
+    }
+    await be(alice);
+    await live.query("select public.register_push_subscription($1,$2,$3)", [phone, "B".repeat(87), "A".repeat(22)]);
+  }, 30000);
+  afterEach(async () => {
+    await live.close();
+  });
+
+  it("prévient l’agent retiré, par le centre de messages, l’email et le téléphone", async () => {
+    await draft(alice, bob);
+    await publish();
+    await draft(bob);
+    await publish();
+    expect(await notices(alice)).toEqual([
+      { subject: "Votre planning a été publié", body: "", email_status: "pending", pushes: 1 },
+      {
+        subject: "Planning modifié — garde de nuit du 01/11/2099",
+        body: "Vous n'êtes plus attendu sur cette garde : la nouvelle version du planning ne vous y affecte plus.",
+        email_status: "pending",
+        pushes: 1,
+      },
+    ]);
+    // Bob reste, et n'apprend rien de plus que la nouvelle version.
+    expect((await notices(bob)).map(n => n.subject)).toEqual([
+      "Votre planning a été publié",
+      "Votre planning a été publié",
+    ]);
+  });
+
+  it("ne retire personne à la première publication", async () => {
+    await draft(alice);
+    await draft(bob);
+    await publish();
+    expect(await notices(alice)).toEqual([]);
+  });
+
+  it("ne répète pas à l’agent dont le désistement a été accepté ce que la réponse lui a dit", async () => {
+    await draft(alice);
+    await publish();
+    await be(alice);
+    await live.query(
+      "insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id,reason) values ($1,$2,$3,'Convocation')",
+      [org, shift, alice],
+    );
+    await be(manager);
+    await live.query("update public.shift_withdrawals set state='ACCEPTED' where user_id=$1", [alice]);
+    await draft(bob);
+    await publish();
+    expect((await notices(alice)).map(n => n.subject)).toEqual(["Votre planning a été publié"]);
+  });
+
+  it("n’écrit pas à un agent sorti de l’effectif", async () => {
+    await draft(alice);
+    await publish();
+    await live.exec("reset role");
+    await live.query("update public.memberships set active=false where user_id=$1", [alice]);
+    await draft(bob);
+    await publish();
+    expect((await notices(alice)).map(n => n.subject)).toEqual(["Votre planning a été publié"]);
+  });
+});
+
+describe("Bilan du 27 septembre — la fiche d’un agent parti dans un autre centre", () => {
+  const orgA = "10000000-0000-0000-0000-0000000000d5";
+  const orgB = "10000000-0000-0000-0000-0000000000d6";
+  const teamA = "20000000-0000-0000-0000-0000000000d5";
+  const teamB = "20000000-0000-0000-0000-0000000000d6";
+  const adminA = "30000000-0000-0000-0000-0000000000d5";
+  const adminB = "30000000-0000-0000-0000-0000000000d6";
+  const mover = "30000000-0000-0000-0000-0000000000d7";
+  const leaver = "30000000-0000-0000-0000-0000000000d8";
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+  const rename = (user: string, name: string) =>
+    live.query("update public.profiles set display_name=$2 where user_id=$1 returning user_id", [user, name]);
+  const nameOf = async (user: string) => {
+    await live.exec("reset role");
+    return (
+      await live.query<{ display_name: string }>("select display_name from public.profiles where user_id=$1", [user])
+    ).rows[0].display_name;
+  };
+
+  beforeEach(async () => {
+    live = await freshDatabase();
+    // L'agent quitte A pour B : son rattachement à A est désactivé, celui à B
+    // actif. Un second agent quitte A sans aller nulle part.
+    await live.exec(`
+      insert into auth.users(id) values ('${adminA}'), ('${adminB}'), ('${mover}'), ('${leaver}');
+      insert into public.profiles(user_id,display_name) values
+        ('${adminA}','Admin A'), ('${adminB}','Admin B'), ('${mover}','Agent Mobile'), ('${leaver}','Agent Parti');
+      insert into public.organizations(id,name) values ('${orgA}','Centre A'), ('${orgB}','Centre B');
+      insert into public.teams(id,organization_id,name) values ('${teamA}','${orgA}','Alpha'), ('${teamB}','${orgB}','Bravo');
+      insert into public.memberships values
+        ('${orgA}','${adminA}','${teamA}','ADMIN',true),
+        ('${orgB}','${adminB}','${teamB}','ADMIN',true),
+        ('${orgA}','${mover}','${teamA}','AGENT',false),
+        ('${orgB}','${mover}','${teamB}','AGENT',true),
+        ('${orgA}','${leaver}','${teamA}','AGENT',false);`);
+  }, 30000);
+  afterEach(async () => {
+    await live.close();
+  });
+
+  it("refuse à l’ancien centre de modifier la fiche d’un agent désormais actif ailleurs", async () => {
+    await be(adminA);
+    expect((await rename(mover, "Renommé par A")).rows).toEqual([]);
+    expect(await nameOf(mover)).toBe("Agent Mobile");
+    // Pas davantage par la fiche d'agent atomique : rien n'est écrit, pas même
+    // le rattachement à A.
+    await be(adminA);
+    await expect(
+      live.query("select public.save_member($1,$2,$3,'AGENT',false,'Renommé par A',null,null,null,'0600000000',$4)", [
+        orgA,
+        mover,
+        teamA,
+        [],
+      ]),
+    ).rejects.toThrow("Not allowed to edit this member");
+    expect(await nameOf(mover)).toBe("Agent Mobile");
+  });
+
+  it("laisse le centre où il est actif la modifier", async () => {
+    await be(adminB);
+    expect((await rename(mover, "Renommé par B")).rows).toEqual([{ user_id: mover }]);
+    expect(await nameOf(mover)).toBe("Renommé par B");
+  });
+
+  it("laisse l’ancien centre modifier et réactiver un agent qui n’est actif nulle part", async () => {
+    await be(adminA);
+    expect((await rename(leaver, "Agent Revenu")).rows).toEqual([{ user_id: leaver }]);
+    await live.query("select public.save_member($1,$2,$3,'AGENT',true,'Agent Revenu',null,null,null,null,$4)", [
+      orgA,
+      leaver,
+      teamA,
+      [],
+    ]);
+    await live.exec("reset role");
+    expect(
+      (
+        await live.query("select active from public.memberships where user_id=$1 and organization_id=$2", [
+          leaver,
+          orgA,
+        ])
+      ).rows,
+    ).toEqual([{ active: true }]);
+  });
+
+  it("laisse l’ancien centre lire son nom, pour les gardes qu’il a tenues chez lui", async () => {
+    await be(adminA);
+    expect((await live.query("select display_name from public.profiles where user_id=$1", [mover])).rows).toEqual([
+      { display_name: "Agent Mobile" },
+    ]);
+  });
+});
+
+describe("Bilan du 27 septembre — une clé par email, que Resend reconnaît", () => {
+  const org = "10000000-0000-0000-0000-0000000000d9";
+  const team = "20000000-0000-0000-0000-0000000000d9";
+  const agent = "30000000-0000-0000-0000-0000000000d9";
+  let live: PGlite;
+  type Job = { id: string; lease: string; idempotency_key: string };
+  const claim = async () => {
+    await live.exec("reset role");
+    await live.exec("set role service_role");
+    return (await live.query<Job>("select id, lease, idempotency_key from public.claim_email_deliveries(10)")).rows;
+  };
+  const finish = async (job: Job, status: number) => {
+    await live.exec("reset role");
+    await live.exec("set role service_role");
+    await live.query("select public.finish_email_delivery($1,$2,$3)", [job.id, job.lease, status]);
+  };
+  const state = async () => {
+    await live.exec("reset role");
+    return (
+      await live.query<{ email_status: string; email_key: string }>(
+        "select email_status, email_key from public.notifications",
+      )
+    ).rows[0];
+  };
+  // Le délai qui suit un échec, ou le bail d'un passage interrompu, sans attendre.
+  const later = async () => {
+    await live.exec("reset role");
+    await live.query("update public.notifications set email_available_at=now()");
+  };
+
+  beforeEach(async () => {
+    live = await freshDatabase();
+    await live.exec(`
+      insert into auth.users(id,email) values ('${agent}','agent@d9.test');
+      insert into public.profiles(user_id,display_name) values ('${agent}','Agent');
+      insert into public.organizations(id,name) values ('${org}','Centre D9');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values ('${org}','${agent}','${team}','AGENT',true);
+      insert into public.notifications(organization_id,user_id,kind,subject) values ('${org}','${agent}','CAMPAIGN_OPENED','Ouverte');`);
+  }, 30000);
+  afterEach(async () => {
+    await live.close();
+  });
+
+  it("rend la même clé au passage qui reprend un bail expiré, et ignore le premier", async () => {
+    const [first] = await claim();
+    expect(first.idempotency_key).toBeTruthy();
+    // Le premier passage dépasse son bail : un second reprend le message.
+    await later();
+    const [second] = await claim();
+    expect(second.id).toBe(first.id);
+    expect(second.lease).not.toBe(first.lease);
+    // Même clé : si le premier a bien envoyé, Resend ne renverra pas.
+    expect(second.idempotency_key).toBe(first.idempotency_key);
+    await finish(first, 200);
+    expect((await state()).email_status).toBe("sending");
+    await finish(second, 200);
+    expect((await state()).email_status).toBe("sent");
+  });
+
+  it("garde la clé quand on ignore si le message est parti", async () => {
+    const [job] = await claim();
+    await finish(job, 0);
+    await later();
+    const [retry] = await claim();
+    expect(retry.idempotency_key).toBe(job.idempotency_key);
+  });
+
+  it.each([500, 503, 429, 409])("change de clé quand Resend répond %i, et réessaie", async status => {
+    const [job] = await claim();
+    await finish(job, status);
+    const after = await state();
+    expect(after.email_status).toBe("pending");
+    expect(after.email_key).not.toBe(job.idempotency_key);
+    await later();
+    const [retry] = await claim();
+    expect(retry.idempotency_key).toBe(after.email_key);
+  });
+
+  it("abandonne toujours sur un refus définitif", async () => {
+    const [job] = await claim();
+    await finish(job, 422);
+    expect((await state()).email_status).toBe("failed");
+  });
+
+  it("n’est réservable que par le serveur, pas même par anon", async () => {
+    await live.exec("reset role");
+    expect(
+      (
+        await live.query<{ anon: boolean; authenticated: boolean; server: boolean }>(
+          `select has_function_privilege('anon', 'public.claim_email_deliveries(integer)', 'execute') as anon,
+                  has_function_privilege('authenticated', 'public.claim_email_deliveries(integer)', 'execute') as authenticated,
+                  has_function_privilege('service_role', 'public.claim_email_deliveries(integer)', 'execute') as server`,
+        )
+      ).rows,
+    ).toEqual([{ anon: false, authenticated: false, server: true }]);
+  });
+});
+
+describe("Migration 20260927090000 — gardes d’application", () => {
+  const target = MIGRATIONS.indexOf("20260927090000_correctifs_bilan.sql");
+  const migration = () =>
+    readFileSync(new URL(`../supabase/migrations/${MIGRATIONS[target]}`, import.meta.url), "utf8");
+  const upTo = async (count: number) => {
+    const db = new PGlite();
+    await db.exec(baseAuthSchema);
+    for (const m of MIGRATIONS.slice(0, count))
+      await db.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    return db;
+  };
+
+  it("refuse un second passage et un passage avant sa dépendance", async () => {
+    expect(target).toBeGreaterThan(0);
+    const applied = await upTo(target + 1);
+    await expect(applied.exec(migration())).rejects.toThrow("déjà été appliquée");
+    await applied.close();
+    const early = await upTo(target - 1);
+    await expect(early.exec(migration())).rejects.toThrow("20260925180000_correctifs_mineurs.sql");
+    await early.close();
+  }, 90000);
+
+  it("donne sa propre clé à chaque notification déjà en base", async () => {
+    const org = "10000000-0000-0000-0000-0000000000da";
+    const team = "20000000-0000-0000-0000-0000000000da";
+    const agent = "30000000-0000-0000-0000-0000000000da";
+    const db = await upTo(target);
+    await db.exec(`
+      insert into auth.users(id) values ('${agent}');
+      insert into public.profiles(user_id,display_name) values ('${agent}','Agent');
+      insert into public.organizations(id,name) values ('${org}','Centre DA');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values ('${org}','${agent}','${team}','AGENT',true);
+      insert into public.notifications(organization_id,user_id,kind,subject) values
+        ('${org}','${agent}','CAMPAIGN_OPENED','Ouverte'), ('${org}','${agent}','CAMPAIGN_REMINDER','Rappel');`);
+    await db.exec(migration());
+    const keys = (await db.query<{ k: string }>("select email_key as k from public.notifications")).rows;
+    expect(keys).toHaveLength(2);
+    expect(new Set(keys.map(row => row.k)).size).toBe(2);
+    await db.close();
+  }, 90000);
+});

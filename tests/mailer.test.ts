@@ -100,16 +100,49 @@ describe("File d’emails", () => {
   });
 
   it("repasse tant que la base rend un lot plein, et s’arrête au premier lot court", async () => {
-    const full = Array.from({ length: 50 }, (_, i) => job(i));
+    const full = Array.from({ length: 10 }, (_, i) => job(i));
     let claims = 0;
-    rpc.mockImplementation(async (name: string) => {
+    rpc.mockImplementation(async (name: string, args: { batch?: number }) => {
       if (name !== "claim_email_deliveries") return { error: null };
+      // Dix au plus : un lot doit tenir dans le bail de deux minutes, même
+      // quand chaque message attend dix secondes.
+      expect(args.batch).toBe(10);
       claims++;
       return { data: claims < 3 ? full : [job(999)], error: null };
     });
     fetchMock.mockResolvedValue({ ok: true, status: 200 });
-    await expect(dispatchEmails()).resolves.toEqual({ processed: 101, sent: 101 });
+    await expect(dispatchEmails()).resolves.toEqual({ processed: 21, sent: 21 });
     expect(claims).toBe(3);
+  });
+
+  it("envoie la clé que la base a donnée au message, et s’en passe si elle n’en donne pas", async () => {
+    rpc.mockImplementation(async (name: string) =>
+      name === "claim_email_deliveries"
+        ? { data: [{ ...job(1), idempotency_key: "cle-1" }, job(2)], error: null }
+        : { error: null },
+    );
+    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+    await dispatchEmails();
+    expect(fetchMock.mock.calls[0][1].headers["Idempotency-Key"]).toBe("cle-1");
+    expect(fetchMock.mock.calls[1][1].headers).not.toHaveProperty("Idempotency-Key");
+  });
+
+  // Deux 409 : un envoi concurrent sous la même clé, qui n'est ni un envoi ni
+  // un refus ; un contenu qui a changé depuis le premier essai, que la base
+  // réessaie sous une clé neuve.
+  it("rend en silence le 409 d’un envoi concurrent, et tel quel celui d’un contenu changé", async () => {
+    rpc.mockImplementation(async (name: string) =>
+      name === "claim_email_deliveries" ? { data: [job(1), job(2)], error: null } : { error: null },
+    );
+    fetchMock
+      .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ name: "concurrent_idempotent_requests" }) })
+      .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ name: "invalid_idempotent_request" }) });
+    await expect(dispatchEmails()).resolves.toEqual({ processed: 2, sent: 0 });
+    const finished = rpc.mock.calls.filter(([name]) => name === "finish_email_delivery").map(([, args]) => args);
+    expect(finished).toEqual([
+      { delivery: "n1", token: "l1", http_status: 0 },
+      { delivery: "n2", token: "l2", http_status: 409 },
+    ]);
   });
 
   it("s’arrête si la base ne rend pas la réservation, sans rien envoyer", async () => {

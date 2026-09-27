@@ -15,6 +15,17 @@ import { createActionClient } from "@/lib/supabase/server";
  * Le corps est validé avant d'atteindre la base — l'adresse de remise doit être
  * celle d'un service connu, sans quoi l'application deviendrait un relais vers
  * l'hôte de son choix. Le compte vient de la session, jamais du corps.
+ *
+ * `claim: false` : l'appareil n'est pas réclamé. La base rafraîchit alors
+ * l'abonnement s'il est déjà celui du compte, et ne fait rien d'autre — c'est ce
+ * que l'application demande à l'ouverture, pour un compte qui n'a pas accepté
+ * les notifications sur cet appareil. Sans cela, se connecter sur la tablette
+ * du centre suffisait à en prendre les notifications au compte précédent.
+ * Absent, il vaut réclamation : l'agent de service renouvelle un abonnement déjà
+ * voulu, et ne sait pas le dire.
+ *
+ * 204 : l'appareil est inscrit pour ce compte. 409 : il ne l'est pas, parce
+ * qu'il n'a pas été réclamé.
  */
 export async function POST(request: Request) {
   // Comme /deconnexion : une route écrite à la main n'a pas le contrôle d'origine
@@ -27,19 +38,27 @@ export async function POST(request: Request) {
   const session = await readSession();
   if (!session?.membership) return new NextResponse("Non authentifié", { status: 401 });
 
-  const parsed = pushSubscriptionSchema.safeParse(await request.json().catch(() => null));
+  const body: unknown = await request.json().catch(() => null);
+  const parsed = pushSubscriptionSchema.safeParse(body);
   if (!parsed.success) return new NextResponse("Abonnement invalide", { status: 400 });
+  const claim = (body as { claim?: unknown }).claim !== false;
 
   const client = await createActionClient();
-  const { error } = await client.rpc("register_push_subscription", {
+  const { data, error } = await client.rpc("register_push_subscription", {
     device_endpoint: parsed.data.endpoint,
     device_p256dh: parsed.data.keys.p256dh,
     device_auth: parsed.data.keys.auth,
+    claim,
   });
   if (error) {
     console.error("Abonnement Web Push non enregistré", error.message);
     return new NextResponse("Enregistrement impossible", { status: 503 });
   }
+  if (data === false)
+    return new NextResponse("Appareil non inscrit pour ce compte", {
+      status: 409,
+      headers: { "Cache-Control": "no-store" },
+    });
   return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
 }
 

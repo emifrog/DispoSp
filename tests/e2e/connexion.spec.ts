@@ -37,6 +37,43 @@ test.describe("Connexion", () => {
     expect(response.status()).toBe(303);
     expect(response.headers()["location"]).toContain("/connexion");
   });
+
+  // Le bouton rend d'abord l'appareil, puis envoie le formulaire : ce détour ne
+  // doit jamais empêcher de partir.
+  test("le bouton « Se déconnecter » ferme la session", async ({ page, isMobile }) => {
+    const email = process.env.E2E_EMAIL;
+    const password = process.env.E2E_PASSWORD;
+    test.skip(!email || !password, "Demande E2E_EMAIL et E2E_PASSWORD, un compte rattaché à un centre.");
+    await page.goto("/connexion");
+    await page.getByLabel("Adresse électronique").fill(email!);
+    await page.getByLabel("Mot de passe", { exact: true }).fill(password!);
+    await page.getByRole("button", { name: "Se connecter" }).click();
+    await page.waitForURL(url => !url.pathname.startsWith("/connexion"));
+    await page.waitForLoadState("networkidle");
+    const isSignOut = (request: { url: () => string; method: () => string }) =>
+      new URL(request.url()).pathname === "/deconnexion" && request.method() === "POST";
+    const posts: string[] = [];
+    page.on("request", request => {
+      if (isSignOut(request)) posts.push(request.url());
+    });
+    const signingOut = page.waitForRequest(isSignOut);
+    // Sur un téléphone, le bouton vit dans le menu.
+    if (isMobile) await page.getByRole("button", { name: "Ouvrir le menu" }).click();
+    await page.getByRole("button", { name: "Se déconnecter" }).filter({ visible: true }).click();
+    await signingOut;
+    // La session plutôt que l'adresse qui suit : en local, la redirection de
+    // /deconnexion vise `localhost`, que `next start --hostname 127.0.0.1`
+    // n'écoute pas, et la page ne l'atteint jamais. Ce qui compte est ailleurs :
+    // le formulaire est parti, et le garde renvoie désormais vers la connexion.
+    await expect
+      .poll(async () => {
+        const response = await page.request.get("/tableau-de-bord", { maxRedirects: 0 });
+        return response.headers()["location"] ?? String(response.status());
+      })
+      .toMatch(/\/connexion$/);
+    // Un départ, pas deux : le détour par l'appareil ne renvoie pas le formulaire.
+    expect(posts).toHaveLength(1);
+  });
 });
 
 /**

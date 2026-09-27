@@ -25,7 +25,7 @@ import {
 import { useState, type ReactNode } from "react";
 import { Brand, BrandMark } from "./brand";
 import { useApp } from "./provider";
-import { InstallButton } from "./pwa";
+import { InstallButton, SignOutForm } from "./pwa";
 import { Button } from "./ui/button";
 import { defaultCampaign, monthLabel } from "@/lib/domain";
 import { roleLabels, type AttachedSession } from "@/lib/session";
@@ -155,12 +155,12 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
           {/* Sur un téléphone, la déconnexion quitte le bandeau, trop chargé, et
               vient ici, dans le menu — avec son libellé, qu'une icône seule ne
               donnait pas. */}
-          <form method="post" action="/deconnexion" className="mobile-only sidebar-signout">
+          <SignOutForm className="mobile-only sidebar-signout">
             <button type="submit">
               <LogOut size={18} />
               Se déconnecter
             </button>
-          </form>
+          </SignOutForm>
           <span className="version">
             DispoSP <span>Version · 1.0</span>
           </span>
@@ -212,11 +212,11 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
             <div className="user-name">
               <strong>{session.displayName}</strong>
             </div>
-            <form method="post" action="/deconnexion" className="topbar-signout">
+            <SignOutForm className="topbar-signout">
               <button type="submit" className="button button-ghost button-sm" aria-label="Se déconnecter">
                 <LogOut size={17} />
               </button>
-            </form>
+            </SignOutForm>
           </div>
         </header>
         {/* À l'impression, un groupe d'en-tête de tableau, qui revient en haut

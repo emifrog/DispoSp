@@ -3,12 +3,22 @@ import { createClient } from "@supabase/supabase-js";
 import { message, type Pending } from "./email";
 
 const RESEND_SEND = "https://api.resend.com/emails";
-/** Ce que la base rend par passage ; en deçà, la file est vide et on s'arrête. */
-const BATCH = 50;
+/**
+ * Ce que la base rend par passage ; en deçà, la file est vide et on s'arrête.
+ *
+ * Le lot doit tenir dans le bail de deux minutes que la base lui accorde,
+ * même au pire : dix messages de dix secondes chacun. À cinquante, un service
+ * lent faisait expirer le bail en plein lot, et un autre passage reprenait des
+ * messages que celui-ci était peut-être encore en train d'envoyer.
+ */
+const BATCH = 10;
 /** Au-delà, on laisse la suite au passage suivant : un centre ne vide pas la file du monde entier. */
 const MAX_PASSES = 20;
 /** Un service d'envoi qui ne répond pas en dix secondes ne répondra pas mieux en trente. */
 const TIMEOUT_MS = 10_000;
+
+/** Un message réservé : ce qu'il faut envoyer, le bail, et la clé qui le rend unique chez Resend. */
+type Job = Pending & { lease: string; idempotency_key?: string | null };
 
 /**
  * Tout ce que l'envoi réclame, et pas seulement Resend : la file se lit sous
@@ -31,16 +41,32 @@ export function emailConfigured() {
  * réseau coupé, délai dépassé. Un message à la fois, et non un lot : Resend
  * refuse un lot entier pour une seule adresse invalide, et ce refus bloquait
  * jusqu'ici tous les envois suivants du centre, indéfiniment.
+ *
+ * La clé d'idempotence vient de la base, qui la garde tant qu'on ignore si le
+ * message est parti : Resend ne renvoie pas un message déjà envoyé sous la même
+ * clé. Elle manque tant que la migration 20260927090000 n'est pas appliquée ;
+ * le message part alors sans, comme avant.
  */
-async function send(notice: Pending, key: string, from: string, appUrl: string): Promise<number> {
+async function send(notice: Job, key: string, from: string, appUrl: string): Promise<number> {
   const built = message(notice, appUrl);
   try {
     const response = await fetch(RESEND_SEND, {
       method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+        ...(notice.idempotency_key ? { "Idempotency-Key": notice.idempotency_key } : {}),
+      },
       body: JSON.stringify({ from, to: [built.to], subject: built.subject, text: built.text, html: built.html }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
+    // Un autre passage envoie ce même message en ce moment : ni un envoi ni un
+    // refus. Le silence le fait réessayer plus tard sous la même clé, et Resend
+    // rendra alors la réponse faite au premier.
+    if (response.status === 409) {
+      const reason = (await response.json().catch(() => null)) as { name?: string } | null;
+      if (reason?.name === "concurrent_idempotent_requests") return 0;
+    }
     if (!response.ok) console.error("Resend a refusé un message", response.status, notice.id);
     return response.status;
   } catch (failure) {
@@ -76,7 +102,7 @@ export async function dispatchEmails() {
     // Le message de la base, pour savoir où chercher : il part au journal du
     // serveur, jamais à l'écran.
     if (error) throw new Error(`Réservation des envois impossible : ${error.message}`);
-    const jobs = (data ?? []) as (Pending & { lease: string })[];
+    const jobs = (data ?? []) as Job[];
     // Un message après l'autre : Resend limite le débit, et un lot parti en
     // parallèle ne ferait que provoquer les refus qu'on cherche à éviter.
     for (const job of jobs) {

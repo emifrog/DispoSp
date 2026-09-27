@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { BellOff, BellRing, Check, Download, Send, Share, ShieldAlert, Smartphone } from "lucide-react";
 import {
   applicationServerKey,
@@ -181,7 +181,12 @@ export function InstallApp() {
  */
 type PushState = "checking" | "unsupported" | "blocked" | "off" | "on";
 
-async function tellServer(method: "POST" | "DELETE", body: unknown): Promise<boolean> {
+/** Inscrit pour ce compte. */
+const REGISTERED = 204;
+/** Réponse de la route quand l'appareil n'est pas inscrit pour ce compte. */
+const NOT_THIS_ACCOUNT = 409;
+
+async function tellServer(method: "POST" | "DELETE", body: unknown): Promise<number> {
   const response = await fetch("/api/push/subscribe", {
     method,
     headers: { "Content-Type": "application/json" },
@@ -190,12 +195,63 @@ async function tellServer(method: "POST" | "DELETE", body: unknown): Promise<boo
   // Le code exact, pas seulement « ça s'est bien passé » : une session expirée
   // fait renvoyer l'écran de connexion par le garde, et cette page-là répond
   // 200. L'appareil se croirait abonné sans que rien ne soit enregistré.
-  return response.status === 204;
+  return response.status;
 }
 
 async function currentSubscription(): Promise<PushSubscription | null> {
   const registration = await navigator.serviceWorker.getRegistration();
   return (await registration?.pushManager.getSubscription()) ?? null;
+}
+
+/** Au-delà, on se déconnecte sans attendre : partir ne dépend pas d'une notification. */
+const RELEASE_TIMEOUT_MS = 2500;
+
+/** Retire l'appareil du compte qui s'en va, si la base le lui connaît. Ne lève jamais. */
+async function releaseDevice() {
+  if (!("serviceWorker" in navigator)) return;
+  const release = (async () => {
+    const subscription = await currentSubscription();
+    if (subscription) await tellServer("DELETE", { endpoint: subscription.endpoint });
+  })().catch(() => {});
+  await Promise.race([release, new Promise(resolve => setTimeout(resolve, RELEASE_TIMEOUT_MS))]);
+}
+
+/**
+ * Se déconnecter rend aussi l'appareil.
+ *
+ * Sans cela, la tablette du centre continuait de recevoir les notifications de
+ * celui qui venait de partir. Le serveur ne sait pas quel appareil se
+ * déconnecte : c'est au navigateur de le dire, tant que la session est encore
+ * ouverte. Sans JavaScript, ou si la demande tarde, la déconnexion se fait
+ * quand même.
+ *
+ * Le navigateur, lui, garde son abonnement : l'agent qui revient et avait
+ * accepté est réinscrit à sa prochaine ouverture, sans rien refaire. Un autre
+ * compte, non — il faudra qu'il active.
+ */
+export function SignOutForm({ className, children }: { className?: string; children: ReactNode }) {
+  const leaving = useRef(false);
+  return (
+    <form
+      method="post"
+      action="/deconnexion"
+      className={className}
+      onSubmit={event => {
+        event.preventDefault();
+        // Deux clics pendant que l'appareil se libère ne font qu'un départ.
+        if (leaving.current) return;
+        leaving.current = true;
+        const form = event.currentTarget;
+        void releaseDevice().finally(() => {
+          leaving.current = false;
+          // `submit()` ne redéclenche pas cet écouteur : le formulaire part tel quel.
+          form.submit();
+        });
+      }}
+    >
+      {children}
+    </form>
+  );
 }
 
 // Comme pour l'installation, le serveur ne peut pas savoir sur quoi il est lu :
@@ -266,12 +322,22 @@ function usePushDevice(userId: string) {
       const subscription = await currentSubscription();
       if (abandoned) return;
       if (!subscription) return setState("off");
-      setState("on");
       // Le serveur peut très bien ne pas connaître cet abonnement : le
-      // navigateur a pu le renouveler seul, ou l'appareil a changé de main
-      // depuis. Le redire à chaque passage coûte une requête et évite un
-      // téléphone qui se croit abonné sans que rien ne lui soit jamais envoyé.
-      await tellServer("POST", subscription.toJSON());
+      // navigateur a pu le renouveler seul, ou il a été rendu à la déconnexion.
+      // Le redire à chaque passage coûte une requête et évite un téléphone qui
+      // se croit abonné sans que rien ne lui soit jamais envoyé.
+      //
+      // Mais l'abonnement du navigateur n'est pas forcément celui de ce compte :
+      // sur la tablette du centre, c'est peut-être celui de l'agent précédent.
+      // Il ne se réclame donc que pour un compte qui a accepté ici ; pour un
+      // autre, la base se contente de rafraîchir ce qui est déjà à lui, et
+      // l'écran dit « éteintes » si rien ne l'est — le bouton Activer, lui,
+      // réclame.
+      const status = await tellServer("POST", { ...subscription.toJSON(), claim: pushAnswer(userId) === "oui" });
+      if (abandoned) return;
+      // Une panne passagère ne vaut pas extinction : le navigateur, lui, est
+      // abonné, et la prochaine ouverture le redira.
+      setState(status === NOT_THIS_ACCOUNT ? "off" : "on");
     })().catch(() => setState("off"));
     return () => {
       abandoned = true;
@@ -301,7 +367,8 @@ function usePushDevice(userId: string) {
         userVisibleOnly: true,
         applicationServerKey: applicationServerKey(key),
       });
-      if (await tellServer("POST", subscription.toJSON())) {
+      // Activer, c'est réclamer : l'appareil passe à ce compte, fût-il à un autre.
+      if ((await tellServer("POST", { ...subscription.toJSON(), claim: true })) === REGISTERED) {
         answer("oui");
         setState("on");
         setMessage("");

@@ -1,6 +1,7 @@
 import { CalendarPlus, ShieldCheck } from "lucide-react";
 import type { AttachedSession, Session } from "@/lib/session";
 import { Brand } from "./brand";
+import { SignOutForm } from "./pwa";
 
 // The state every new account starts in: the schema deliberately keeps
 // organization, team and role provisioning out of the client API, so nobody can
@@ -22,11 +23,11 @@ export function UnattachedAccount({ session }: { session: Session }) {
             opération d’administration. Demandez à l’administrateur de votre centre de vous ajouter.
           </p>
         </div>
-        <form method="post" action="/deconnexion">
+        <SignOutForm>
           <button type="submit" className="button button-secondary full-width">
             Se déconnecter
           </button>
-        </form>
+        </SignOutForm>
       </section>
     </main>
   );
@@ -63,11 +64,11 @@ export function NoCampaign({ session, manages }: { session: AttachedSession; man
               : "Rien de votre côté. Rapprochez-vous de votre encadrement si vous pensez devoir figurer dans une campagne en cours."}
           </p>
         </div>
-        <form method="post" action="/deconnexion">
+        <SignOutForm>
           <button type="submit" className="button button-secondary full-width">
             Se déconnecter
           </button>
-        </form>
+        </SignOutForm>
       </section>
     </main>
   );

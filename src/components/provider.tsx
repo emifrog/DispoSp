@@ -1,5 +1,14 @@
 "use client";
-import { createContext, useContext, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { TriangleAlert } from "lucide-react";
 import { submitCommand } from "@/app/actions";
@@ -17,6 +26,8 @@ import { CAMPAIGN_PARAM } from "@/lib/campaign-param";
 
 /** L'absence au-delà de laquelle le retour au premier plan relit l'état. */
 const RESUME_AFTER_MS = 30_000;
+/** L'âge au-delà duquel l'état se relit en changeant d'écran. */
+const STALE_AFTER_MS = 30_000;
 
 type Context = {
   state: AppState;
@@ -48,7 +59,11 @@ export function AppProvider({
   memberRole,
 }: {
   children: ReactNode;
-  /** Read from the database by the server render, on every navigation. */
+  /**
+   * Lu par le rendu serveur du layout — pas à chaque navigation : un layout
+   * partagé ne se rejoue pas quand on change d'écran. Voir plus bas ce qui le
+   * fait relire.
+   */
   state: AppState;
   actor: Actor;
   memberRole: MemberRole;
@@ -194,6 +209,43 @@ export function AppProvider({
       setSubmitting(false);
     }
   }
+  // Vraie tant qu'une relecture court, quelle qu'en soit l'origine ; posée
+  // aussi par `reread` avant que React ait rendu l'attente, pour qu'un second
+  // événement du même instant la trouve déjà prise.
+  const rereading = useRef(false);
+  // L'instant où l'état affiché a été lu : le premier rendu, puis la fin de
+  // chaque relecture — elles passent toutes par cette transition.
+  const readAt = useRef(0);
+  useEffect(() => {
+    rereading.current = refreshing;
+    if (!refreshing) readAt.current = Date.now();
+  }, [refreshing]);
+  // Une relecture à la fois : le retour du réseau et le retour au premier
+  // plan arrivent souvent ensemble, et en lançaient deux, complètes.
+  // Et aucune tant que le navigateur se sait hors ligne : la relecture
+  // échouerait, Next se rabattrait sur une navigation complète — vers la
+  // page hors ligne —, et ce qu'une boîte de dialogue ouverte contenait
+  // serait perdu. Le retour du réseau la déclenchera.
+  const reread = useCallback(() => {
+    if (running.current || rereading.current || !navigator.onLine) return;
+    rereading.current = true;
+    startRefresh(() => router.refresh());
+  }, [router]);
+  /*
+   * Changer d'écran ne relisait rien. L'état vient du layout, et Next ne rejoue
+   * pas un layout partagé à la navigation — seulement la page qui change
+   * (node_modules/next/dist/docs/01-app/03-api-reference/05-config/01-next-config-js/staleTimes.md).
+   * Un agent resté dans l'application pendant que l'encadrement republiait
+   * ouvrait « Mon planning » et y trouvait la version d'avant — y compris une
+   * garde dont il venait d'être retiré.
+   *
+   * On relit donc en changeant d'écran, dès que ce qui est affiché a plus de
+   * trente secondes : chaque clic ne relit pas tout le centre, mais rien de ce
+   * qu'on ouvre n'est plus ancien que cela.
+   */
+  useEffect(() => {
+    if (Date.now() - readAt.current >= STALE_AFTER_MS) reread();
+  }, [pathname, reread]);
   /*
    * Une application installée reste ouverte des jours sur un téléphone : on la
    * quitte, on la retrouve le lendemain, et rien ne se rechargeait. L'agent
@@ -209,26 +261,8 @@ export function AppProvider({
    * application à l'autre pour lire un SMS ne doit pas relire tout le centre.
    * Jamais pendant une écriture : elle se relit d'elle-même en finissant.
    */
-  // Vraie tant qu'une relecture court, quelle qu'en soit l'origine ; posée
-  // aussi par `reread` avant que React ait rendu l'attente, pour qu'un second
-  // événement du même instant la trouve déjà prise.
-  const rereading = useRef(false);
-  useEffect(() => {
-    rereading.current = refreshing;
-  }, [refreshing]);
   useEffect(() => {
     let hiddenAt = document.visibilityState === "hidden" ? Date.now() : 0;
-    // Une relecture à la fois : le retour du réseau et le retour au premier
-    // plan arrivent souvent ensemble, et en lançaient deux, complètes.
-    // Et aucune tant que le navigateur se sait hors ligne : la relecture
-    // échouerait, Next se rabattrait sur une navigation complète — vers la
-    // page hors ligne —, et ce qu'une boîte de dialogue ouverte contenait
-    // serait perdu. Le retour du réseau la déclenchera.
-    const reread = () => {
-      if (running.current || rereading.current || !navigator.onLine) return;
-      rereading.current = true;
-      startRefresh(() => router.refresh());
-    };
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {
         hiddenAt = Date.now();
@@ -248,7 +282,7 @@ export function AppProvider({
       window.removeEventListener("pageshow", onPageShow);
       window.removeEventListener("online", reread);
     };
-  }, [router]);
+  }, [reread]);
   // Resolved once here so no screen has to assert that a lookup succeeded. The
   // workspace layout has already turned away a centre without campaigns.
   const campaign = state.campaigns.find(c => c.id === campaignId) ?? state.campaigns[0];

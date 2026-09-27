@@ -54,4 +54,16 @@ describe("Routes Web Push", () => {
     expect(rpc).toHaveBeenCalledWith("register_push_subscription", expect.anything());
     expect((await test(post("/api/push/test", same))).status).toBe(200);
   });
+
+  // L'agent de service ne dit pas « claim » : il renouvelle un abonnement déjà
+  // voulu. L'application le dit à l'ouverture, pour un compte qui n'a pas
+  // accepté sur cet appareil — qui ne doit pas le prendre à un autre.
+  it("transmet la réclamation, vraie par défaut, et répond 409 quand l’appareil reste à un autre", async () => {
+    const same = { origin: "http://127.0.0.1:3000", "sec-fetch-site": "same-origin" };
+    expect((await subscribe(post("/api/push/subscribe", same, device))).status).toBe(204);
+    expect(rpc).toHaveBeenLastCalledWith("register_push_subscription", expect.objectContaining({ claim: true }));
+    rpc.mockResolvedValue({ data: false, error: null });
+    expect((await subscribe(post("/api/push/subscribe", same, { ...device, claim: false }))).status).toBe(409);
+    expect(rpc).toHaveBeenLastCalledWith("register_push_subscription", expect.objectContaining({ claim: false }));
+  });
 });
