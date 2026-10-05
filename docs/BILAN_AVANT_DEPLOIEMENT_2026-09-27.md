@@ -15,18 +15,18 @@ Date du contrôle : 27 septembre 2026.
 
 ## Vérifications exécutées
 
-| Contrôle | Résultat | Portée |
-| --- | --- | --- |
-| Installation verrouillée | Réussie | Copie isolée du ZIP |
-| Tests existants en Europe/Paris | **410 réussis, 23 fichiers** | Règles métier, migrations, scripts, serveur et autres tests du dépôt |
-| Tests en UTC | **232 réussis, 22 fichiers** | Même exclusion de `database.test.ts` que la CI |
-| Types | Réussi | Version originale |
-| Lint | 0 erreur, 1 avertissement | Optimisation React non appliquée à `useReactTable` |
-| Formatage | Réussi | Fichiers d’origine ; résultats générés par l’audit exclus |
-| Compilation de production | Réussie | Sans configuration Supabase, comme la CI publique |
-| Parcours navigateur publics | **62 réussis, 38 ignorés** | Chromium ordinateur et mobile, serveur local dédié, sans compte |
-| Reproductions ciblées | **8 réussies** | 5 défauts encore reproduits, 3 corrections vérifiées |
-| Dépendances de production | 1 alerte modérée, 0 haute ou critique | Dépendance transitive `uuid` ; pas d’exploitation démontrée |
+| Contrôle                        | Résultat                              | Portée                                                               |
+| ------------------------------- | ------------------------------------- | -------------------------------------------------------------------- |
+| Installation verrouillée        | Réussie                               | Copie isolée du ZIP                                                  |
+| Tests existants en Europe/Paris | **410 réussis, 23 fichiers**          | Règles métier, migrations, scripts, serveur et autres tests du dépôt |
+| Tests en UTC                    | **232 réussis, 22 fichiers**          | Même exclusion de `database.test.ts` que la CI                       |
+| Types                           | Réussi                                | Version originale                                                    |
+| Lint                            | 0 erreur, 1 avertissement             | Optimisation React non appliquée à `useReactTable`                   |
+| Formatage                       | Réussi                                | Fichiers d’origine ; résultats générés par l’audit exclus            |
+| Compilation de production       | Réussie                               | Sans configuration Supabase, comme la CI publique                    |
+| Parcours navigateur publics     | **62 réussis, 38 ignorés**            | Chromium ordinateur et mobile, serveur local dédié, sans compte      |
+| Reproductions ciblées           | **8 réussies**                        | 5 défauts encore reproduits, 3 corrections vérifiées                 |
+| Dépendances de production       | 1 alerte modérée, 0 haute ou critique | Dépendance transitive `uuid` ; pas d’exploitation démontrée          |
 
 **Les huit tests ciblés ne signifient pas huit corrections.** Cinq vérifient que les défauts décrits ci-dessous sont toujours présents ; trois vérifient des corrections. Ils utilisent uniquement une base PostgreSQL embarquée et des données fictives.
 
