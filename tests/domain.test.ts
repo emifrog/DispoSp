@@ -11,14 +11,17 @@ import {
   isoWeekday,
   isOpen,
   isValidated,
+  latestWithdrawal,
   loadedSince,
   localDate,
   localMonth,
   localTime,
   monthDays,
   publishedShiftsOf,
+  relieves,
   shiftKey,
   shiftMonth,
+  shiftsHeld,
   templateEntries,
   workload,
   type AppState,
@@ -456,6 +459,48 @@ describe("Garde publiée après un désistement accepté", () => {
     const state = published();
     state.withdrawals = [withdrawal({ decidedAt: undefined })];
     expect(publishedShiftsOf(state, julien)).toHaveLength(1);
+  });
+
+  // Analyse du 5 octobre, C1 : une seule règle pour tous les écrans.
+  it("se lit sur une demande précise : délié par une décision postérieure à la version publiée", () => {
+    const at = "2026-09-18T10:00:00Z";
+    expect(relieves(withdrawal(), at)).toBe(true);
+    expect(relieves(withdrawal(), "2026-09-20T08:00:00Z"), "republié après la décision").toBe(false);
+    expect(relieves(withdrawal({ state: "REFUSED" }), at)).toBe(false);
+    expect(relieves(withdrawal({ decidedAt: null, blocking: false }), at), "sans instant, le brouillon tranche").toBe(
+      false,
+    );
+  });
+
+  // C5 : la plus récente, et non la première trouvée.
+  it("retient la dernière demande d’un agent sur une garde, une demande retirée n’en étant pas une", () => {
+    const state = published();
+    state.withdrawals = [
+      withdrawal({ id: "refusee", state: "REFUSED", createdAt: "2026-09-19T08:00:00Z" }),
+      withdrawal({ id: "nouvelle", state: "PENDING", createdAt: "2026-09-21T08:00:00Z", decidedAt: null }),
+      withdrawal({ id: "retiree", state: "CANCELLED", createdAt: "2026-09-22T08:00:00Z", decidedAt: null }),
+      withdrawal({ id: "autre-garde", date: "2026-10-05", shift: "NIGHT", createdAt: "2026-09-23T08:00:00Z" }),
+    ];
+    expect(latestWithdrawal(state, julien, campaignId, date, "DAY")?.id).toBe("nouvelle");
+    state.withdrawals = state.withdrawals.filter(w => w.id !== "nouvelle");
+    expect(latestWithdrawal(state, julien, campaignId, date, "DAY")?.id).toBe("refusee");
+    expect(latestWithdrawal(state, "marie", campaignId, date, "DAY")).toBeUndefined();
+  });
+
+  // C1, statistiques : retiré du brouillon faute de remplaçant, l'agent ne
+  // retrouve pas la garde dont il a été délié.
+  it("ne compte comme tenues que les gardes passées dont l’agent n’a pas été délié", () => {
+    const today = "2026-10-10";
+    const state = published();
+    expect(shiftsHeld(state, julien, today)).toBe(2);
+    state.withdrawals = [withdrawal({ blocking: false })];
+    expect(shiftsHeld(state, julien, today)).toBe(1);
+    expect(shiftsHeld(state, "marie", today)).toBe(1);
+    // Réaffecté et republié après la décision : de nouveau la sienne.
+    state.publications[shiftKey(campaignId, date, "DAY")].publishedAt = "2026-09-20T08:00:00Z";
+    expect(shiftsHeld(state, julien, today)).toBe(2);
+    // Une garde à venir ne compte pas encore.
+    expect(shiftsHeld(state, julien, "2026-10-03")).toBe(1);
   });
 });
 

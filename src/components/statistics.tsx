@@ -16,8 +16,8 @@ import {
   plural,
   responseKey,
   shiftKey,
+  shiftsHeld,
   weekdayNames,
-  withdrawnFrom,
   type AppState,
   type Availability,
   type Shift,
@@ -284,23 +284,10 @@ function ByAgent({ state, campaignId }: { state: AppState; campaignId: string })
       //
       // Effectuées : passées, et tenues. Les gardes publiées à venir s'y
       // comptaient, et un désistement accepté aussi, tant que la garde n'était
-      // pas republiée sans l'agent.
-      const shifts = state.campaigns
-        .filter(c => !c.archived)
-        .reduce(
-          (total, c) =>
-            total +
-            monthDays(c.month)
-              .filter(date => date < today)
-              .flatMap(date =>
-                SHIFTS.filter(
-                  shift =>
-                    state.publications[shiftKey(c.id, date, shift)]?.agents.includes(agent.id) &&
-                    !withdrawnFrom(state, c.id, date, shift).has(agent.id),
-                ),
-              ).length,
-          0,
-        );
+      // pas republiée sans l'agent. La règle est celle de la version publiée :
+      // le brouillon la faisait redevenir « effectuée » dès que l'agent en était
+      // retiré, alors même qu'il en avait été délié.
+      const shifts = shiftsHeld(state, agent.id, today);
       return { agent, filled, shifts, validated: isValidated(state, campaignId, agent.id) };
     })
     .sort((a, b) => b.shifts - a.shifts || a.agent.name.localeCompare(b.agent.name, "fr"));

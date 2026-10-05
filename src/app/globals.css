@@ -504,6 +504,10 @@ label {
 .text-red {
   color: var(--red);
 }
+/* Le ton des pastilles orange : un rappel, pas un refus. */
+.text-orange {
+  color: #8a5a0e;
+}
 .pill {
   display: inline-flex;
   align-items: center;
@@ -1856,6 +1860,10 @@ label {
    ci-dessus, plus spécifique que `.text-red`, l'écrivait en gris. */
 .agent-info > small.text-red {
   color: var(--red);
+}
+/* Le désistement accepté d'un agent revenu au vivier : à savoir, pas un refus. */
+.agent-info > small.text-orange {
+  color: #8a5a0e;
 }
 .qualification-tags {
   display: flex;

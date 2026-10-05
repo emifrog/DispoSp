@@ -5,7 +5,7 @@ import { useApp } from "./provider";
 import { AdministrationOnly, Avatar, PageTitle, Panel } from "./common";
 import { Button } from "./ui/button";
 import { useConfirmation } from "./ui/confirm";
-import { dateLabel, hours, plural, shiftKey, type AppState } from "@/lib/domain";
+import { dateLabel, hours, localDate, plural, relieves, shiftKey, type AppState } from "@/lib/domain";
 import { CAMPAIGN_PARAM } from "@/lib/campaign-param";
 
 type Withdrawal = AppState["withdrawals"][number];
@@ -100,8 +100,12 @@ function Row({
   const campaign = state.campaigns.find(c => c.id === withdrawal.campaignId);
   const published = state.publications[shiftKey(withdrawal.campaignId, withdrawal.date, withdrawal.shift)];
   // Accepté mais toujours au planning publié : le remplacement reste à faire,
-  // et c'est la seule chose que cet écran ne peut pas faire lui-même.
-  const stillOn = withdrawal.state === "ACCEPTED" && published?.agents.includes(withdrawal.userId);
+  // et c'est la seule chose que cet écran ne peut pas faire lui-même. Pas
+  // quand la version publiée suit la décision : l'encadrement a réaffecté
+  // l'agent et republié, c'est une décision neuve, et il n'y a rien à reprendre.
+  const holding = published?.agents.includes(withdrawal.userId) ? published : undefined;
+  const stillOn = Boolean(holding && relieves(withdrawal, holding.publishedAt));
+  const reassignedIn = withdrawal.state === "ACCEPTED" && !stillOn ? holding : undefined;
   const [confirm, confirmation] = useConfirmation();
   const who = agent?.name ?? "L’agent";
   const slot = `à la garde ${withdrawal.shift === "DAY" ? "de jour" : "de nuit"} du ${dateLabel(withdrawal.date, { weekday: "long", day: "numeric", month: "long" })}`;
@@ -138,6 +142,12 @@ function Row({
               Ouvrir la garde
               <ArrowRight size={14} />
             </Link>
+          </p>
+        )}
+        {reassignedIn && (
+          <p className="muted small">
+            Réaffecté depuis : la version {reassignedIn.revision}, publiée le{" "}
+            {dateLabel(localDate(new Date(reassignedIn.publishedAt)))}, le nomme de nouveau.
           </p>
         )}
       </div>

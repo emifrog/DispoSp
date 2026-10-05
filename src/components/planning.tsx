@@ -27,6 +27,7 @@ import {
   dateLabel,
   grades,
   hours,
+  latestWithdrawal,
   monthDays,
   plural,
   requirement,
@@ -105,6 +106,12 @@ export function Planning() {
         : withdrawn.has(agent.id)
           ? "Désistement accepté"
           : "Plus disponible sur ce créneau";
+  // Retiré du brouillon après un désistement accepté, l'agent revenait au
+  // vivier comme n'importe quel autre, son « + » sous la main et rien pour le
+  // rappeler. Le réaffecter reste permis — c'est une décision neuve —, mais elle
+  // se prend en le sachant.
+  const acceptedHere = (agent: Agent) =>
+    latestWithdrawal(state, agent.id, campaignId, date, shift)?.state === "ACCEPTED";
   function agentCard(agent: Agent, retained: boolean) {
     const reason = retained ? invalidReason(agent) : null;
     return (
@@ -116,6 +123,9 @@ export function Planning() {
             {gradeAndFonction(agent)} · {agent.team.replace("Équipe ", "")}
           </small>
           {reason && <small className="text-red">{reason}</small>}
+          {!retained && acceptedHere(agent) && (
+            <small className="text-orange">Désistement accepté sur cette garde</small>
+          )}
           <div className="qualification-tags">
             {agent.qualifications.map(q => (
               <span key={q} className={q === "Chef" ? "chief" : q === "Conducteur PL" ? "driver" : ""}>

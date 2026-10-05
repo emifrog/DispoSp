@@ -368,13 +368,76 @@ export function relievedFrom(
 ) {
   return state.withdrawals.some(
     w =>
-      w.state === "ACCEPTED" &&
       w.userId === userId &&
       w.campaignId === campaignId &&
       w.date === date &&
       w.shift === shift &&
-      (w.decidedAt ? Date.parse(publishedAt) < Date.parse(w.decidedAt) : w.blocking),
+      relieves(w, publishedAt),
   );
+}
+type Withdrawal = AppState["withdrawals"][number];
+/**
+ * Cette décision délie-t-elle encore l'agent de la version publiée à cet
+ * instant ?
+ *
+ * La seule règle de l'application pour le dire, celle de `relievedFrom`, lue
+ * sur une demande précise. Chaque écran lisait autrement l'état d'un
+ * désistement — l'état seul, ou le brouillon — et après une réaffectation
+ * republiée, Mon planning disait « Désistement accepté » sur une garde que
+ * l'agent tenait, quand Demandes réclamait un remplacement déjà fait.
+ */
+export const relieves = (withdrawal: Withdrawal, publishedAt: string) =>
+  withdrawal.state === "ACCEPTED" &&
+  (withdrawal.decidedAt ? Date.parse(publishedAt) < Date.parse(withdrawal.decidedAt) : withdrawal.blocking);
+/**
+ * La dernière demande d'un agent sur une garde, une demande retirée n'en
+ * étant pas une.
+ *
+ * La plus récente, et non la première trouvée : après un refus, l'agent peut en
+ * faire une nouvelle, et la base l'accepte.
+ */
+export function latestWithdrawal(state: AppState, userId: string, campaignId: string, date: string, shift: Shift) {
+  return state.withdrawals
+    .filter(
+      w =>
+        w.userId === userId &&
+        w.campaignId === campaignId &&
+        w.date === date &&
+        w.shift === shift &&
+        w.state !== "CANCELLED",
+    )
+    .reduce<Withdrawal | undefined>(
+      (latest, w) => (!latest || Date.parse(w.createdAt) > Date.parse(latest.createdAt) ? w : latest),
+      undefined,
+    );
+}
+/**
+ * Les gardes qu'un agent a tenues : passées, publiées à son nom, et dont aucun
+ * désistement accepté ne l'a délié depuis.
+ *
+ * Sur toutes les campagnes de la fenêtre chargée — l'engagement se lit dans la
+ * durée —, les archives chargées à la demande exceptées : le total ne doit pas
+ * changer selon ce qu'on vient de consulter.
+ */
+export function shiftsHeld(state: AppState, userId: string, today = localDate()) {
+  return state.campaigns
+    .filter(c => !c.archived)
+    .reduce(
+      (total, c) =>
+        total +
+        monthDays(c.month)
+          .filter(date => date < today)
+          .flatMap(date =>
+            (["DAY", "NIGHT"] as const).filter(shift => {
+              const published = state.publications[shiftKey(c.id, date, shift)];
+              return (
+                published?.agents.includes(userId) &&
+                !relievedFrom(state, userId, c.id, date, shift, published.publishedAt)
+              );
+            }),
+          ).length,
+      0,
+    );
 }
 export const isValidated = (state: AppState, campaignId: string, userId: string) =>
   Boolean(state.responses[responseKey(campaignId, userId)]);
@@ -457,7 +520,11 @@ export function campaignAgents(state: AppState, campaignId: string) {
 export const visibleCampaigns = (state: AppState, userId: string, manages: boolean) =>
   manages ? state.campaigns : state.campaigns.filter(c => c.participants.includes(userId));
 
-/** Les agents qu'un désistement accepté écarte encore de cette garde. */
+/**
+ * Les agents du **brouillon** qu'un désistement accepté écarte encore de cette
+ * garde : décidé après leur affectation au brouillon, comme la base le vérifie
+ * à la publication. Pour ce qui est publié, c'est `relievedFrom` qui répond.
+ */
 export const withdrawnFrom = (state: AppState, campaignId: string, date: string, shift: Shift) =>
   new Set(
     state.withdrawals

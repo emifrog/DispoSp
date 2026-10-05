@@ -10,11 +10,13 @@ import { download, upcomingCalendar } from "@/lib/exports";
 import {
   dateLabel,
   hours,
+  latestWithdrawal,
   localDate,
   monthDays,
   monthLabel,
   plural,
   publishedShiftsOf,
+  relievedFrom,
   shiftKey,
   type PublishedShift as Assigned,
   type Shift,
@@ -63,15 +65,9 @@ export function PersonalPlanning() {
       }),
     )
     .reverse();
-  const withdrawnFromShift = (s: Assigned) =>
-    state.withdrawals.some(
-      w =>
-        w.campaignId === s.campaign.id &&
-        w.date === s.date &&
-        w.shift === s.shift &&
-        w.userId === actor.id &&
-        w.state === "ACCEPTED",
-    );
+  // La règle de la base et de l'accueil : délié seulement si la décision suit
+  // la version publiée. Réaffecté et republié depuis, il l'a tenue.
+  const relieved = (s: Assigned) => relievedFrom(state, actor.id, s.campaign.id, s.date, s.shift, s.publishedAt);
   const next = upcoming[0];
   const shown = tab === "past" ? past : upcoming;
   // Les gardes à venir de toutes les campagnes, comme l'onglet « À venir » :
@@ -182,19 +178,10 @@ export function PersonalPlanning() {
                     </small>
                   </div>
                   {tab === "past" ? (
-                    <span className="pill pill-gray">
-                      {withdrawnFromShift(s) ? "Désistement accepté" : "Effectuée"}
-                    </span>
+                    <span className="pill pill-gray">{relieved(s) ? "Désistement accepté" : "Effectuée"}</span>
                   ) : (
                     <WithdrawalState
-                      withdrawal={state.withdrawals.find(
-                        w =>
-                          w.campaignId === s.campaign.id &&
-                          w.date === s.date &&
-                          w.shift === s.shift &&
-                          w.userId === actor.id &&
-                          w.state !== "CANCELLED",
-                      )}
+                      withdrawal={latestWithdrawal(state, actor.id, s.campaign.id, s.date, s.shift)}
                       onAsk={() => {
                         setWithdrawing(s);
                         setReason("");
@@ -273,6 +260,13 @@ export function PersonalPlanning() {
  * Tant qu'il est en attente, l'agent peut le retirer : c'est son geste, il peut
  * s'être trompé, et une demande retirée vaut mieux qu'un encadrement qui
  * réaffecte pour rien.
+ *
+ * Une garde n'est « à venir » que si l'agent la tient (`publishedShiftsOf`) :
+ * un désistement accepté qui s'y rattache a donc été dépassé par une
+ * réaffectation republiée depuis. L'agent est de nouveau attendu, et peut de
+ * nouveau dire qu'il ne peut plus. Après un refus aussi : la base accepte une
+ * nouvelle demande, et un agent dont la situation s'aggrave doit pouvoir le
+ * dire sans passer par le téléphone.
  */
 function WithdrawalState({
   withdrawal,
@@ -283,14 +277,7 @@ function WithdrawalState({
   onAsk: () => void;
   onCancel: (id: string) => void;
 }) {
-  if (!withdrawal)
-    return (
-      <Button size="sm" variant="ghost" onClick={onAsk}>
-        <Send size={15} />
-        Je ne peux plus
-      </Button>
-    );
-  if (withdrawal.state === "PENDING")
+  if (withdrawal?.state === "PENDING")
     return (
       <span className="withdrawal-pending">
         <span className="pill pill-orange">Désistement en attente</span>
@@ -299,11 +286,27 @@ function WithdrawalState({
         </button>
       </span>
     );
-  return (
-    <span className={`pill ${withdrawal.state === "ACCEPTED" ? "pill-green" : "pill-red"}`}>
-      {withdrawal.state === "ACCEPTED" ? "Désistement accepté" : "Désistement refusé"}
-    </span>
+  const ask = (
+    <Button size="sm" variant="ghost" onClick={onAsk}>
+      <Send size={15} />
+      Je ne peux plus
+    </Button>
   );
+  if (withdrawal?.state === "REFUSED")
+    return (
+      <span className="withdrawal-pending">
+        <span className="pill pill-red">Désistement refusé</span>
+        {ask}
+      </span>
+    );
+  if (withdrawal?.state === "ACCEPTED")
+    return (
+      <span className="withdrawal-pending">
+        <small className="muted">Réaffecté après votre désistement</small>
+        {ask}
+      </span>
+    );
+  return ask;
 }
 
 /** Le mois en une bande : un jour par case, le code de la garde s'il y en a une. */
