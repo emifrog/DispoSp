@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import {
   ArrowRight,
   CalendarCheck2,
@@ -238,7 +238,7 @@ export function Dashboard() {
         }
       >
         <div className="heatmap-scroll">
-          <div className="heatmap">
+          <div className="heatmap" style={{ "--days": days.length } as CSSProperties}>
             <div className="heatmap-label" />
             {days.map(date => (
               <div

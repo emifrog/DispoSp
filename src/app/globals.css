@@ -1025,10 +1025,14 @@ label {
   margin: 0 22px 22px;
   padding-bottom: 2px;
 }
+/* Autant de colonnes que le mois a de jours, posées par --days depuis
+   l'écran. Trente et une en dur, un mois de trente jours laissait la dernière
+   vide : la rangée « Jour » commençait sous l'étiquette, et chaque case
+   s'affichait sous la date du lendemain. */
 .heatmap {
   min-width: 980px;
   display: grid;
-  grid-template-columns: 48px repeat(31, minmax(26px, 1fr));
+  grid-template-columns: 48px repeat(var(--days, 31), minmax(26px, 1fr));
   column-gap: 4px;
   row-gap: 6px;
 }
