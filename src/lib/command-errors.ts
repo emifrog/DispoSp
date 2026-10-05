@@ -59,6 +59,11 @@ const byMessage: [RegExp, (match: RegExpMatchArray) => string][] = [
     /^Cannot remove the last administrator/,
     () => "Ce compte est le dernier administrateur actif du centre : nommez-en un autre avant de le retirer.",
   ],
+  // 5 octobre : redevenir administrateur actif est un geste d'administrateur.
+  [
+    /^Only an administrator can reactivate an administrator/,
+    () => "Seul un administrateur peut réactiver un administrateur.",
+  ],
   [/^Not allowed to edit this member/, () => "Vous n’avez pas le droit de modifier cette fiche."],
   // Publication : ce que 20260921090000 ajoute aux contrôles de couverture.
   [

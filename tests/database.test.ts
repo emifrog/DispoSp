@@ -4902,3 +4902,262 @@ describe("Migration 20260927090000 — gardes d’application", () => {
     await db.close();
   }, 90000);
 });
+
+// Analyse du 5 octobre : chaque parcours ci-dessous échouait sur le schéma de
+// 20260927090000 (.local/audit-20261005/sql/constats.test.ts › F1 et F2).
+describe("Analyse du 5 octobre — seul un administrateur rend ses droits à un administrateur", () => {
+  const org = "10000000-0000-0000-0000-0000000000e0";
+  const team = "20000000-0000-0000-0000-0000000000e0";
+  const admin = "30000000-0000-0000-0000-0000000000e0";
+  const former = "30000000-0000-0000-0000-0000000000e1";
+  const manager = "30000000-0000-0000-0000-0000000000e2";
+  const agent = "30000000-0000-0000-0000-0000000000e3";
+  let live: PGlite;
+  const be = async (id: string | null) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id ?? ""]);
+    if (id) await live.exec("set role authenticated");
+  };
+  const save = (member: string, role: string, active: boolean, name: string) =>
+    live.query("select public.save_member($1,$2,$3,$4,$5,$6,null,null,null,null,$7)", [
+      org,
+      member,
+      team,
+      role,
+      active,
+      name,
+      [],
+    ]);
+  const state = async (member: string) => {
+    await be(null);
+    return (
+      await live.query<{ role: string; active: boolean; display_name: string }>(
+        `select m.role, m.active, p.display_name from public.memberships m
+           join public.profiles p on p.user_id = m.user_id where m.user_id = $1`,
+        [member],
+      )
+    ).rows[0];
+  };
+
+  beforeEach(async () => {
+    live = await freshDatabase();
+    await live.exec(`
+      insert into auth.users(id,email,email_confirmed_at) values
+        ('${admin}','admin@e0.test',now()), ('${former}','ancien-admin@e0.test',now()),
+        ('${manager}','chef@e0.test',now()), ('${agent}','agent@e0.test',now());
+      insert into public.profiles(user_id,display_name) values
+        ('${admin}','Administratrice'), ('${former}','Ancien Admin'), ('${manager}','Gestionnaire'), ('${agent}','Agent');
+      insert into public.organizations(id,name) values ('${org}','Centre E0');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values
+        ('${org}','${admin}','${team}','ADMIN',true),
+        ('${org}','${former}','${team}','ADMIN',false),
+        ('${org}','${manager}','${team}','GESTIONNAIRE',true),
+        ('${org}','${agent}','${team}','AGENT',false);`);
+  }, 30000);
+  afterEach(async () => {
+    await live.close();
+  });
+
+  it("refuse à un gestionnaire de réactiver un administrateur, par la fiche comme directement", async () => {
+    await be(manager);
+    await expect(save(former, "ADMIN", true, "Ancien Admin")).rejects.toThrow(
+      "Only an administrator can reactivate an administrator",
+    );
+    await be(manager);
+    await expect(
+      live.query("update public.memberships set active=true where organization_id=$1 and user_id=$2", [org, former]),
+    ).rejects.toThrow("Only an administrator can reactivate an administrator");
+    expect(await state(former)).toEqual({ role: "ADMIN", active: false, display_name: "Ancien Admin" });
+  });
+
+  it("laisse un administrateur le réactiver", async () => {
+    await be(admin);
+    await save(former, "ADMIN", true, "Ancien Admin");
+    expect(await state(former)).toMatchObject({ role: "ADMIN", active: true });
+  });
+
+  it("laisse un gestionnaire réactiver un agent, et corriger la fiche d’un administrateur sans le réactiver", async () => {
+    await be(manager);
+    await save(agent, "AGENT", true, "Agent");
+    expect(await state(agent)).toMatchObject({ role: "AGENT", active: true });
+    await be(manager);
+    await save(former, "ADMIN", false, "Ancien Admin, nom corrigé");
+    expect(await state(former)).toEqual({ role: "ADMIN", active: false, display_name: "Ancien Admin, nom corrigé" });
+  });
+
+  it("laisse un administrateur réinviter un administrateur désactivé, rattaché aussitôt", async () => {
+    await be(admin);
+    await live.query(
+      `insert into public.invitations(organization_id,team_id,email,display_name,role,invited_by)
+       values ($1,$2,'ancien-admin@e0.test','Ancien Admin','ADMIN',$3)`,
+      [org, team, admin],
+    );
+    expect(await state(former)).toMatchObject({ role: "ADMIN", active: true });
+  });
+});
+
+describe("Analyse du 5 octobre — déverrouiller une campagne inscrit les arrivées du verrou", () => {
+  const org = "10000000-0000-0000-0000-0000000000e1";
+  const team = "20000000-0000-0000-0000-0000000000e1";
+  const manager = "30000000-0000-0000-0000-0000000000e4";
+  const veteran = "30000000-0000-0000-0000-0000000000e5";
+  const newcomer = "30000000-0000-0000-0000-0000000000e6";
+  const campaign = "40000000-0000-0000-0000-0000000000e1";
+  let live: PGlite;
+  const be = async (id: string | null) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id ?? ""]);
+    if (id) await live.exec("set role authenticated");
+  };
+  const lock = async (locked: boolean) => {
+    await be(manager);
+    await live.query("update public.availability_campaigns set locked=$2 where id=$1", [campaign, locked]);
+  };
+  const participants = async () => {
+    await be(null);
+    return (
+      await live.query<{ user_id: string }>(
+        "select user_id from public.campaign_participants where campaign_id=$1 order by user_id",
+        [campaign],
+      )
+    ).rows.map(row => row.user_id);
+  };
+  const opened = async (user: string) => {
+    await be(null);
+    return Number(
+      (
+        await live.query<{ n: string }>(
+          "select count(*)::text n from public.notifications where user_id=$1 and kind='CAMPAIGN_OPENED'",
+          [user],
+        )
+      ).rows[0].n,
+    );
+  };
+
+  beforeEach(async () => {
+    live = await freshDatabase();
+    await live.exec(`
+      insert into auth.users(id) values ('${manager}'), ('${veteran}'), ('${newcomer}');
+      insert into public.profiles(user_id,display_name) values ('${manager}','Chef'), ('${veteran}','Ancien'), ('${newcomer}','Nouveau');
+      insert into public.organizations(id,name) values ('${org}','Centre E1');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values
+        ('${org}','${manager}','${team}','GESTIONNAIRE',true),
+        ('${org}','${veteran}','${team}','AGENT',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        values ('${campaign}','${org}','${team}','Novembre','2099-11-01','2099-11-30',now()-interval '1 day',now()+interval '10 days');
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values
+        ('${org}','${campaign}','${manager}'), ('${org}','${campaign}','${veteran}');`);
+  }, 30000);
+  afterEach(async () => {
+    await live.close();
+  });
+
+  it("inscrit et prévient au déverrouillage l’agent rattaché pendant le verrou, et lui seul", async () => {
+    await lock(true);
+    await be(null);
+    await live.query("insert into public.memberships values ($1,$2,$3,'AGENT',true)", [org, newcomer, team]);
+    expect(await participants()).not.toContain(newcomer);
+    await lock(false);
+    expect(await participants()).toEqual([manager, veteran, newcomer].sort());
+    expect(await opened(newcomer)).toBe(1);
+    // Les inscrits de toujours ne sont pas prévenus une seconde fois.
+    expect(await opened(veteran)).toBe(1);
+    // Et l'arrivant peut répondre.
+    await be(newcomer);
+    await live.query(
+      "insert into public.availability_entries(campaign_id,user_id,date,availability_type) values ($1,$2,'2099-11-01','DAY')",
+      [campaign, newcomer],
+    );
+  });
+
+  it("ne réécrit rien quand on verrouille et déverrouille de nouveau", async () => {
+    await lock(true);
+    await be(null);
+    await live.query("insert into public.memberships values ($1,$2,$3,'AGENT',true)", [org, newcomer, team]);
+    await lock(false);
+    await lock(true);
+    await lock(false);
+    expect(await opened(newcomer)).toBe(1);
+    expect(await participants()).toHaveLength(3);
+  });
+
+  it("n’inscrit personne au déverrouillage d’une campagne dont la clôture est passée", async () => {
+    await lock(true);
+    await be(null);
+    await live.query("update public.availability_campaigns set closes_at=now()-interval '1 hour' where id=$1", [
+      campaign,
+    ]);
+    await live.query("insert into public.memberships values ($1,$2,$3,'AGENT',true)", [org, newcomer, team]);
+    await live.query("update public.availability_campaigns set locked=false where id=$1", [campaign]);
+    expect(await participants()).not.toContain(newcomer);
+    expect(await opened(newcomer)).toBe(0);
+  });
+
+  it("n’inscrit pas un membre désactivé ni celui d’une autre équipe", async () => {
+    const other = "20000000-0000-0000-0000-0000000000e2";
+    await lock(true);
+    await be(null);
+    await live.query("insert into public.teams(id,organization_id,name) values ($1,$2,'Bravo')", [other, org]);
+    await live.query("insert into public.memberships values ($1,$2,$3,'AGENT',true)", [org, newcomer, other]);
+    await live.query("update public.memberships set active=false where user_id=$1", [veteran]);
+    await live.query("delete from public.campaign_participants where user_id=$1", [veteran]);
+    await lock(false);
+    expect(await participants()).toEqual([manager]);
+  });
+});
+
+describe("Migration 20261005090000 — gardes d’application et rattrapage", () => {
+  const target = MIGRATIONS.indexOf("20261005090000_reactivation_admin_deverrouillage.sql");
+  const migration = () =>
+    readFileSync(new URL(`../supabase/migrations/${MIGRATIONS[target]}`, import.meta.url), "utf8");
+  const upTo = async (count: number) => {
+    const db = new PGlite();
+    await db.exec(baseAuthSchema);
+    for (const m of MIGRATIONS.slice(0, count))
+      await db.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    return db;
+  };
+
+  it("refuse un second passage et un passage avant sa dépendance", async () => {
+    expect(target).toBeGreaterThan(0);
+    const applied = await upTo(target + 1);
+    await expect(applied.exec(migration())).rejects.toThrow("déjà été appliquée");
+    await applied.close();
+    const early = await upTo(target - 1);
+    await expect(early.exec(migration())).rejects.toThrow("20260927090000_correctifs_bilan.sql");
+    await early.close();
+  }, 90000);
+
+  it("inscrit et prévient à l’application l’agent arrivé pendant un verrou déjà levé", async () => {
+    const org = "10000000-0000-0000-0000-0000000000e3";
+    const team = "20000000-0000-0000-0000-0000000000e3";
+    const agent = "30000000-0000-0000-0000-0000000000e7";
+    const campaign = "40000000-0000-0000-0000-0000000000e3";
+    const db = await upTo(target);
+    await db.exec(`
+      insert into auth.users(id) values ('${agent}');
+      insert into public.profiles(user_id,display_name) values ('${agent}','Arrivé pendant le verrou');
+      insert into public.organizations(id,name) values ('${org}','Centre E3');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at,locked)
+        values ('${campaign}','${org}','${team}','Novembre','2099-11-01','2099-11-30',now()-interval '1 day',now()+interval '10 days',true);
+      insert into public.memberships values ('${org}','${agent}','${team}','AGENT',true);
+      update public.availability_campaigns set locked=false where id='${campaign}';`);
+    // Le défaut, sur le schéma d'avant : déverrouillée, la campagne l'ignore.
+    expect((await db.query("select 1 from public.campaign_participants where user_id=$1", [agent])).rows).toEqual([]);
+    await db.exec(migration());
+    expect(
+      (await db.query("select campaign_id from public.campaign_participants where user_id=$1", [agent])).rows,
+    ).toEqual([{ campaign_id: campaign }]);
+    expect(
+      (
+        await db.query("select count(*)::int n from public.notifications where user_id=$1 and kind='CAMPAIGN_OPENED'", [
+          agent,
+        ])
+      ).rows,
+    ).toEqual([{ n: 1 }]);
+    await db.close();
+  }, 90000);
+});

@@ -273,7 +273,7 @@ export function Campaigns() {
 }
 
 export function Agents() {
-  const { state, run, canAdminister } = useApp();
+  const { state, run, canAdminister, memberRole } = useApp();
   const [search, setSearch] = useState("");
   // « Réactiver » ouvre la même fiche, la case « Agent actif » déjà cochée :
   // la fiche s'ouvrait décochée, et l'enregistrer tel quel ne réactivait rien.
@@ -393,9 +393,16 @@ export function Agents() {
                     {gradeAndFonction(a)} · {a.team}
                   </small>
                 </span>
-                <Button size="sm" variant="ghost" onClick={() => setEdited({ agent: a, reactivate: true })}>
-                  Réactiver
-                </Button>
+                {/* Redevenir administrateur actif est un geste d'administrateur
+                    (20261005090000) : un gestionnaire ne se voit pas offrir
+                    ce que la base lui refuserait. */}
+                {a.role === "ADMIN" && memberRole !== "ADMIN" ? (
+                  <small className="muted">Seul un administrateur peut le réactiver.</small>
+                ) : (
+                  <Button size="sm" variant="ghost" onClick={() => setEdited({ agent: a, reactivate: true })}>
+                    Réactiver
+                  </Button>
+                )}
               </div>
             ))}
           </div>

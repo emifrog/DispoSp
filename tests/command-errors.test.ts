@@ -32,6 +32,9 @@ describe("Traduction des refus de la base", () => {
       "désactiver ou rétrograder un administrateur",
     );
     expect(frenchMessage({ message: "Cannot remove the last administrator" })).toContain("dernier administrateur");
+    expect(frenchMessage({ message: "Only an administrator can reactivate an administrator" })).toBe(
+      "Seul un administrateur peut réactiver un administrateur.",
+    );
   });
   it("retombe sur le code SQL quand le message n’est pas reconnu", () => {
     expect(frenchMessage({ message: "permission denied for table teams", code: "42501" })).toContain(
