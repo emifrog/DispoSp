@@ -163,7 +163,7 @@ Si cette partie échoue, rien d'autre ne sert : personne n'entre.
 
 **Sinon** — Si rien n'arrive, la notification existe quand même : l'agent la verra dans **Notifications**. C'est le filet de sécurité. Vérifiez alors les trois variables de l'étape 0.3, puis le tableau de bord Resend (message refusé, domaine non validé, quota).
 
-Rien n'est perdu : la file garde le message et le renverra à la prochaine action.
+Rien n'est perdu : la file garde le message et le renverra à la prochaine action. Si Resend refuse le compte lui-même — domaine non vérifié, clé absente ou révoquée, quota atteint —, l'envoi se suspend : une seule ligne « Envoi des emails suspendu » au journal du serveur, avec la raison donnée par Resend, et aucun message n'est abandonné. Corrigez le compte ; les messages repartent à la première action qui suit le délai — quinze minutes, une heure pour un quota. Un message qui n'est pas parti au bout de trois jours est abandonné : la notification, elle, reste dans l'application.
 
 ---
 

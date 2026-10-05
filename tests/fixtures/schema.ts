@@ -38,6 +38,7 @@ export const MIGRATIONS = [
   "20260925180000_correctifs_mineurs.sql",
   "20260927090000_correctifs_bilan.sql",
   "20261005090000_reactivation_admin_deverrouillage.sql",
+  "20261005120000_suspension_file_email.sql",
 ];
 
 /**

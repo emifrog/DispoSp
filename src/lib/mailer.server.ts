@@ -16,9 +16,40 @@ const BATCH = 10;
 const MAX_PASSES = 20;
 /** Un service d'envoi qui ne répond pas en dix secondes ne répondra pas mieux en trente. */
 const TIMEOUT_MS = 10_000;
+/** Compte refusé — clé, domaine, expéditeur : le temps qu'on le corrige. */
+const ACCOUNT_PAUSE_S = 15 * 60;
+/** Quota du jour ou du mois atteint : il ne revient pas dans la minute. */
+const QUOTA_PAUSE_S = 60 * 60;
+/** Trop de requêtes par seconde : le temps que le débit retombe. */
+const RATE_PAUSE_S = 60;
 
 /** Un message réservé : ce qu'il faut envoyer, le bail, et la clé qui le rend unique chez Resend. */
 type Job = Pending & { lease: string; idempotency_key?: string | null };
+/** Ce que Resend a répondu. `pause` : le refus vise le compte, pas ce message. */
+type Outcome = { status: number; pause?: { seconds: number; reason: string } };
+type Refusal = { name?: string; message?: string } | null;
+
+/**
+ * Un refus qui vise le compte d'envoi et non ce message, d'après les erreurs
+ * documentées par Resend (https://resend.com/docs/api-reference/errors).
+ *
+ * Il vaut pour chaque message de la file : le traiter comme un refus définitif
+ * — ce que la base fait de tout 4xx — soldait la file entière en échec, et rien
+ * ne la reprenait une fois le compte corrigé. Un 401 ou un 403 dit une clé
+ * absente, restreinte ou suspendue, un domaine non vérifié, un compte encore en
+ * mode d'essai ; un 422 qui parle de `from`, un expéditeur mal formé — le même
+ * pour tous les messages. Les refus propres à un destinataire, eux, restent
+ * définitifs.
+ */
+function suspension(status: number, refusal: Refusal): Outcome["pause"] {
+  const name = refusal?.name ?? "";
+  const reason = `${status}${name ? ` ${name}` : ""}${refusal?.message ? ` — ${refusal.message}` : ""}`;
+  if (status === 429 && name === "rate_limit_exceeded") return { seconds: RATE_PAUSE_S, reason };
+  if (status === 429 && /quota/.test(name)) return { seconds: QUOTA_PAUSE_S, reason };
+  if (status === 401 || status === 403) return { seconds: ACCOUNT_PAUSE_S, reason };
+  if (status === 422 && /\bfrom\b/i.test(refusal?.message ?? "")) return { seconds: ACCOUNT_PAUSE_S, reason };
+  return undefined;
+}
 
 /**
  * Tout ce que l'envoi réclame, et pas seulement Resend : la file se lit sous
@@ -47,7 +78,7 @@ export function emailConfigured() {
  * clé. Elle manque tant que la migration 20260927090000 n'est pas appliquée ;
  * le message part alors sans, comme avant.
  */
-async function send(notice: Job, key: string, from: string, appUrl: string): Promise<number> {
+async function send(notice: Job, key: string, from: string, appUrl: string): Promise<Outcome> {
   const built = message(notice, appUrl);
   try {
     const response = await fetch(RESEND_SEND, {
@@ -60,18 +91,22 @@ async function send(notice: Job, key: string, from: string, appUrl: string): Pro
       body: JSON.stringify({ from, to: [built.to], subject: built.subject, text: built.text, html: built.html }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
+    if (response.ok) return { status: response.status };
+    // Ce que Resend dit du refus. Un corps illisible n'en dit rien, et le code
+    // seul décide alors.
+    const refusal = (await Promise.resolve()
+      .then(() => response.json())
+      .catch(() => null)) as Refusal;
     // Un autre passage envoie ce même message en ce moment : ni un envoi ni un
     // refus. Le silence le fait réessayer plus tard sous la même clé, et Resend
     // rendra alors la réponse faite au premier.
-    if (response.status === 409) {
-      const reason = (await response.json().catch(() => null)) as { name?: string } | null;
-      if (reason?.name === "concurrent_idempotent_requests") return 0;
-    }
-    if (!response.ok) console.error("Resend a refusé un message", response.status, notice.id);
-    return response.status;
+    if (response.status === 409 && refusal?.name === "concurrent_idempotent_requests") return { status: 0 };
+    const pause = suspension(response.status, refusal);
+    if (!pause) console.error("Resend a refusé un message", response.status, notice.id);
+    return { status: response.status, pause };
   } catch (failure) {
     console.error("Envoi impossible", failure instanceof Error ? failure.message : failure);
-    return 0;
+    return { status: 0 };
   }
 }
 
@@ -95,6 +130,18 @@ export async function dispatchEmails() {
   const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+  // Rendre un message à la file sans compter la tentative : avec le refus que
+  // Resend vient de lui faire, ou sans rien pour ceux du lot qui n'ont pas été
+  // tentés.
+  const release = async (job: Job, seconds: number, status?: number) => {
+    const { error } = await client.rpc("release_email_delivery", {
+      delivery: job.id,
+      token: job.lease,
+      retry_in: seconds,
+      http_status: status ?? null,
+    });
+    if (error) throw new Error(`Suspension non enregistrée : ${error.message}`);
+  };
   let processed = 0;
   let sent = 0;
   for (let pass = 0; pass < MAX_PASSES; pass++) {
@@ -105,8 +152,17 @@ export async function dispatchEmails() {
     const jobs = (data ?? []) as Job[];
     // Un message après l'autre : Resend limite le débit, et un lot parti en
     // parallèle ne ferait que provoquer les refus qu'on cherche à éviter.
-    for (const job of jobs) {
-      const status = await send(job, key, from, appUrl);
+    for (const [index, job] of jobs.entries()) {
+      const { status, pause } = await send(job, key, from, appUrl);
+      if (pause) {
+        // Le compte est refusé, pas ce message : les suivants le seraient
+        // aussi. On s'arrête, et tout le lot retourne en file pour un nouvel
+        // essai après le délai — une ligne au journal, pas deux cents échecs.
+        console.error("Envoi des emails suspendu :", pause.reason);
+        await release(job, pause.seconds, status);
+        for (const untried of jobs.slice(index + 1)) await release(untried, pause.seconds);
+        return { processed, sent, suspended: pause.reason };
+      }
       const { error: failure } = await client.rpc("finish_email_delivery", {
         delivery: job.id,
         token: job.lease,

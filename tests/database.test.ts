@@ -5161,3 +5161,155 @@ describe("Migration 20261005090000 — gardes d’application et rattrapage", ()
     await db.close();
   }, 90000);
 });
+
+// Analyse du 5 octobre, C3 : un refus qui vise le compte Resend ne solde plus
+// la file. Le serveur rend les messages réservés, sans compter la tentative.
+describe("Analyse du 5 octobre — une file d’emails suspendue rend ses messages", () => {
+  const org = "10000000-0000-0000-0000-0000000000e4";
+  const team = "20000000-0000-0000-0000-0000000000e4";
+  const agent = "30000000-0000-0000-0000-0000000000e8";
+  let live: PGlite;
+  type Job = { id: string; lease: string; idempotency_key: string };
+  const server = async () => {
+    await live.exec("reset role");
+    await live.exec("set role service_role");
+  };
+  const claim = async () => {
+    await server();
+    return (await live.query<Job>("select id, lease, idempotency_key from public.claim_email_deliveries(10)")).rows;
+  };
+  const release = async (job: Job, retryIn: number, status?: number) => {
+    await server();
+    await live.query("select public.release_email_delivery($1,$2,$3,$4)", [job.id, job.lease, retryIn, status ?? null]);
+  };
+  const row = async (id: string) => {
+    await live.exec("reset role");
+    return (
+      await live.query<{
+        email_status: string;
+        email_attempts: number;
+        email_last_status: number | null;
+        email_key: string;
+        lease: string | null;
+        waits: number;
+      }>(
+        `select email_status, email_attempts, email_last_status, email_key, email_lease as lease,
+                round(extract(epoch from email_available_at - now()))::int as waits
+           from public.notifications where id = $1`,
+        [id],
+      )
+    ).rows[0];
+  };
+  const again = async () => {
+    await live.exec("reset role");
+    await live.query("update public.notifications set email_available_at = now()");
+  };
+
+  beforeEach(async () => {
+    live = await freshDatabase();
+    await live.exec(`
+      insert into auth.users(id,email) values ('${agent}','agent@e4.test');
+      insert into public.profiles(user_id,display_name) values ('${agent}','Agent');
+      insert into public.organizations(id,name) values ('${org}','Centre E4');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values ('${org}','${agent}','${team}','AGENT',true);
+      insert into public.notifications(organization_id,user_id,kind,subject) values
+        ('${org}','${agent}','CAMPAIGN_OPENED','Ouverte'), ('${org}','${agent}','CAMPAIGN_REMINDER','Rappel');`);
+  }, 30000);
+  afterEach(async () => {
+    await live.close();
+  });
+
+  it("rend en file le message que Resend a refusé pour le compte, sans compter la tentative, avec une clé neuve", async () => {
+    const [job] = await claim();
+    expect((await row(job.id)).email_attempts).toBe(1);
+    await release(job, 900, 403);
+    const after = await row(job.id);
+    expect(after).toMatchObject({ email_status: "pending", email_attempts: 0, email_last_status: 403, lease: null });
+    expect(after.email_key).not.toBe(job.idempotency_key);
+    expect(after.waits).toBeGreaterThan(890);
+    // Le délai tient : un passage immédiat ne le reprend pas.
+    expect((await claim()).map(j => j.id)).not.toContain(job.id);
+  });
+
+  it("rend un message du lot qui n’a pas été tenté, avec sa clé et son dernier état", async () => {
+    const [, untried] = await claim();
+    await release(untried, 900);
+    const after = await row(untried.id);
+    expect(after).toMatchObject({ email_status: "pending", email_attempts: 0, email_last_status: null });
+    expect(after.email_key).toBe(untried.idempotency_key);
+  });
+
+  it("ne l’abandonne jamais pour une suspension, même répétée", async () => {
+    let id = "";
+    for (let i = 0; i < 7; i++) {
+      await again();
+      const [job] = await claim();
+      id = job.id;
+      await release(job, 60, 429);
+    }
+    expect(await row(id)).toMatchObject({ email_status: "pending", email_attempts: 0 });
+  });
+
+  it("le passe en échec au-delà de trois jours : l’avis a perdu son objet", async () => {
+    await live.exec("reset role");
+    await live.query(
+      "update public.notifications set created_at = now() - interval '4 days' where subject = 'Ouverte'",
+    );
+    const jobs = await claim();
+    for (const job of jobs) await release(job, 900, 403);
+    await live.exec("reset role");
+    expect(
+      (
+        await live.query<{ subject: string; email_status: string }>(
+          "select subject, email_status from public.notifications order by subject",
+        )
+      ).rows,
+    ).toEqual([
+      { subject: "Ouverte", email_status: "failed" },
+      { subject: "Rappel", email_status: "pending" },
+    ]);
+  });
+
+  it("ne rend rien sous un mauvais jeton", async () => {
+    const [job] = await claim();
+    await release({ ...job, lease: "00000000-0000-0000-0000-000000000000" }, 900, 403);
+    expect(await row(job.id)).toMatchObject({ email_status: "sending", email_attempts: 1 });
+  });
+
+  it("n’est appelable que par le serveur", async () => {
+    await live.exec("reset role");
+    expect(
+      (
+        await live.query<{ anon: boolean; authenticated: boolean; server: boolean }>(
+          `select has_function_privilege('anon', 'public.release_email_delivery(uuid,uuid,integer,integer)', 'execute') as anon,
+                  has_function_privilege('authenticated', 'public.release_email_delivery(uuid,uuid,integer,integer)', 'execute') as authenticated,
+                  has_function_privilege('service_role', 'public.release_email_delivery(uuid,uuid,integer,integer)', 'execute') as server`,
+        )
+      ).rows,
+    ).toEqual([{ anon: false, authenticated: false, server: true }]);
+  });
+});
+
+describe("Migration 20261005120000 — gardes d’application", () => {
+  const target = MIGRATIONS.indexOf("20261005120000_suspension_file_email.sql");
+  const migration = () =>
+    readFileSync(new URL(`../supabase/migrations/${MIGRATIONS[target]}`, import.meta.url), "utf8");
+  const upTo = async (count: number) => {
+    const db = new PGlite();
+    await db.exec(baseAuthSchema);
+    for (const m of MIGRATIONS.slice(0, count))
+      await db.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    return db;
+  };
+
+  it("refuse un second passage et un passage avant sa dépendance", async () => {
+    expect(target).toBeGreaterThan(0);
+    const applied = await upTo(target + 1);
+    await expect(applied.exec(migration())).rejects.toThrow("déjà été appliquée");
+    await applied.close();
+    const early = await upTo(target - 1);
+    await expect(early.exec(migration())).rejects.toThrow("20261005090000_reactivation_admin_deverrouillage.sql");
+    await early.close();
+  }, 90000);
+});

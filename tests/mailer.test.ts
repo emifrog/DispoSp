@@ -145,6 +145,89 @@ describe("File d’emails", () => {
     ]);
   });
 
+  // Analyse du 5 octobre, C3 : un refus qui vise le compte vaut pour toute la
+  // file. Il ne solde plus rien en échec : le lot retourne en file, sans que
+  // la tentative compte, pour un nouvel essai après un délai.
+  const refused = (status: number, name: string, message = "") => ({
+    ok: false,
+    status,
+    json: async () => ({ statusCode: status, name, message }),
+  });
+  const run = async (response: object) => {
+    let claims = 0;
+    rpc.mockImplementation(async (name: string) => {
+      if (name !== "claim_email_deliveries") return { error: null };
+      claims++;
+      // Un lot plein, puis une file vide.
+      return { data: claims === 1 ? Array.from({ length: 10 }, (_, i) => job(i + 1)) : [], error: null };
+    });
+    fetchMock.mockResolvedValue(response);
+    const result = await dispatchEmails();
+    const calls = (name: string) => rpc.mock.calls.filter(([n]) => n === name).map(([, args]) => args);
+    return { result, claims, finished: calls("finish_email_delivery"), released: calls("release_email_delivery") };
+  };
+
+  it.each([
+    [403, "validation_error", "The `audit.test` domain is not verified.", 900],
+    [403, "suspended_api_key", "This API key is suspended", 900],
+    [401, "missing_api_key", "Missing API key in the authorization header.", 900],
+    [422, "validation_error", "Invalid `from` field.", 900],
+    [429, "daily_quota_exceeded", "You have exceeded your daily email sending quota.", 3600],
+    [429, "monthly_quota_exceeded", "You have exceeded your monthly email sending quota.", 3600],
+    [429, "rate_limit_exceeded", "Too many requests.", 60],
+  ])(
+    "suspend la file sur un %i %s, et rend tout le lot sans compter la tentative",
+    async (status, name, message, delay) => {
+      const { result, claims, finished, released } = await run(refused(status, name, message));
+      // Un seul essai, puis l'arrêt : ni passage suivant, ni neuf refus de plus.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(claims).toBe(1);
+      expect(finished).toEqual([]);
+      expect(released).toEqual([
+        { delivery: "n1", token: "l1", retry_in: delay, http_status: status },
+        ...Array.from({ length: 9 }, (_, i) => ({
+          delivery: `n${i + 2}`,
+          token: `l${i + 2}`,
+          retry_in: delay,
+          http_status: null,
+        })),
+      ]);
+      expect(result).toEqual({ processed: 0, sent: 0, suspended: expect.stringContaining(`${status} ${name}`) });
+    },
+  );
+
+  it("garde définitif un refus propre au destinataire, et continue le lot", async () => {
+    const { result, finished, released } = await run(refused(422, "validation_error", "Invalid `to` field."));
+    expect(released).toEqual([]);
+    expect(finished).toHaveLength(10);
+    expect(finished.every(f => f.http_status === 422)).toBe(true);
+    expect(result).toEqual({ processed: 10, sent: 0 });
+  });
+
+  it("garde les messages déjà partis avant le refus du compte", async () => {
+    rpc.mockImplementation(async (name: string) =>
+      name === "claim_email_deliveries" ? { data: [job(1), job(2), job(3)], error: null } : { error: null },
+    );
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, status: 200 })
+      .mockResolvedValueOnce(refused(429, "daily_quota_exceeded"));
+    const result = await dispatchEmails();
+    const calls = (name: string) => rpc.mock.calls.filter(([n]) => n === name).map(([, args]) => args);
+    expect(calls("finish_email_delivery")).toEqual([{ delivery: "n1", token: "l1", http_status: 200 }]);
+    expect(calls("release_email_delivery").map(r => r.delivery)).toEqual(["n2", "n3"]);
+    expect(result).toMatchObject({ processed: 1, sent: 1 });
+  });
+
+  it("dit pourquoi la suspension n’a pas pu être enregistrée", async () => {
+    rpc.mockImplementation(async (name: string) =>
+      name === "claim_email_deliveries"
+        ? { data: [job(1)], error: null }
+        : { error: { message: "Could not find the function public.release_email_delivery" } },
+    );
+    fetchMock.mockResolvedValue(refused(403, "validation_error", "The domain is not verified."));
+    await expect(dispatchEmails()).rejects.toThrow("Suspension non enregistrée : Could not find the function");
+  });
+
   it("s’arrête si la base ne rend pas la réservation, sans rien envoyer", async () => {
     rpc.mockResolvedValue({ data: null, error: { message: "permission denied" } });
     await expect(dispatchEmails()).rejects.toThrow("Réservation");
