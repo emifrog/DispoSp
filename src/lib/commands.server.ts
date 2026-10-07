@@ -483,6 +483,9 @@ async function writeInvitation(client: Client, session: AttachedSession, command
       role: command.role,
       grade: command.grade || null,
       fonction: command.fonction || null,
+      // Une qualification, pas un champ de fiche : la base la donne à l'agent
+      // le jour où il rejoint le centre (20261007090000).
+      conduite: command.conduite || null,
       matricule: command.matricule || null,
       phone: command.phone || null,
       invited_by: session.userId,

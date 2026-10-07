@@ -33,6 +33,8 @@ import {
   requirement,
   shiftKey,
   suggestedRequirement,
+  conduites,
+  isConduite,
   withdrawnFrom,
   draftAgents,
   workload,
@@ -128,7 +130,7 @@ export function Planning() {
           )}
           <div className="qualification-tags">
             {agent.qualifications.map(q => (
-              <span key={q} className={q === "Chef" ? "chief" : q === "Conducteur PL" ? "driver" : ""}>
+              <span key={q} className={q === "Chef" ? "chief" : q === "Conducteur PL" || isConduite(q) ? "driver" : ""}>
                 {q}
               </span>
             ))}
@@ -465,7 +467,7 @@ export function Planning() {
             qualification retirée du catalogue reste éditable ici, et une
             posée en lot n'est plus invisible. Quatre noms figés ne parlaient
             que d'un centre. */}
-        {[...new Set([...state.qualificationCatalogue, ...Object.keys(qualifications)])]
+        {[...new Set([...state.qualificationCatalogue, ...conduites, ...Object.keys(qualifications)])]
           .sort((a, b) => a.localeCompare(b, "fr"))
           .map(q => (
             <label key={q} className="field">

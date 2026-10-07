@@ -3,9 +3,10 @@ import type { AttachedSession } from "../src/lib/session";
 
 // B1 de l'analyse du 23 septembre : un envoi d'invitation qui ne part pas est
 // rendu, et le gestionnaire lit pourquoi.
-const { rpc, single, inviteUserByEmail, adminRpc } = vi.hoisted(() => ({
+const { rpc, single, insert, inviteUserByEmail, adminRpc } = vi.hoisted(() => ({
   rpc: vi.fn(),
   single: vi.fn(),
+  insert: vi.fn(),
   inviteUserByEmail: vi.fn(),
   adminRpc: vi.fn(),
 }));
@@ -13,7 +14,12 @@ vi.mock("server-only", () => ({}));
 vi.mock("../src/lib/supabase/server", () => ({
   createActionClient: async () => ({
     rpc,
-    from: () => ({ insert: () => ({ select: () => ({ single }) }) }),
+    from: () => ({
+      insert: (row: unknown) => {
+        insert(row);
+        return { select: () => ({ single }) };
+      },
+    }),
   }),
 }));
 vi.mock("../src/lib/supabase/admin.server", () => ({
@@ -42,6 +48,7 @@ const invite = {
   name: "Recrue",
   grade: "",
   fonction: "",
+  conduite: "" as const,
   matricule: "",
   phone: "",
   role: "AGENT" as const,
@@ -100,6 +107,15 @@ describe("Envoi d’une invitation", () => {
       "Compte existant rattaché au centre — aucun message n’était nécessaire",
     );
     expect(inviteUserByEmail).not.toHaveBeenCalled();
+  });
+
+  // La conduite part avec l'invitation : la base la donne à l'agent quand il
+  // rejoint le centre. « Aucun » s'enregistre comme une absence.
+  it("enregistre la conduite avec l’invitation, et « Aucun » comme une absence", async () => {
+    inviteUserByEmail.mockResolvedValue({ error: null });
+    await runCommand(session, { ...invite, conduite: "COD2" });
+    await runCommand(session, invite);
+    expect(insert.mock.calls.map(([row]) => (row as { conduite: unknown }).conduite)).toEqual(["COD2", null]);
   });
 
   it("ne rend aucun libellé propre quand le message part : « Invitation envoyée » est juste", async () => {

@@ -5313,3 +5313,192 @@ describe("Migration 20261005120000 — gardes d’application", () => {
     await early.close();
   }, 90000);
 });
+
+// La conduite (7 octobre) : saisie à l'invitation, une seule par agent, et
+// exigible dans les besoins d'une garde comme toute qualification.
+describe("Conduite — saisie à l’invitation, une seule, exigible", () => {
+  const org = "10000000-0000-0000-0000-0000000000e5";
+  const team = "20000000-0000-0000-0000-0000000000e5";
+  const manager = "30000000-0000-0000-0000-0000000000e9";
+  const existing = "30000000-0000-0000-0000-0000000000ea";
+  const returning = "30000000-0000-0000-0000-0000000000eb";
+  const newcomer = "30000000-0000-0000-0000-0000000000ec";
+  let live: PGlite;
+  const be = async (id: string | null) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id ?? ""]);
+    if (id) await live.exec("set role authenticated");
+  };
+  const invite = async (email: string, conduite: string | null) => {
+    await be(manager);
+    await live.query(
+      `insert into public.invitations(organization_id,team_id,email,display_name,role,invited_by,conduite)
+       values ($1,$2,$3,'Invité','AGENT',$4,$5)`,
+      [org, team, email, manager, conduite],
+    );
+  };
+  const held = async (user: string) => {
+    await be(null);
+    return (
+      await live.query<{ name: string }>(
+        `select q.name from public.user_qualifications uq join public.qualifications q on q.id = uq.qualification_id
+          where uq.user_id = $1 order by q.name`,
+        [user],
+      )
+    ).rows.map(row => row.name);
+  };
+  const save = (member: string, qualifications: string[]) =>
+    live.query("select public.save_member($1,$2,$3,'AGENT',true,'Agent',null,null,null,null,$4)", [
+      org,
+      member,
+      team,
+      qualifications,
+    ]);
+
+  beforeEach(async () => {
+    live = await freshDatabase();
+    await live.exec(`
+      insert into auth.users(id,email,email_confirmed_at) values
+        ('${manager}','chef@e5.test',now()), ('${existing}','existant@e5.test',now()),
+        ('${returning}','retour@e5.test',now());
+      insert into public.profiles(user_id,display_name) values
+        ('${manager}','Chef'), ('${existing}','Existant'), ('${returning}','De retour');
+      insert into public.organizations(id,name) values ('${org}','Centre E5');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values
+        ('${org}','${manager}','${team}','GESTIONNAIRE',true),
+        ('${org}','${returning}','${team}','AGENT',false);
+      insert into public.qualifications(organization_id,name) values ('${org}','PL'), ('${org}','SAP');
+      insert into public.user_qualifications(organization_id,user_id,qualification_id)
+        select '${org}', '${returning}', id from public.qualifications where organization_id='${org}' and name in ('PL','SAP');`);
+  }, 30000);
+  afterEach(async () => {
+    await live.close();
+  });
+
+  it("la donne au compte neuf quand il confirme son adresse, et l’ajoute au catalogue", async () => {
+    await invite("nouveau@e5.test", "COD2");
+    await be(null);
+    await live.query("insert into auth.users(id,email,email_confirmed_at) values ($1,'nouveau@e5.test',now())", [
+      newcomer,
+    ]);
+    expect(await held(newcomer)).toEqual(["COD2"]);
+    expect(
+      (await live.query("select 1 from public.qualifications where organization_id=$1 and name='COD2'", [org])).rows,
+    ).toHaveLength(1);
+  });
+
+  it("la donne aussitôt au compte déjà confirmé, rattaché à l’invitation", async () => {
+    await invite("existant@e5.test", "PL");
+    expect(await held(existing)).toEqual(["PL"]);
+  });
+
+  it("remplace à la réinvitation la conduite d’un agent qui revient, sans toucher au reste", async () => {
+    await invite("retour@e5.test", "COD6");
+    expect(await held(returning)).toEqual(["COD6", "SAP"]);
+  });
+
+  it("ne donne rien et ne retire rien pour « Aucun »", async () => {
+    await invite("retour@e5.test", null);
+    expect(await held(returning)).toEqual(["PL", "SAP"]);
+    await invite("existant@e5.test", null);
+    expect(await held(existing)).toEqual([]);
+  });
+
+  it("refuse une conduite hors de la liste", async () => {
+    await expect(invite("existant@e5.test", "COD9")).rejects.toThrow("invitations_conduite_check");
+  });
+
+  it("refuse une seconde conduite, et laisse passer de l’une à l’autre d’un même geste", async () => {
+    await be(manager);
+    await expect(save(returning, ["PL", "COD2", "SAP"])).rejects.toThrow("Only one driving qualification per agent");
+    expect(await held(returning)).toEqual(["PL", "SAP"]);
+    await be(manager);
+    await save(returning, ["COD2", "SAP"]);
+    expect(await held(returning)).toEqual(["COD2", "SAP"]);
+    // Pas davantage par l'éditeur SQL.
+    await be(null);
+    await expect(
+      live.query(
+        `insert into public.user_qualifications(organization_id,user_id,qualification_id)
+         select $1, $2, id from public.qualifications where organization_id=$1 and name='PL'`,
+        [org, returning],
+      ),
+    ).rejects.toThrow("Only one driving qualification per agent");
+  });
+
+  it("s’exige dans les besoins d’une garde, et la publication la compte", async () => {
+    const campaign = "40000000-0000-0000-0000-0000000000e5";
+    const schedule = "60000000-0000-0000-0000-0000000000e5";
+    const shift = "70000000-0000-0000-0000-0000000000e5";
+    await be(null);
+    await live.query("update public.memberships set active=true where user_id=$1", [returning]);
+    await live.exec(`
+      insert into public.memberships values ('${org}','${existing}','${team}','AGENT',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        values ('${campaign}','${org}','${team}','Novembre','2099-11-01','2099-11-01',now()-interval '1 day',now()+interval '1 day');
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values
+        ('${org}','${campaign}','${existing}'), ('${org}','${campaign}','${returning}')
+        on conflict do nothing;
+      insert into public.schedules(id,organization_id,campaign_id,team_id) values ('${schedule}','${org}','${campaign}','${team}');
+      insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code)
+        values ('${shift}','${org}','${schedule}','2099-11-01','DAY');`);
+    for (const agent of [existing, returning]) {
+      await be(agent);
+      await live.query(
+        "insert into public.availability_entries(campaign_id,user_id,date,availability_type) values ($1,$2,'2099-11-01','DAY')",
+        [campaign, agent],
+      );
+      await live.query(
+        "update public.campaign_participants set validated_at=now() where campaign_id=$1 and user_id=$2",
+        [campaign, agent],
+      );
+    }
+    await be(manager);
+    await live.query("select public.set_staffing_requirement($1,'2099-11-01','DAY',1,$2)", [
+      campaign,
+      JSON.stringify({ COD2: 1 }),
+    ]);
+    const assign = (user: string) =>
+      live.query(
+        "insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,assigned_by) values ($1,$2,$3,$4)",
+        [org, shift, user, manager],
+      );
+    // Sans COD2 au brouillon : refusé, et la base nomme ce qui manque.
+    await assign(existing);
+    await expect(live.query("select private.publish_schedule_shift($1)", [shift])).rejects.toThrow(
+      "Qualifications not covered: COD2",
+    );
+    // L'agent qui la tient : publié.
+    await be(manager);
+    await live.query("delete from public.schedule_assignments where schedule_shift_id=$1 and revision=0", [shift]);
+    await save(returning, ["COD2", "SAP"]);
+    await assign(returning);
+    expect((await live.query<{ r: number }>("select private.publish_schedule_shift($1) as r", [shift])).rows).toEqual([
+      { r: 1 },
+    ]);
+  });
+});
+
+describe("Migration 20261007090000 — gardes d’application", () => {
+  const target = MIGRATIONS.indexOf("20261007090000_conduite.sql");
+  const migration = () =>
+    readFileSync(new URL(`../supabase/migrations/${MIGRATIONS[target]}`, import.meta.url), "utf8");
+  const upTo = async (count: number) => {
+    const db = new PGlite();
+    await db.exec(baseAuthSchema);
+    for (const m of MIGRATIONS.slice(0, count))
+      await db.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    return db;
+  };
+
+  it("refuse un second passage et un passage avant sa dépendance", async () => {
+    expect(target).toBeGreaterThan(0);
+    const applied = await upTo(target + 1);
+    await expect(applied.exec(migration())).rejects.toThrow("déjà été appliquée");
+    await applied.close();
+    const early = await upTo(target - 1);
+    await expect(early.exec(migration())).rejects.toThrow("20261005120000_suspension_file_email.sql");
+    await early.close();
+  }, 90000);
+});

@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { buildWorkbook } from "../src/lib/workbook";
 import { publish, sampleState } from "./fixtures/centre";
-import { entryKey, isValidated, labels, monthDays, shiftKey } from "../src/lib/domain";
+import { conduiteOf, entryKey, isValidated, labels, monthDays, shiftKey } from "../src/lib/domain";
 
 const now = new Date("2026-09-18T10:00:00Z");
 const state = sampleState(now);
+// Une conduite au premier agent de la matrice : la colonne doit la montrer.
+const firstByName = [...state.agents].sort((a, b) => a.name.localeCompare(b.name, "fr"))[0];
+firstByName.qualifications = [...firstByName.qualifications, "COD2"];
 const campaign = state.campaigns[0];
 const book = buildWorkbook(state, campaign);
 const days = monthDays(campaign.month);
@@ -28,15 +31,18 @@ describe("Classeur Excel", () => {
   it("reprend la matrice telle que l’écran la montre", () => {
     const sheet = book.getWorksheet("Disponibilités");
     expect(sheet?.rowCount).toBe(agents.length + 1);
-    // Six colonnes d’identité — agent, équipe, grade, fonction, matricule,
-    // réponse — puis un jour par colonne.
-    expect(sheet?.columnCount).toBe(6 + days.length);
+    // Sept colonnes d’identité — agent, équipe, grade, fonction, conduite,
+    // matricule, réponse — puis un jour par colonne.
+    expect(sheet?.columnCount).toBe(7 + days.length);
     const first = agents[0];
+    expect(cell("Disponibilités", 1, 5)).toBe("Conduite");
     expect(cell("Disponibilités", 2, 1)).toBe(first.name);
     expect(cell("Disponibilités", 2, 4)).toBe(first.fonction);
-    expect(cell("Disponibilités", 2, 6)).toBe(isValidated(state, campaign.id, first.id) ? "Validée" : "À valider");
+    expect(conduiteOf(first.qualifications)).toBe("COD2");
+    expect(cell("Disponibilités", 2, 5)).toBe("COD2");
+    expect(cell("Disponibilités", 2, 7)).toBe(isValidated(state, campaign.id, first.id) ? "Validée" : "À valider");
     const entry = state.entries[entryKey(campaign.id, first.id, days[0])];
-    expect(cell("Disponibilités", 2, 7)).toBe(entry ? labels[entry.type].short : "?");
+    expect(cell("Disponibilités", 2, 8)).toBe(entry ? labels[entry.type].short : "?");
   });
 
   it("compte chaque état une fois par jour dans la synthèse", () => {
@@ -52,8 +58,9 @@ describe("Classeur Excel", () => {
     const sheet = book.getWorksheet("Affectations");
     const states = new Set<string>();
     sheet?.eachRow((row, index) => {
-      if (index > 1) states.add(String(row.getCell(7).value));
+      if (index > 1) states.add(String(row.getCell(8).value));
     });
+    // Date, créneau, agent, grade, fonction, conduite, équipe, état.
     // Le jeu de démonstration ne publie rien : tout doit se lire « Brouillon ».
     expect([...states]).toEqual(["Brouillon"]);
     const assigned = Object.entries(state.assignments)
@@ -85,7 +92,7 @@ describe("Classeur Excel", () => {
     buildWorkbook(local, target)
       .getWorksheet("Affectations")
       ?.eachRow((row, index) => {
-        if (index > 1) rows.push([1, 2, 3, 7].map(column => String(row.getCell(column).value)));
+        if (index > 1) rows.push([1, 2, 3, 8].map(column => String(row.getCell(column).value)));
       });
     const nameOf = (id: string) => [...local.agents, ...local.inactiveAgents].find(a => a.id === id)!.name;
     expect(rows).toContainEqual([date, "Jour", record.name, "Brouillon · agent désactivé"]);

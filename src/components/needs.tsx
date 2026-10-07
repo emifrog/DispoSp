@@ -15,6 +15,7 @@ import {
   plural,
   requirement,
   suggestedRequirement,
+  conduites,
   weekdayNames,
   type Requirement,
   type Shift,
@@ -168,7 +169,10 @@ function BulkDialog({
   const [shifts, setShifts] = useState<Shift[]>(["DAY", "NIGHT"]);
   const [total, setTotal] = useState(suggestedRequirement.total);
   const [minima, setMinima] = useState<Record<string, number>>({ ...suggestedRequirement.qualifications });
-  const offered = [...new Set([...catalogue, ...Object.keys(minima)])].sort((a, b) => a.localeCompare(b, "fr"));
+  // Les conduites sont exigibles même avant qu’un agent en tienne une.
+  const offered = [...new Set([...catalogue, ...conduites, ...Object.keys(minima)])].sort((a, b) =>
+    a.localeCompare(b, "fr"),
+  );
 
   const [confirm, confirmation] = useConfirmation();
   // « Certains jours » sans jour coché ne retient rien : il retombait sur le

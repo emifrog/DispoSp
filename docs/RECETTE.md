@@ -91,7 +91,7 @@ Si cette partie échoue, rien d'autre ne sert : personne n'entre.
 
 ### 1.1 Enregistrer une invitation
 
-**Faire** — Connecté en administrateur, écran **Agents & équipes**, bouton **Inviter un agent**. Saisir l'adresse du second compte, son grade, sa fonction et le rôle _Agent_, puis **Envoyer l'invitation**.
+**Faire** — Connecté en administrateur, écran **Agents & équipes**, bouton **Inviter un agent**. Saisir l'adresse du second compte, son grade, sa fonction, sa conduite et le rôle _Agent_, puis **Envoyer l'invitation**.
 
 **L'équipe ne se demande plus** : l'invité rejoint celle de l'invitant, et la boîte le dit. Pour l'affecter ailleurs, ouvrir sa fiche une fois le compte activé.
 
@@ -129,7 +129,7 @@ Si cette partie échoue, rien d'autre ne sert : personne n'entre.
 
 **Sinon** — S'il voit encore « Compte en attente de rattachement », le déclencheur n'a pas trouvé l'invitation : l'adresse saisie ne correspond pas exactement à l'adresse invitée. S'il voit les écrans d'administration, arrêtez et signalez-le — ce serait un défaut de droits, pas de confort.
 
-**Côté administrateur** — L'invitation doit avoir quitté « en attente », et l'agent apparaître dans la liste avec son grade, sa fonction, son matricule et son téléphone modifiables.
+**Côté administrateur** — L'invitation doit avoir quitté « en attente », et l'agent apparaître dans la liste avec son grade, sa fonction, sa conduite, son matricule et son téléphone modifiables. La conduite saisie à l'invitation est devenue une qualification de l'agent : elle s'exige dans les besoins d'une garde comme les autres.
 
 ### 1.5 Le mot de passe oublié
 

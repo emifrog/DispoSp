@@ -5,6 +5,7 @@ import {
   coverage,
   coverageLevel,
   coverageLevelLabels,
+  conduiteOf,
   entryKey,
   gradeLabel,
   hours,
@@ -69,6 +70,7 @@ export function buildWorkbook(state: AppState, campaign: Campaign): ExcelJS.Work
     { header: "Équipe", key: "team", width: 16 },
     { header: "Grade", key: "grade", width: 16 },
     { header: "Fonction", key: "fonction", width: 22 },
+    { header: "Conduite", key: "conduite", width: 10 },
     { header: "Matricule", key: "matricule", width: 12 },
     { header: "Réponse", key: "response", width: 12 },
     ...days.map(date => ({ header: String(Number(date.slice(-2))), key: date, width: 5 })),
@@ -79,6 +81,7 @@ export function buildWorkbook(state: AppState, campaign: Campaign): ExcelJS.Work
       team: agent.team,
       grade: gradeLabel(agent),
       fonction: agent.fonction,
+      conduite: conduiteOf(agent.qualifications),
       matricule: agent.matricule,
       response: isValidated(state, campaign.id, agent.id) ? "Validée" : "À valider",
     };
@@ -153,6 +156,7 @@ export function buildWorkbook(state: AppState, campaign: Campaign): ExcelJS.Work
     { header: "Agent", key: "name", width: 26 },
     { header: "Grade", key: "grade", width: 16 },
     { header: "Fonction", key: "fonction", width: 22 },
+    { header: "Conduite", key: "conduite", width: 10 },
     { header: "Équipe", key: "team", width: 16 },
     { header: "État", key: "status", width: 34 },
   ]);
@@ -188,6 +192,7 @@ export function buildWorkbook(state: AppState, campaign: Campaign): ExcelJS.Work
           name: agent.name,
           grade: gradeLabel(agent),
           fonction: agent.fonction,
+          conduite: conduiteOf(agent.qualifications),
           team: agent.team,
           status: inactive.has(id) ? `${status} · agent désactivé` : status,
         });

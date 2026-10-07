@@ -3,11 +3,13 @@ import { assign, fillMonth, publish, sampleState, validate } from "./fixtures/ce
 import {
   availableAgents,
   commandSchema,
+  conduiteOf,
   defaultCampaign,
   draftAgents,
   entryKey,
   coverage,
   coverageLevel,
+  isConduite,
   isoWeekday,
   isOpen,
   isValidated,
@@ -358,6 +360,37 @@ describe("Schéma des commandes", () => {
     shift: "DAY" as const,
     total: 4,
   };
+
+  // La conduite (7 octobre) : une liste fermée, vide pour « Aucun ».
+  it("accepte une conduite de la liste à l’invitation, vide pour « Aucun », et rien d’autre", () => {
+    const invite = {
+      type: "invite" as const,
+      email: "recrue@example.org",
+      name: "Recrue",
+      grade: "",
+      fonction: "",
+      matricule: "",
+      phone: "",
+      role: "AGENT" as const,
+    };
+    const conduite = (value?: string) => {
+      const parsed = commandSchema.safeParse(value === undefined ? invite : { ...invite, conduite: value });
+      return parsed.success && parsed.data.type === "invite" ? parsed.data.conduite : "refusée";
+    };
+    expect(conduite("COD2")).toBe("COD2");
+    expect(conduite("")).toBe("");
+    // Un écran resté sur la version d'avant n'envoie pas le champ.
+    expect(conduite()).toBe("");
+    expect(conduite("COD9")).toBe("refusée");
+    expect(conduite("Conducteur PL")).toBe("refusée");
+  });
+
+  it("lit la conduite parmi les qualifications d’un agent", () => {
+    expect(conduiteOf(["SAP", "COD6", "Chef"])).toBe("COD6");
+    expect(conduiteOf(["SAP", "Conducteur PL"])).toBe("");
+    expect(isConduite("COD SSR")).toBe(true);
+    expect(isConduite("cod2")).toBe(false);
+  });
 
   it("refuse une clôture qui ne précède pas le mois, comme le formulaire", () => {
     const open = { type: "campaign" as const, name: "Octobre", month: "2026-10" };

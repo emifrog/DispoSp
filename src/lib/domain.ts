@@ -37,6 +37,18 @@ export const fonctions = [
   "Conducteur",
   "Chef de groupe",
 ] as const;
+/**
+ * Les conduites, dans l'ordre de la saisie. Une seule par agent — la plus haute
+ * qu'il détient —, et c'est une qualification : elle se compte dans les besoins
+ * d'une garde comme les autres, et se lit dans `agent.qualifications`.
+ * Contrairement aux fonctions, la liste est fermée en base aussi
+ * (20261007090000) : la changer demande une migration.
+ */
+export const conduites = ["COD SSR", "PL", "COD2", "COD6"] as const;
+export type Conduite = (typeof conduites)[number];
+export const isConduite = (name: string): name is Conduite => (conduites as readonly string[]).includes(name);
+/** La conduite parmi des qualifications ; vide pour « Aucun ». */
+export const conduiteOf = (qualifications: readonly string[]): Conduite | "" => qualifications.find(isConduite) ?? "";
 // A centre that has not filled the rank in yet still gets an honest line. This is
 // a display fallback and stays one: the stored grade may legitimately be empty.
 export const gradeLabel = (agent: { grade: string; role: MemberRole }) => agent.grade || roleLabels[agent.role];
@@ -709,6 +721,9 @@ export const commandSchema = z.discriminatedUnion("type", [
     name: z.string().trim().min(1).max(100),
     grade: z.string().trim().max(60),
     fonction: z.string().trim().max(60),
+    // Vide pour « Aucun ». Par défaut aussi : un écran resté ouvert sur
+    // l'ancienne version n'envoie pas le champ.
+    conduite: z.union([z.literal(""), z.enum(conduites)]).default(""),
     matricule: z.string().trim().max(30),
     phone: z.string().trim().max(30),
     role: memberRoleSchema,

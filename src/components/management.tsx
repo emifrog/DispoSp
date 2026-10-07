@@ -35,8 +35,11 @@ import {
   localMonth,
   auditFamilies,
   campaignAgents,
+  conduiteOf,
+  conduites,
   fonctions,
   grades,
+  isConduite,
   memberRoles,
   monthLabel,
   plural,
@@ -44,6 +47,7 @@ import {
   stampLabel,
   type Agent,
   type AppState,
+  type Conduite,
   type MemberRole,
 } from "@/lib/domain";
 import { auditCsv, download } from "@/lib/exports";
@@ -482,7 +486,7 @@ function RecordFields({
   value,
   onChange,
 }: {
-  value: { name: string; grade: string; fonction: string; matricule: string; phone: string };
+  value: { name: string; grade: string; fonction: string; conduite: Conduite | ""; matricule: string; phone: string };
   onChange: (next: Partial<typeof value>) => void;
 }) {
   return (
@@ -501,6 +505,19 @@ function RecordFields({
         options={fonctions}
         onChange={fonction => onChange({ fonction })}
       />
+      {/* Une seule, la plus haute : « Aucun » n'est pas « non renseigné », c'est
+          une réponse. Elle compte dans les besoins d'une garde. */}
+      <label className="field">
+        Conduite
+        <select value={value.conduite} onChange={e => onChange({ conduite: e.target.value as Conduite | "" })}>
+          <option value="">Aucun</option>
+          {conduites.map(option => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </label>
       <label className="field">
         Matricule
         <input value={value.matricule} onChange={e => onChange({ matricule: e.target.value })} maxLength={30} />
@@ -613,10 +630,17 @@ function MemberDialog({ agent, reactivate, onClose }: { agent: Agent; reactivate
   };
   const [added, setAdded] = useState("");
   // The catalogue plus whatever this agent already holds: a qualification
-  // removed from the catalogue must not silently vanish from a record.
-  const offered = [...new Set([...state.qualificationCatalogue, ...form.qualifications])].sort((a, b) =>
-    a.localeCompare(b, "fr"),
-  );
+  // removed from the catalogue must not silently vanish from a record. La
+  // conduite a sa propre liste, plus haut : une case à cocher en permettrait
+  // deux.
+  const offered = [...new Set([...state.qualificationCatalogue, ...form.qualifications])]
+    .filter(name => !isConduite(name))
+    .sort((a, b) => a.localeCompare(b, "fr"));
+  /** La conduite vit dans les qualifications : choisir l'une remplace l'autre. */
+  const withConduite = (qualifications: string[], conduite: string) => [
+    ...qualifications.filter(q => !isConduite(q)),
+    ...(conduite ? [conduite] : []),
+  ];
   const toggle = (name: string) =>
     setForm(f => ({
       ...f,
@@ -626,7 +650,16 @@ function MemberDialog({ agent, reactivate, onClose }: { agent: Agent; reactivate
     }));
   return (
     <Modal open onOpenChange={open => !open && onClose()} title={agent.name} description="Fiche, équipe et rôle.">
-      <RecordFields value={form} onChange={next => setForm(f => ({ ...f, ...next }))} />
+      <RecordFields
+        value={{ ...form, conduite: conduiteOf(form.qualifications) }}
+        onChange={({ conduite, ...next }) =>
+          setForm(f => ({
+            ...f,
+            ...next,
+            ...(conduite === undefined ? {} : { qualifications: withConduite(f.qualifications, conduite) }),
+          }))
+        }
+      />
       <TeamField teams={state.teams} teamId={form.teamId} onChange={next => setForm(f => ({ ...f, ...next }))} />
       <RoleField
         role={form.role}
@@ -659,7 +692,11 @@ function MemberDialog({ agent, reactivate, onClose }: { agent: Agent; reactivate
             onClick={() => {
               const name = added.trim();
               if (!name || form.qualifications.includes(name)) return;
-              setForm(f => ({ ...f, qualifications: [...f.qualifications, name] }));
+              // « PL » tapé à la main est une conduite : elle remplace l'autre.
+              setForm(f => ({
+                ...f,
+                qualifications: isConduite(name) ? withConduite(f.qualifications, name) : [...f.qualifications, name],
+              }));
               setAdded("");
             }}
           >
@@ -710,6 +747,7 @@ function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void })
     name: "",
     grade: "",
     fonction: "",
+    conduite: "" as Conduite | "",
     matricule: "",
     phone: "",
     role: "AGENT" as MemberRole,
@@ -720,7 +758,7 @@ function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void })
       open={open}
       onOpenChange={next => !next && onClose()}
       title="Inviter un agent"
-      description={`Il recevra un message pour activer son compte et choisir son mot de passe, puis rejoindra votre équipe, ${agent?.team ?? "la vôtre"}. Vous ne choisissez pas son mot de passe, et personne ne vous le montrera.`}
+      description={`Il recevra un message pour activer son compte et choisir son mot de passe, puis rejoindra votre équipe, ${agent?.team ?? "la vôtre"}. `}
     >
       <label className="field">
         Adresse électronique

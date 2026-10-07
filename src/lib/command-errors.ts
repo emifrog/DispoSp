@@ -65,6 +65,8 @@ const byMessage: [RegExp, (match: RegExpMatchArray) => string][] = [
     () => "Seul un administrateur peut réactiver un administrateur.",
   ],
   [/^Not allowed to edit this member/, () => "Vous n’avez pas le droit de modifier cette fiche."],
+  // 7 octobre : la conduite est une qualification, une seule par agent.
+  [/^Only one driving qualification per agent/, () => "Un agent n’a qu’une conduite : gardez la plus haute."],
   // Publication : ce que 20260921090000 ajoute aux contrôles de couverture.
   [
     /^Inactive members cannot be published: (.+)$/,
