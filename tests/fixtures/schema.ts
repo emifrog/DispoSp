@@ -40,6 +40,7 @@ export const MIGRATIONS = [
   "20261005090000_reactivation_admin_deverrouillage.sql",
   "20261005120000_suspension_file_email.sql",
   "20261007090000_conduite.sql",
+  "20261007150000_droits_par_ensemble.sql",
 ];
 
 /**

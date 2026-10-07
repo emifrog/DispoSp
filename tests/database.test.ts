@@ -5502,3 +5502,113 @@ describe("Migration 20261007090000 — gardes d’application", () => {
     await early.close();
   }, 90000);
 });
+
+// Audit de performance du 7 octobre : une fonction « security definer » appelée
+// dans une règle l'est pour chaque ligne examinée — vingt secondes par écran
+// d'encadrement sur un centre de taille réelle. Les règles testent désormais
+// l'appartenance à un ensemble calculé une fois par requête. Les droits, eux,
+// ne changent pas : tout ce fichier les vérifie à travers les règles réécrites.
+describe("Droits lus par ensemble — une fois par requête, plus une fois par ligne", () => {
+  const org = "10000000-0000-0000-0000-0000000000f1";
+  const other = "10000000-0000-0000-0000-0000000000f2";
+  const team = "20000000-0000-0000-0000-0000000000f1";
+  const otherTeam = "20000000-0000-0000-0000-0000000000f2";
+  const agent = "30000000-0000-0000-0000-0000000000f1";
+  const manager = "30000000-0000-0000-0000-0000000000f2";
+  const admin = "30000000-0000-0000-0000-0000000000f3";
+  const otherAdmin = "30000000-0000-0000-0000-0000000000f4";
+  const former = "30000000-0000-0000-0000-0000000000f5";
+  let live: PGlite;
+  const sets = async (id: string | null) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id ?? ""]);
+    await live.exec("set role authenticated");
+    const read = async (fn: string) =>
+      (await live.query<{ id: string }>(`select id from private.${fn}() id order by 1`)).rows.map(row => row.id);
+    return { member: await read("my_organizations"), managed: await read("managed_organizations") };
+  };
+
+  beforeAll(async () => {
+    live = await freshDatabase();
+    await live.exec(`
+      insert into auth.users(id) values ('${agent}'), ('${manager}'), ('${admin}'), ('${otherAdmin}'), ('${former}');
+      insert into public.profiles(user_id,display_name) values
+        ('${agent}','Agent'), ('${manager}','Chef'), ('${admin}','Admin'), ('${otherAdmin}','Admin F2'), ('${former}','Parti');
+      insert into public.organizations(id,name) values ('${org}','Centre F1'), ('${other}','Centre F2');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha'), ('${otherTeam}','${other}','Bravo');
+      insert into public.memberships values
+        ('${org}','${agent}','${team}','AGENT',true),
+        ('${org}','${manager}','${team}','GESTIONNAIRE',true),
+        ('${org}','${admin}','${team}','ADMIN',true),
+        ('${other}','${otherAdmin}','${otherTeam}','ADMIN',true),
+        ('${org}','${former}','${team}','GESTIONNAIRE',false);`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("aucune règle n’appelle plus is_member, can_manage ou can_administer", async () => {
+    // Une règle ajoutée par copie d'une ancienne réintroduirait le coût sans que
+    // rien d'autre ne le signale : les droits resteraient justes, seulement lents.
+    await live.exec("reset role");
+    const { rows } = await live.query<{ policy: string }>(
+      `select tablename || '.' || policyname as policy from pg_policies
+        where schemaname = 'public'
+          and coalesce(qual, '') || coalesce(with_check, '') ~ 'private[.](is_member|can_manage|can_administer)[(]'`,
+    );
+    expect(rows).toEqual([]);
+  });
+
+  it("rend les centres du membre actif, et ceux où il encadre", async () => {
+    expect(await sets(agent)).toEqual({ member: [org], managed: [] });
+    expect(await sets(manager)).toEqual({ member: [org], managed: [org] });
+    expect(await sets(admin)).toEqual({ member: [org], managed: [org] });
+    expect(await sets(otherAdmin)).toEqual({ member: [other], managed: [other] });
+    // Désactivé : plus rien, même avec un rôle d'encadrement.
+    expect(await sets(former)).toEqual({ member: [], managed: [] });
+    // Sans session : rien, et les règles refusent.
+    expect(await sets(null)).toEqual({ member: [], managed: [] });
+  });
+
+  it("n’est pas ouverte aux visiteurs sans compte", async () => {
+    await live.exec("reset role");
+    await live.exec("set role anon");
+    await expect(live.query("select private.my_organizations()")).rejects.toThrow();
+    await expect(live.query("select private.managed_organizations()")).rejects.toThrow();
+    await live.exec("reset role");
+  });
+
+  it("garde les règles telles qu’elles étaient : l’encadrement d’un centre ne lit pas l’autre", async () => {
+    await sets(otherAdmin);
+    expect((await live.query("select id from public.teams order by id")).rows).toEqual([{ id: otherTeam }]);
+    expect((await live.query("select user_id from public.memberships")).rows).toEqual([{ user_id: otherAdmin }]);
+    await sets(agent);
+    // L'agent ne lit que sa propre appartenance ; le gestionnaire, tout son centre.
+    expect((await live.query("select user_id from public.memberships")).rows).toEqual([{ user_id: agent }]);
+    await sets(manager);
+    expect((await live.query("select user_id from public.memberships")).rows).toHaveLength(4);
+  });
+});
+
+describe("Migration 20261007150000 — gardes d’application", () => {
+  const target = MIGRATIONS.indexOf("20261007150000_droits_par_ensemble.sql");
+  const migration = () =>
+    readFileSync(new URL(`../supabase/migrations/${MIGRATIONS[target]}`, import.meta.url), "utf8");
+  const upTo = async (count: number) => {
+    const db = new PGlite();
+    await db.exec(baseAuthSchema);
+    for (const m of MIGRATIONS.slice(0, count))
+      await db.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    return db;
+  };
+
+  it("refuse un second passage et un passage avant sa dépendance", async () => {
+    expect(target).toBeGreaterThan(0);
+    const applied = await upTo(target + 1);
+    await expect(applied.exec(migration())).rejects.toThrow("déjà été appliquée");
+    await applied.close();
+    const early = await upTo(target - 1);
+    await expect(early.exec(migration())).rejects.toThrow("20261007090000_conduite.sql");
+    await early.close();
+  }, 90000);
+});
