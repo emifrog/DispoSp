@@ -34,7 +34,6 @@ export const fonctions = [
   "Chef d'équipe",
   "Chef d'agrès une équipe",
   "Chef d'agrès tout engin",
-  "Conducteur",
   "Chef de groupe",
 ] as const;
 /**
