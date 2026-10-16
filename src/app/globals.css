@@ -227,7 +227,7 @@ label {
 }
 .sidebar-bottom {
   margin-top: auto;
-  padding-top: 40px;
+  padding-top: 5px;
 }
 /* La déconnexion du menu, sur téléphone seulement : un vrai bouton, avec son
    libellé, à la taille du doigt. */

@@ -177,7 +177,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
             </button>
           </SignOutForm>
           <span className="version">
-            DispoSP <span>Version · 1.0</span>
+            DispoSP <span>Version · 1.4</span>
           </span>
         </div>
       </aside>

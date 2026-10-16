@@ -1,0 +1,408 @@
+# DispoSP — Spécifications des évolutions opérationnelles
+
+Date : 16 octobre 2026.
+
+Statut : document de cadrage pour le développement. Les fonctionnalités décrites ci-dessous sont des objectifs à réaliser, pas une déclaration de fonctionnalités déjà livrées ou activées sur le site.
+
+## 1. Objectif et périmètre
+
+Réduire les appels nécessaires aux remplacements, simplifier la publication du planning, rappeler les gardes aux agents et fournir un bilan fiable au centre. Le gestionnaire conserve la décision d'affectation et de publication.
+
+Quatre fonctionnalités sont concernées :
+
+1. Appels à remplacement ou à renfort, avec proposition de l'agent et confirmation du gestionnaire.
+2. Agenda personnel abonné et rappels automatiques, soutenus par un traitement planifié fiable.
+3. Publication mensuelle des créneaux prêts, avec un avis récapitulatif par agent concerné.
+4. Bilan mensuel historique, consultable et transmissible après validation explicite.
+
+L'ordre de réalisation est : **A — traitements planifiés ; B — publication mensuelle ; C — remplacements ; D — agenda abonné ; E — bilan mensuel**. La collecte des données historiques nécessaires au bilan commence dès les premiers lots.
+
+Le succès devra être évalué en recette puis en utilisation : diminution des actions nécessaires à la publication, délai de remplacement, proportion d'appels résolus et régularité des réponses. Aucun gain chiffré n'est présumé dans ce document.
+
+## 2. Décisions retenues et réglages proposés
+
+### Décisions fonctionnelles retenues
+
+- L'agent clique sur **« Je me propose »**. Cela ne l'affecte pas automatiquement à une garde.
+- Le gestionnaire peut **« Accepter et chercher un remplaçant »** lors d'un désistement. L'acceptation simple reste possible.
+- Un manque d'effectif peut déclencher **« Chercher du renfort »**, sur action explicite du gestionnaire. Une modification du brouillon ne déclenche pas à elle seule un appel collectif.
+- La publication mensuelle publie les créneaux prêts et présente clairement ceux qui sont bloqués. Elle ne doit pas contourner les règles actuelles d'éligibilité à la publication.
+- Une publication mensuelle produit un avis récapitulatif par agent dont les affectations publiées changent, y compris les agents retirés. Un agent sans changement ne reçoit pas d'avis.
+- Un abonnement à l'agenda et un rappel envoyé par DispoSP sont deux services distincts.
+- Le bilan utilise des données historiques : un départ du centre ou un changement de qualification ne réécrit pas les mois passés.
+- Le bilan se prépare et se prévisualise avant tout envoi explicite.
+
+### Réglages proposés pour la première version
+
+Ces réglages sont des valeurs de départ à confirmer au moment de leur mise en œuvre. Ils ne constituent pas des règles métier déjà validées.
+
+| Sujet                    | Proposition                                                                                     |
+| ------------------------ | ----------------------------------------------------------------------------------------------- |
+| Planification technique  | Supabase Cron et réutilisation des files d'envoi existantes                                     |
+| Fréquence du traitement  | Toutes les 5 minutes, avec un travail borné par passage                                         |
+| Rappel de garde          | La veille à 18 h, dans le fuseau du centre, heure configurable                                  |
+| Relance de campagne      | 48 h puis 24 h avant clôture, uniquement pour les réponses non validées                         |
+| Publication mensuelle V1 | Une campagne sélectionnée, donc un mois et une équipe ; pas toutes les équipes en une opération |
+| Période de l'agenda      | 3 mois passés et 12 mois à venir, bornes ajustables                                             |
+| Bilan                    | Un centre et un mois, avec ventilation par équipe                                               |
+| Formats du bilan V1      | Page imprimable en PDF et export CSV ; pièce jointe PDF automatisée hors du premier périmètre   |
+
+## 3. Règles existantes à préserver
+
+- Les créneaux par défaut sont Jour **8 h–20 h** et Nuit **20 h–8 h**. Les horaires configurables de la campagne font foi : ne pas coder 8 h en dur dans les rappels ou l'agenda.
+- Une nuit est rattachée à la date de son commencement. La nuit du 12 se termine le 13.
+- Une disponibilité 24 h couvre potentiellement les besoins Jour et Nuit ; elle ne vaut pas double affectation automatique.
+- Seules les disponibilités explicitement validées sont utilisables. Une modification peut invalider la validation de la campagne selon les règles existantes.
+- **Couverture potentielle** : agents disponibles et éligibles. **Couverture planifiée** : affectations du brouillon. **Couverture publiée** : affectations effectivement publiées. Toujours nommer la mesure affichée.
+- Les rôles GESTIONNAIRE et ADMIN ne prennent pas de gardes dans le modèle actuel. Les exclure des candidats au remplacement, des réponses attendues aux campagnes et des rappels personnels de garde.
+- Les qualifications doivent respecter les correspondances du domaine actuel. Ne pas inventer d'équivalence entre des valeurs telles que Conducteur PL, COD SSR, COD 2 ou COD 6.
+- Les droits par centre et les contrôles de publication doivent être vérifiés côté serveur et en base. Un bouton masqué n'est pas une protection.
+- Les notifications push actuelles restent discrètes sur l'écran verrouillé. La date et les détails de garde sont accessibles après ouverture et authentification ; un éventuel affichage détaillé sur écran verrouillé doit faire l'objet d'un choix explicite.
+- Les écrans doivent rester utilisables sur téléphone, avec états de chargement, erreurs compréhensibles et protection contre les doubles actions.
+
+## 4. Points d'intégration dans le dépôt
+
+Repères relevés sur le dépôt au 16 octobre 2026, à revérifier avant chaque lot. Les chemins ci-dessous sont relatifs à la racine du dépôt.
+
+| Domaine                          | Fichiers principaux                                                                           |
+| -------------------------------- | --------------------------------------------------------------------------------------------- |
+| Modèle et règles                 | `src/lib/domain.ts`                                                                           |
+| Commandes et actions             | `src/lib/commands.server.ts`, `src/app/actions.ts`                                            |
+| Chargement des données           | `src/lib/data.server.ts`, `src/lib/data-mapping.ts`                                           |
+| Notifications email et push      | `src/lib/mailer.server.ts`, `src/lib/push.server.ts`, `src/lib/email.ts`, `src/lib/push.ts`   |
+| Réception push                   | `public/sw.js`                                                                                |
+| Déclenchement push existant      | `src/app/api/push/dispatch/route.ts`, `src/lib/push-auth.ts`                                  |
+| Protection des routes            | `src/lib/supabase/config.ts`, `src/lib/supabase/middleware.ts`, `src/proxy.ts`                |
+| Export agenda actuel             | `src/lib/exports.ts`, `src/components/my-planning.tsx`                                        |
+| Planning et désistements         | `src/components/planning.tsx`, `src/components/withdrawals.tsx`                               |
+| Tableau de bord et notifications | `src/components/dashboard.tsx`, `src/components/home.tsx`, `src/components/notifications.tsx` |
+| Statistiques                     | `src/components/statistics.tsx`                                                               |
+| Schéma et tests de base          | `supabase/migrations/`, `tests/fixtures/schema.ts`, `supabase/provisioning/`                  |
+
+L'envoi actuel est notamment déclenché après des actions utilisateur. La route de traitement existante concerne le push ; elle ne suffit pas à orchestrer les emails, les rappels et les relances.
+
+L'agenda actuel est un fichier exporté. L'abonnement nécessite un flux accessible dans la durée et une authentification adaptée aux clients d'agenda.
+
+La publication unitaire ne doit pas simplement être appelée en boucle pour réaliser la publication mensuelle : cela conserverait les avis par créneau et ne fournirait pas la garantie transactionnelle attendue.
+
+Les statistiques actuelles fondées sur l'effectif courant ne suffisent pas à construire un historique stable.
+
+## 5. Lot A — Traitements planifiés et rappels
+
+### Résultat attendu
+
+Les rappels et reprises d'envoi fonctionnent même si personne n'ouvre l'application. Le traitement réutilise les mécanismes existants de file, d'idempotence et de reprise.
+
+### Fonctionnement
+
+1. Un déclencheur planifié appelle un traitement serveur protégé.
+2. Le traitement crée les événements arrivés à échéance : rappels de garde et relances de campagne.
+3. Il traite les envois en attente ou temporairement échoués, par lots bornés.
+4. Il enregistre son résultat, les échecs et le travail restant. Un passage suivant reprend ce qui n'a pas été traité.
+
+Séparer la génération des notifications et leur livraison. Un échec du fournisseur ne doit pas annuler une publication ou une confirmation métier réussie.
+
+Prévoir une activation explicite, une désactivation simple et une visibilité de gestion sur le dernier passage réussi, les erreurs récentes et les envois en attente. Ne pas afficher de secrets ni de données personnelles inutiles dans ces diagnostics.
+
+### Fiabilité et reprises
+
+- Borner la durée, le nombre d'éléments et les appels fournisseurs de chaque passage.
+- Empêcher deux traitements concurrents de prendre le même travail, avec les mécanismes de réservation et d'expiration adaptés.
+- Une contrainte d'unicité en base protège chaque événement logique : une simple vérification préalable en code ne suffit pas.
+- Reprendre les erreurs temporaires avec temporisation. Ne pas relancer indéfiniment une adresse invalide ou un abonnement définitivement périmé.
+- Conserver une clé d'idempotence cohérente avec le contenu exact envoyé et le résultat connu du fournisseur. Respecter les règles de reprise existantes et les limites du fournisseur.
+- Resend conserve ses clés d'idempotence pendant une durée limitée : ne pas promettre une livraison « exactement une fois » sans limite temporelle.
+- Vérifier la pertinence au moment de créer la notification et avant de remettre l'envoi au fournisseur. Annuler les envois devenus obsolètes.
+- Une notification déjà remise au fournisseur ne peut pas être rappelée. Une modification ultérieure doit pouvoir produire un avis correctif approprié.
+
+### Rappel de garde
+
+- Destinataire : agent actif, affecté à une garde publiée encore pertinente, sans retrait effectif de cette garde.
+- Calculer « la veille » dans le fuseau du centre, à partir de l'heure réelle du créneau. Tester les changements d'heure ; soustraire arbitrairement 24 h ne suffit pas à définir une date locale.
+- Présenter dans l'application un texte du type : « Vous êtes de garde demain de 8 h à 20 h ».
+- Regrouper les créneaux contigus d'une même garde de 24 h pour éviter deux rappels redondants, sans fusionner des gardes distinctes.
+- Réévaluer les rappels en attente si les horaires ou les affectations changent.
+- Si la garde est publiée après l'heure prévue du rappel, l'avis de publication reste immédiat ; éviter un rattrapage automatique trompeur annonçant « demain » trop tard.
+- Conserver les préférences de canal et la discrétion de l'écran verrouillé. L'envoi push ne prouve pas sa lecture.
+
+### Relance avant clôture
+
+- Campagne encore ouverte et non verrouillée ; destinataires actifs qui doivent répondre et dont la réponse n'est pas validée.
+- Dédupliquer les relances manuelles et automatiques selon une règle commune de fréquence.
+- Ne pas envoyer une succession de relances anciennes après une interruption du traitement.
+- Recontrôler la validation et la clôture avant l'envoi effectif.
+
+### Sécurité des routes
+
+Le traitement planifié utilise une identité technique ou un secret serveur. Il ne dépend pas d'un cookie de connexion au navigateur. Conserver les secrets côté serveur, par exemple dans Vault pour le déclenchement Supabase.
+
+Le middleware protège actuellement les routes API. Ajouter uniquement l'exception précise nécessaire au traitement, avec sa propre authentification forte ; ne pas rendre publiques toutes les routes API.
+
+### Critères d'acceptation
+
+- Un envoi temporairement échoué est repris sans action utilisateur.
+- Deux déclenchements concurrents ne créent pas deux événements identiques.
+- Un agent retiré ou désactivé ne reçoit pas un rappel encore en attente pour cette garde.
+- Les tests couvrent Europe/Paris, UTC et les transitions d'heure d'été et d'hiver.
+- Un appel sans authentification technique valide est refusé.
+- Une panne d'email laisse la publication métier réussie et permet une reprise contrôlée.
+
+## 6. Lot B — Publier le mois
+
+### Parcours gestionnaire
+
+Dans le planning d'une campagne, proposer **« Publier le mois »**. Une prévisualisation distingue les créneaux prêts, les créneaux bloqués et ceux qui sont déjà publiés sans changement.
+
+Exemple : **62 créneaux : 48 prêts à publier, 10 bloqués, 4 inchangés**. Pour chaque blocage, afficher la date, Jour/Nuit, le motif et un accès au créneau concerné.
+
+Le bouton final indique exactement **« Publier les 48 créneaux prêts »**. Si aucun créneau n'est prêt, expliquer pourquoi. Les créneaux bloqués restent dans leur état précédent ; ne pas effacer une publication existante sous prétexte que le nouveau brouillon est incomplet.
+
+### Garantie métier
+
+- Réutiliser les contrôles de la publication unitaire : effectif, qualifications, disponibilités validées, éligibilité et droits.
+- Publier uniquement les créneaux nouveaux ou modifiés qui passent ces contrôles.
+- La sélection prête est publiée en une transaction, avec l'enregistrement des avis à produire. Un échec annule toute cette opération.
+- Si les données pertinentes changent entre la prévisualisation et la confirmation, refuser cette confirmation et demander une actualisation. Ne pas publier silencieusement un lot différent.
+- Gérer les verrous dans un ordre stable et protéger l'opération par un identifiant d'idempotence.
+- Mutualiser les règles avec la publication unitaire pour éviter deux définitions divergentes d'un créneau publiable.
+
+### Avis récapitulatif
+
+Comparer les affectations publiées avant et après l'opération. Produire un seul événement de notification par agent concerné, avec la liste de ses ajouts, modifications et retraits.
+
+Un agent dont toutes les gardes ont été retirées doit aussi recevoir un avis. Un agent sans changement ne reçoit rien. Les avis unitaires par créneau ne doivent pas être émis en plus du récapitulatif.
+
+« Un seul avis » signifie un événement métier unique : il peut ensuite être distribué dans l'application, par email et sur les appareils autorisés, selon les préférences existantes.
+
+### Critères d'acceptation
+
+- Un mois partiellement prêt publie la sélection annoncée et conserve les autres créneaux.
+- Aucune insuffisance ne contourne les contrôles de publication existants.
+- Une prévisualisation périmée ne provoque pas de publication partielle.
+- Chaque agent concerné reçoit un seul récapitulatif, y compris en cas de retrait total.
+- Un double clic ou une reprise réseau ne crée pas une seconde publication ni un second avis.
+- Un agent ou un gestionnaire d'un autre centre ne peut pas déclencher l'opération.
+
+## 7. Lot C — Remplacement et renfort
+
+### Déclenchement
+
+Deux entrées : **« Accepter et chercher un remplaçant »** depuis un désistement et **« Chercher du renfort »** depuis un créneau insuffisamment couvert.
+
+Avant confirmation, afficher le créneau, le besoin restant, les qualifications manquantes et le nombre de destinataires éligibles. S'il n'existe aucun candidat, l'expliquer. L'acceptation simple du désistement reste possible.
+
+L'ouverture d'un appel et son rattachement au désistement accepté doivent être cohérents en base. L'envoi des notifications intervient ensuite et peut être repris indépendamment.
+
+### Éligibilité des destinataires
+
+- Agent actif prenant des gardes, dans le centre et le périmètre d'équipe autorisé.
+- Disponibilité validée couvrant le créneau.
+- Pas d'affectation incompatible connue ni d'affectation déjà présente sur le créneau.
+- Qualifications utiles au besoin restant, calculé à partir de l'équipe effectivement conservée.
+- Ne pas exiger de chaque candidat qu'il possède à lui seul toutes les qualifications manquantes : plusieurs candidats peuvent se compléter.
+- Ne pas solliciter automatiquement l'agent dont le désistement vient d'être accepté pour reprendre sa propre garde. Un retour volontaire éventuel doit relever d'un parcours explicite.
+- Pas d'élargissement automatique aux autres équipes ou centres dans cette première version.
+
+### Parcours agent
+
+Après ouverture de la notification et authentification, afficher la date, les horaires et le besoin, puis **« Je me propose »**.
+
+La proposition est enregistrée avec un état **« En attente de confirmation du gestionnaire »**. Elle ne crée ni affectation publiée, ni événement dans l'agenda, ni rappel de garde. L'agent peut retirer sa proposition tant qu'elle n'a pas été confirmée.
+
+Ne pas exposer le motif privé du désistement ni le nom de l'agent remplacé dans l'appel. Une visite de lien ou une requête GET ne doit jamais enregistrer une proposition.
+
+### Parcours gestionnaire et concurrence
+
+Afficher les candidats, leurs qualifications utiles, les informations de charge déjà autorisées et l'heure de proposition. Le premier clic d'un candidat ne lui réserve pas automatiquement la place.
+
+À la confirmation, recontrôler les droits, le statut de l'appel, la disponibilité, les qualifications, les conflits et le besoin courant. Deux gestionnaires ne doivent pas pouvoir attribuer simultanément la même place.
+
+Si la sélection permet une équipe complète et publiable, proposer **« Confirmer et publier »**, avec prévisualisation de toute l'équipe. L'affectation, la publication et la résolution de l'appel doivent rester cohérentes dans une transaction.
+
+Si plusieurs places manquent encore, permettre de préparer le brouillon en indiquant clairement que la garde n'est pas encore confirmée à l'agent. Ne pas publier une garde insuffisante pour accélérer artificiellement le parcours.
+
+Fermer l'appel lorsque le besoin est effectivement couvert par une publication. Informer les autres candidats que la recherche est terminée, sans divulguer d'informations inutiles. Annuler les sollicitations encore en attente.
+
+Un appel peut également être annulé ou expirer au début du créneau. Ces issues ne comptent pas comme un remplacement réussi.
+
+### Modèle de données proposé
+
+Les noms exacts seront adaptés aux conventions du dépôt.
+
+| Objet       | Informations principales                                                                                               |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Appel       | Centre, campagne, créneau, origine, besoin au déclenchement, auteur, ouverture, expiration, état, référence de version |
+| Proposition | Appel, agent, date de proposition, retrait éventuel, décision, décideur et dates associées                             |
+| Résolution  | Appel, date de résolution, version publiée qui couvre le besoin et agents confirmés                                    |
+
+Protéger par contraintes l'unicité d'un appel actif par créneau et d'une proposition active par agent et appel. Conserver l'historique des transitions. Une nouvelle recherche après résolution constitue un nouvel épisode, sans écraser le délai du précédent.
+
+### Critères d'acceptation
+
+- Les candidats non éligibles sont refusés même par un appel direct au serveur.
+- Une proposition seule n'apparaît ni dans le planning publié ni dans l'agenda personnel.
+- Deux candidats complémentaires peuvent couvrir un besoin que chacun ne couvre pas seul.
+- Un changement de disponibilité ou de qualification avant confirmation est détecté.
+- Deux confirmations simultanées ne créent pas de surnombre ou de décision contradictoire.
+- Un appel fermé reste consultable avec son état réel et n'accepte plus de nouvelle proposition.
+- La clôture annule les envois devenus inutiles et conserve les données nécessaires au bilan.
+
+## 8. Lot D — Agenda personnel abonné
+
+### Parcours
+
+Dans **Mon planning**, ajouter **« M'abonner à mon agenda »**, avec une adresse privée et des instructions pour Apple Calendar, Google Agenda et les clients compatibles. Conserver l'export ponctuel actuel.
+
+Expliquer que les mises à jour dépendent de la fréquence de synchronisation du logiciel d'agenda. L'abonnement ne garantit pas un affichage immédiat d'une modification urgente ; les notifications de DispoSP restent distinctes.
+
+Permettre de révoquer le lien puis d'en générer un nouveau. Prévenir que l'ancien abonnement devra être remplacé dans le logiciel d'agenda.
+
+### Contenu du flux
+
+- Uniquement les gardes publiées de l'agent, sur l'ensemble de ses campagnes dans le périmètre autorisé.
+- Exclure les brouillons, propositions et gardes dont l'agent a été effectivement relevé.
+- Respecter les horaires de campagne, les nuits et le fuseau du centre.
+- Conserver un identifiant d'événement stable lors des modifications ; gérer les dates de mise à jour et la séquence des révisions.
+- Définir et tester le traitement des suppressions : retrait du flux et, si nécessaire pour les clients ciblés, événements annulés conservés temporairement.
+- Une alarme ICS éventuellement proposée ne remplace pas le rappel serveur de DispoSP.
+
+### Sécurité
+
+L'adresse d'abonnement constitue un accès privé : toute personne qui la possède peut potentiellement consulter son contenu. Utiliser un jeton opaque, aléatoire et révocable, stocké sous forme de condensat côté serveur. Ne pas placer de jeton de session ou de clé de service dans l'URL.
+
+Le flux doit fonctionner sans cookie de navigateur et disposer de sa propre vérification. Prévoir l'exception précise au middleware, comme pour le traitement planifié.
+
+Vérifier à chaque lecture que l'accès reste autorisé. La désactivation du compte, la perte de son éligibilité ou la révocation du lien coupe l'accès. Ne pas journaliser le lien secret ni exposer le flux dans un cache public.
+
+### Critères d'acceptation
+
+- Un lien valide fonctionne dans un client d'agenda sans session navigateur ; un lien invalide ou révoqué ne révèle aucune garde.
+- Aucun paramètre ne permet de choisir arbitrairement l'identité d'un autre agent.
+- Ajout, changement d'horaire et retrait se répercutent sans doublon après synchronisation.
+- Les brouillons et propositions restent absents du flux.
+- La recette comprend de vrais abonnements Apple Calendar et Google Agenda, avec observation des délais et du retrait d'un événement. Un test HTTP seul ne valide pas cette compatibilité.
+
+## 9. Lot E — Bilan mensuel historique
+
+### Parcours gestionnaire
+
+Dans Statistiques, proposer **« Préparer le bilan mensuel »**. Choisir le mois et le périmètre autorisé, puis afficher le bilan, les définitions des indicateurs, la date de génération et les éventuelles données manquantes.
+
+Permettre l'impression en PDF et l'export CSV. Un envoi nécessite une prévisualisation, une sélection explicite de destinataires autorisés du centre et une confirmation. Ne pas ajouter d'envoi récurrent ni de destinataires externes arbitraires dans cette première version.
+
+### Définition des indicateurs
+
+| Indicateur                   | Définition                                                                                                                                                                      |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Taux de réponse              | Participations validées à la clôture / participations attendues à la clôture. Unité : couple agent–campagne, pour ne pas confondre plusieurs campagnes avec des agents uniques. |
+| Couverture publiée           | Créneaux avec besoins définis dont la dernière version publiée avant le début satisfait effectif et qualifications / créneaux avec besoins définis.                             |
+| Créneaux incomplets          | Créneaux avec besoins définis sans publication suffisante au début du créneau.                                                                                                  |
+| Besoins non renseignés       | Nombre distinct, présenté à part ; ces créneaux ne sont pas considérés couverts et ne sont pas intégrés silencieusement au dénominateur précédent.                              |
+| Appels résolus               | Parmi les appels ouverts pendant le mois, ceux résolus par une publication couvrant le besoin, rapportés au nombre d'appels ouverts. Préciser la date d'observation.            |
+| Délai médian de remplacement | Médiane entre ouverture de l'appel et publication qui résout le besoin, sur les appels résolus de la cohorte. Afficher la taille de l'échantillon.                              |
+| Appels non résolus           | Nombre et ancienneté, avec les annulations et expirations distinguées.                                                                                                          |
+
+Le bilan mesure la préparation et les affectations publiées, pas la présence réelle en garde, qui n'est pas établie par ces données. Il ne présente pas la livraison d'un push comme une preuve de lecture.
+
+Les créneaux relèvent du mois de leur date de début, y compris les nuits. Les agrégations par équipe doivent préciser leur unité ; ne pas compter deux fois une même entité métier lors d'une consolidation.
+
+### Historisation indispensable
+
+- Figer les participants attendus et les validations à la clôture de la campagne.
+- Conserver les versions pertinentes des besoins, qualifications et affectations pour reconstituer la situation publiée au début du créneau.
+- Collecter ces événements dès les lots A, B et C. Une photographie produite à la fin du mois à partir des seuls états courants ne suffit pas.
+- Si un passage planifié est manqué, reconstituer l'état à l'instant prévu depuis l'historique, sans utiliser arbitrairement l'état actuel.
+- Conserver dans le bilan sa version, les numérateurs, les dénominateurs, les formules et sa date d'observation.
+- Une correction ultérieure produit une nouvelle version identifiable ; elle ne réécrit pas silencieusement un bilan déjà transmis.
+- Pour les périodes antérieures sans historique suffisant, afficher « donnée indisponible » ou « estimation » avec la méthode. Ne pas fabriquer de précision historique.
+- Un dénominateur nul produit « non applicable », pas un taux artificiel de 0 % ou 100 %.
+
+### Critères d'acceptation
+
+- Le départ d'un agent ou son changement de rôle ne modifie pas un bilan déjà figé.
+- Un effectif suffisant sans les qualifications requises ne compte pas comme couverture complète.
+- Le délai de remplacement s'arrête à la publication résolvant le besoin, pas à la première candidature.
+- Les appels non résolus, les données manquantes et les dénominateurs restent visibles.
+- L'écran, le CSV, l'impression et l'envoi correspondent à la même version du bilan.
+- Un double clic sur l'envoi n'entraîne pas deux messages identiques.
+
+## 10. Exigences transversales
+
+- Réutiliser les commandes métier et files existantes avant de créer un mécanisme parallèle.
+- Rattacher les nouvelles données au centre et définir les contraintes d'intégrité ainsi que les politiques RLS associées.
+- Un agent accède à ses informations autorisées ; un gestionnaire administre uniquement son centre.
+- Privilégier les fonctions avec les droits de l'appelant lorsque cela convient. Toute fonction avec droits élevés doit justifier ce choix, vérifier l'identité et les autorisations, fixer son `search_path` et limiter les droits d'exécution.
+- Traiter les opérations critiques dans des transactions ; décrire précisément ce qui est atomique et ce qui relève d'une livraison asynchrone.
+- Ne pas charger systématiquement tout l'historique dans l'état global du client. Prévoir des lectures bornées adaptées à chaque écran.
+- Intégrer les nouvelles tables aux parcours de suppression de compte, d'export des données et de nettoyage du centre. Vérifier les nouvelles clés étrangères.
+- Faire valider les durées de conservation applicables aux propositions, appels, journaux et bilans ; ne pas inventer de durée juridique dans le code.
+- Respecter les préférences existantes de notification et éviter les sollicitations répétitives.
+- Les journaux techniques ne doivent pas contenir les secrets d'accès, liens d'agenda privés ou motifs confidentiels de désistement.
+- Prévoir une activation progressive des fonctions et une désactivation des traitements automatiques sans perte des données métier.
+
+## 11. Découpage de livraison
+
+| Lot | Livrable complet                                                                                    | Dépendances                                                |
+| --- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| A   | Traitement planifié protégé, reprises, rappels, relances, suivi et collecte historique de base      | Files et notifications existantes                          |
+| B   | Prévisualisation mensuelle, publication transactionnelle, avis groupés, historique des publications | Contrôles existants ; A pour une livraison autonome fiable |
+| C   | Appels, propositions, confirmation, clôture et historique des délais                                | A ; règles communes de publication de B                    |
+| D   | Flux privé révocable, interfaces d'abonnement et recette sur clients réels                          | Publications fiables ; A pour les rappels distincts        |
+| E   | Calcul historique versionné, affichage, CSV, impression et envoi explicite                          | Historique collecté par A, B et C                          |
+
+Chaque lot comprend le schéma, les droits, le parcours complet, les cas d'erreur, les tests pertinents et la documentation de configuration. Prévoir l'ordre de déploiement des migrations et du code ainsi que les effets d'une désactivation.
+
+## 12. Consignes de développement dans l'IDE
+
+1. Lire `AGENTS.md`, les décisions métier et la version actuelle du dépôt. Avant tout code Next.js, lire les guides pertinents dans `node_modules/next/dist/docs/`, conformément aux instructions du projet.
+2. Examiner les modifications utilisateur en cours et les préserver. Au moment de ce cadrage, `src/app/globals.css` et `src/components/shell.tsx` comportent déjà des modifications locales.
+3. Vérifier l'état réel des migrations sur l'environnement cible. La présence d'un fichier ne prouve pas son application ; les migrations du 16 octobre ne doivent pas être présumées appliquées.
+4. Travailler lot par lot. Réutiliser les fonctions et conventions présentes ; adapter les noms de modèles proposés plutôt que dupliquer des concepts existants.
+5. Ajouter de nouvelles migrations selon le processus du dépôt. Ne pas réécrire une migration déjà appliquée. Mettre à jour les fixtures de schéma nécessaires aux tests.
+6. Traiter les droits, contraintes, transactions et courses concurrentes avant de considérer l'interface terminée.
+7. Utiliser des données de recette. Ne pas solliciter les vrais agents, envoyer des emails de masse ou activer des traitements en production pour valider le développement.
+8. Actualiser le README, le plan de développement et les instructions de recette avec l'état réellement livré et les réglages nécessaires.
+
+Contrôles habituels, à adapter aux scripts présents au moment du développement :
+
+```sh
+pnpm typecheck
+pnpm lint
+pnpm format:check
+pnpm test
+pnpm build
+pnpm test:e2e
+```
+
+Reprendre les vérifications de fuseau prévues par la CI, dont Europe/Paris et UTC. Les tests de base utilisant PGlite et une identité simulée ne remplacent pas la vérification des autorisations et intégrations sur un environnement Supabase de recette.
+
+Les parcours E2E connectés sautés faute d'identifiants ne sont pas des parcours validés. Indiquer explicitement les tests exécutés, les tests sautés et les contrôles externes restant à faire.
+
+Distinguer dans les comptes rendus : **développé**, **testé localement**, **activé sur le site**, **vérifié sur de vrais appareils**. Un lot ne devient pas opérationnel par la seule réussite du build.
+
+## 13. Prompt de démarrage à réutiliser dans l'IDE
+
+```text
+Lis AGENTS.md et docs/SPECIFICATIONS_EVOLUTIONS_OPERATIONNELLES.md.
+Inspecte la version actuelle du dépôt et les modifications en cours.
+Réalise le premier lot non terminé dans l'ordre A, B, C, D, E,
+en respectant les décisions actées et en signalant les réglages proposés.
+Préserve les règles de publication, les droits par centre et les changements
+utilisateur. Livre un parcours complet avec migrations, tests et documentation.
+Utilise des données de recette pour les validations ; ne déploie pas et
+n'active pas d'envois réels vers les agents pendant ces tests.
+À la fin, indique les fichiers modifiés, les contrôles exécutés, les migrations
+à appliquer et ce qui reste à vérifier avant activation sur le site.
+```
+
+Ce prompt est une instruction réutilisable pour un futur travail de développement. La rédaction du présent document n'implémente ni n'active ces fonctionnalités.
+
+## 14. Références techniques
+
+Consulter également le README, les décisions métier, le plan de développement et les documents de recette du dépôt. Les documentations fournisseurs doivent être revérifiées à l'implémentation, notamment pour les limites et la configuration des services.
+
+- [Supabase Cron](https://supabase.com/docs/guides/cron).
+- [Planifier des appels à des fonctions avec Supabase](https://supabase.com/docs/guides/functions/schedule-functions).
+- [Clés d'idempotence Resend](https://resend.com/docs/dashboard/emails/idempotency-keys).
+- [Calendriers et abonnements sur iPhone](https://support.apple.com/fr-fr/guide/iphone/iph3d1110d4/ios).
+- [Ajouter un agenda dans Google Agenda](https://support.google.com/calendar/answer/37100?hl=fr).
