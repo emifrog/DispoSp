@@ -45,6 +45,7 @@ export function Dashboard() {
   const concerned = campaignAgents(state, campaignId);
   const respondents = concerned.filter(a => isValidated(state, campaignId, a.id));
   const pending = concerned.filter(a => !isValidated(state, campaignId, a.id));
+  const waiting = state.withdrawals.filter(w => w.state === "PENDING").length;
   const data = days.flatMap(date =>
     (["DAY", "NIGHT"] as Shift[]).map(shift => ({ date, shift, ...coverage(state, campaignId, date, shift, mode) })),
   );
@@ -90,6 +91,24 @@ export function Dashboard() {
           </Button>
         }
       />
+      {/* Un agent attend une réponse, et une garde publiée peut être à reprendre :
+          le tableau de bord n'en disait rien, l'encadrement le découvrait en
+          ouvrant l'écran. Toutes campagnes confondues. */}
+      {waiting > 0 && (
+        <div className="warning dashboard-alert" role="status">
+          <CircleAlert size={19} />
+          <span>
+            <strong>
+              {waiting} {plural(waiting, "désistement")} en attente
+            </strong>{" "}
+            — {plural(waiting, "un agent attend", "des agents attendent")} votre réponse.
+          </span>
+          <Link href="/demandes">
+            Examiner
+            <ArrowRight size={15} />
+          </Link>
+        </div>
+      )}
       <div className="campaign-ribbon">
         <div className="ribbon-icon">
           <CalendarCheck2 size={22} />

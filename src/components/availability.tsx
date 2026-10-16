@@ -1,24 +1,11 @@
 "use client";
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
-import {
-  CalendarDays,
-  CalendarRange,
-  Check,
-  CheckCheck,
-  CircleAlert,
-  Clock3,
-  Moon,
-  Repeat,
-  Sun,
-  X,
-  Zap,
-} from "lucide-react";
+import { CalendarDays, CalendarRange, Check, CheckCheck, CircleAlert, Clock3, Moon, Sun, X, Zap } from "lucide-react";
 import { useApp } from "./provider";
 import { PageTitle, Panel, Legend, ProgressRing, SegmentedTabs } from "./common";
 import { Button } from "./ui/button";
 import { Modal } from "./ui/dialog";
-import { useConfirmation } from "./ui/confirm";
 import {
   entryKey,
   filledDays,
@@ -30,17 +17,24 @@ import {
   monthLabel,
   dateLabel,
   plural,
-  templateEntries,
   weekdayNames,
   type Availability,
-  type AppState,
   type Shift,
 } from "@/lib/domain";
 
-// Un jour de semaine sans choix ne fait pas partie du modèle : on le retire,
-// pour que la comparaison avec ce que la base porte soit exacte.
-const clean = (days: Record<string, Availability | undefined>): AppState["template"] =>
-  Object.fromEntries(Object.entries(days).filter(([, value]) => value)) as AppState["template"];
+/** Le jour de semaine ISO d'une date, comme la base le compte : « 1 » = lundi, « 7 » = dimanche. */
+const isoWeekday = (date: string) => String(((new Date(`${date}T12:00:00`).getDay() + 6) % 7) + 1);
+
+/**
+ * Les disponibilités de l'agent, pour la campagne choisie.
+ *
+ * Deux façons de saisir, pas davantage (revue d'ergonomie du 16 octobre, C4) :
+ * toucher un jour du calendrier, ou la saisie rapide, qui couvre une période
+ * d'une même valeur, ou y pose une semaine type. Il y en avait quatre — une
+ * sélection multiple, et un panneau « Ma disponibilité habituelle » qu'il
+ * fallait enregistrer avant de pouvoir l'appliquer, sans que le bouton grisé ne
+ * dise pourquoi. La semaine habituelle se garde désormais en l'appliquant.
+ */
 export function Availability() {
   const { state, actor, campaignId, campaign, run } = useApp();
   const params = useSearchParams();
@@ -48,41 +42,61 @@ export function Availability() {
   const filled = filledDays(state, campaign, actor.id);
   const validated = isValidated(state, campaignId, actor.id);
   const open = isOpen(campaign);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [multiple, setMultiple] = useState(false);
-  const [editing, setEditing] = useState(false);
-  // L'accueil pointe ici avec ?saisie=rapide. L'initialiseur d'état suffit : il
-  // ne s'exécute qu'au montage, donc refermer la boîte ne la rouvre pas, et
-  // aucun effet n'a à courir après le rendu pour la faire apparaître.
-  // Sur une campagne fermée, non : le bouton « Saisie rapide » y est éteint, et
-  // l'adresse ouvrait quand même une boîte dont l'enregistrement serait refusé.
-  const [quick, setQuick] = useState(() => params.get("saisie") === "rapide" && open);
-  const [quickMode, setQuickMode] = useState<"period" | "weekdays">("period");
-  // Le modèle se compose avant d’être enregistré : tant qu’il diffère de ce que
-  // la base porte, l’appliquer n’aurait pas le sens que l’écran montre.
-  const [draft, setDraft] = useState<Record<string, Availability | undefined>>(() => ({ ...state.template }));
-  const templateChanged = JSON.stringify(clean(draft)) !== JSON.stringify(clean(state.template));
-  const planned = templateEntries(clean(draft), campaign.month);
+  const isFilled = (date: string) => Boolean(state.entries[entryKey(campaignId, actor.id, date)]);
+  // Le jour ouvert depuis le calendrier.
+  const [day, setDay] = useState<string | null>(null);
+  // L'accueil pointe ici avec ?saisie=rapide, ou ?saisie=semaine pour la semaine
+  // type. L'initialiseur d'état suffit : il ne s'exécute qu'au montage, donc
+  // refermer la boîte ne la rouvre pas. Sur une campagne fermée, non : le bouton
+  // « Saisie rapide » y est éteint, et l'enregistrement serait refusé.
+  const asked = params.get("saisie");
+  const [quick, setQuick] = useState(() => open && (asked === "rapide" || asked === "semaine"));
+  const [quickMode, setQuickMode] = useState<"period" | "week">(() => (asked === "semaine" ? "week" : "period"));
   // `undefined` : rien de choisi encore. `null` : « Non renseigné », choisi.
   // Un jour vide s'ouvrait sur « Jour » déjà coché : toucher « Enregistrer »
   // sans rien choisir enregistrait une disponibilité que l'agent n'avait pas
-  // donnée (revue d'ergonomie du 16 octobre, C4).
+  // donnée (C4).
   const [value, setValue] = useState<Availability | null | undefined>(undefined);
   const [comment, setComment] = useState("");
   const [start, setStart] = useState(days[0]);
   const [end, setEnd] = useState(days[days.length - 1]);
-  const [weekdays, setWeekdays] = useState<number[]>([]);
+  // Par défaut, la saisie rapide n'écrase rien : on complète, et l'on remplace
+  // seulement si on le demande.
+  const [keepFilled, setKeepFilled] = useState(true);
+  // La semaine type part de la semaine habituelle enregistrée.
+  const [week, setWeek] = useState<Record<string, Availability | undefined>>(() => ({ ...state.template }));
+  const [remember, setRemember] = useState(true);
   const leading = (new Date(`${days[0]}T12:00:00`).getDay() + 6) % 7;
-  // « Jours de la semaine » sans jour coché ne retient rien : il retombait sur
-  // toute la période, et l'enregistrement écrasait le mois entier.
-  const chosen = quick
-    ? days.filter(
-        d => d >= start && d <= end && (quickMode === "period" || weekdays.includes(new Date(`${d}T12:00`).getDay())),
-      )
-    : selected.filter(d => days.includes(d));
-  const [confirm, confirmation] = useConfirmation();
-  const overwritten = chosen.filter(d => state.entries[entryKey(campaignId, actor.id, d)]).length;
   const icons = { DAY: Sun, NIGHT: Moon, FULL_24H: Clock3, UNAVAILABLE: X };
+
+  const inPeriod = days.filter(d => d >= start && d <= end);
+  const filledInPeriod = inPeriod.filter(isFilled).length;
+  // « Non renseigné » efface : il n'a rien à épargner.
+  const spare = keepFilled && !(quickMode === "period" && value === null);
+  const weekChosen = Object.values(week).some(Boolean);
+  const targets = !quick
+    ? day
+      ? [day]
+      : []
+    : inPeriod.filter(d => (quickMode === "period" || week[isoWeekday(d)]) && !(spare && isFilled(d)));
+  const overwritten = quick ? targets.filter(isFilled).length : 0;
+  // Ce qui manque pour enregistrer, dit à côté du bouton plutôt qu'un bouton grisé muet.
+  const missing =
+    quickMode === "week" && quick
+      ? !weekChosen
+        ? "Choisissez une disponibilité pour au moins un jour de la semaine."
+        : undefined
+      : value === undefined
+        ? "Choisissez d’abord une disponibilité."
+        : undefined;
+  const nothing =
+    !missing && quick && !targets.length
+      ? spare && filledInPeriod
+        ? "Tous les jours concernés sont déjà renseignés : rien à compléter."
+        : "Aucun jour ne correspond à cette sélection."
+      : undefined;
+  const hint = missing ?? nothing;
+
   // Toute écriture d'un jour remet la réponse à valider, même à valeur égale
   // (check_availability_write, 0001_foundation.sql). « Disponibilités
   // modifiées » laissait croire à l'agent qu'il avait fini (C2).
@@ -90,40 +104,71 @@ export function Availability() {
   // Awaited on purpose: the dialog stays open when the database refuses, so the
   // refusal is read next to the entry that caused it.
   async function save() {
-    if (value === undefined) return;
+    if (hint) return;
     const success = unvalidates && `Disponibilités modifiées. ${unvalidates}`;
-    if (await run({ type: "availability", campaignId, dates: chosen, value, comment }, success)) {
-      setEditing(false);
+    const done =
+      quick && quickMode === "week"
+        ? await run(
+            {
+              type: "applyWeek",
+              campaignId,
+              week: Object.fromEntries(Object.entries(week).filter(([, v]) => v)) as Record<string, Availability>,
+              from: start,
+              to: end,
+              keepFilled,
+              comment,
+              remember,
+            },
+            success,
+          )
+        : await run({ type: "availability", campaignId, dates: targets, value: value ?? null, comment }, success);
+    if (done) {
+      setDay(null);
       setQuick(false);
-      setSelected([]);
     }
   }
-  function selectDay(date: string) {
-    if (multiple) setSelected(s => (s.includes(date) ? s.filter(d => d !== date) : [...s, date]));
-    else {
-      const entry = state.entries[entryKey(campaignId, actor.id, date)];
-      setSelected([date]);
-      setValue(entry?.type);
-      setComment(entry?.comment ?? "");
-      setEditing(true);
-    }
+  function openDay(date: string) {
+    const entry = state.entries[entryKey(campaignId, actor.id, date)];
+    setDay(date);
+    setValue(entry?.type);
+    setComment(entry?.comment ?? "");
   }
+  function openQuick() {
+    setQuick(true);
+    setValue(undefined);
+    setComment("");
+    setStart(days[0]);
+    setEnd(days[days.length - 1]);
+    setKeepFilled(true);
+    setWeek({ ...state.template });
+    setRemember(true);
+  }
+  const choices = (
+    <div className="availability-choices">
+      {Object.entries(labels).map(([key, label]) => (
+        <button
+          key={key}
+          aria-pressed={value === key}
+          className={`${label.className} ${value === key ? "chosen" : ""}`}
+          onClick={() => setValue(key as Availability)}
+        >
+          <strong>{label.short}</strong>
+          <span>{label.label}</span>
+          {/* Les horaires viennent de la campagne, jamais d'un libellé écrit
+              en dur : chaque campagne fige les siens à sa création. */}
+          {key !== "UNAVAILABLE" && <small>{hours(campaign, key as Shift | "FULL_24H")}</small>}
+          {value === key && <Check size={14} />}
+        </button>
+      ))}
+    </div>
+  );
   return (
     <>
       <PageTitle
         title="Mes disponibilités"
         description={`${monthLabel(campaign.month)} · saisie puis validation explicite de votre réponse.`}
         action={
-          <Button
-            disabled={!open}
-            onClick={() => {
-              setQuick(true);
-              setValue(undefined);
-              setComment("");
-              setStart(days[0]);
-              setEnd(days[days.length - 1]);
-            }}
-          >
+          <Button disabled={!open} onClick={openQuick}>
             <Zap size={17} />
             Saisie rapide
           </Button>
@@ -171,23 +216,7 @@ export function Availability() {
         </div>
       )}
       <div className="availability-layout">
-        <Panel
-          title={monthLabel(campaign.month)}
-          subtitle={`${hours(campaign, "DAY")} · ${hours(campaign, "NIGHT")}`}
-          action={
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={!open}
-              onClick={() => {
-                setMultiple(v => !v);
-                setSelected([]);
-              }}
-            >
-              {multiple ? "Terminer la sélection" : "Sélection multiple"}
-            </Button>
-          }
-        >
+        <Panel title={monthLabel(campaign.month)} subtitle={`${hours(campaign, "DAY")} · ${hours(campaign, "NIGHT")}`}>
           <div className="month-calendar">
             {["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map(d => (
               <span className="weekday" key={d}>
@@ -205,9 +234,8 @@ export function Availability() {
                   key={d}
                   disabled={!open}
                   aria-label={`${dateLabel(d)}, ${entry ? labels[entry.type].label : "Non renseigné"}`}
-                  aria-pressed={selected.includes(d)}
-                  onClick={() => selectDay(d)}
-                  className={`calendar-day ${entry ? labels[entry.type].className : "unknown"} ${selected.includes(d) ? "is-selected" : ""}`}
+                  onClick={() => openDay(d)}
+                  className={`calendar-day ${entry ? labels[entry.type].className : "unknown"} ${day === d ? "is-selected" : ""}`}
                 >
                   <span className="day-number">{Number(d.slice(-2))}</span>
                   {Icon ? <Icon size={17} /> : <span className="unknown-symbol">?</span>}
@@ -218,24 +246,6 @@ export function Availability() {
             })}
           </div>
           <Legend />
-          {multiple && (
-            <div className="selection-bar">
-              <span>
-                {selected.length} {plural(selected.length, "jour")} {plural(selected.length, "sélectionné")}
-              </span>
-              <Button
-                size="sm"
-                disabled={!selected.length}
-                onClick={() => {
-                  setValue(undefined);
-                  setComment("");
-                  setEditing(true);
-                }}
-              >
-                Appliquer un statut
-              </Button>
-            </div>
-          )}
         </Panel>
         <div className="availability-side">
           {/* Le compte et la barre vivent dans le bandeau du haut depuis qu'il
@@ -255,80 +265,6 @@ export function Availability() {
               <CheckCheck size={18} />
               {validated ? "Réponse validée" : "Valider mes disponibilités"}
             </Button>
-          </Panel>
-          <Panel
-            id="modele"
-            title="Ma disponibilité habituelle"
-            subtitle="Un modèle par jour de semaine, réutilisable d’une campagne à l’autre."
-          >
-            <div className="weekly-template">
-              {weekdayNames.map((name, index) => {
-                const weekday = String(index + 1);
-                const current = draft[weekday];
-                return (
-                  <div key={weekday}>
-                    <span>{name}</span>
-                    <div className="weekly-choices">
-                      {(Object.keys(labels) as Availability[]).map(type => (
-                        <button
-                          key={type}
-                          type="button"
-                          aria-pressed={current === type}
-                          aria-label={`${name} : ${labels[type].label}`}
-                          className={`badge ${labels[type].className} ${current === type ? "chosen" : ""}`}
-                          onClick={() => setDraft(d => ({ ...d, [weekday]: current === type ? undefined : type }))}
-                        >
-                          {labels[type].short}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <p className="muted small">
-              {planned.length
-                ? `${planned.length} ${plural(planned.length, "jour")} ${plural(planned.length, "serait renseigné", "seraient renseignés")} sur ${monthLabel(campaign.month)}.`
-                : "Aucun jour de semaine renseigné : le modèle ne s’applique à rien."}
-            </p>
-            <div className="template-buttons">
-              <Button
-                variant="secondary"
-                disabled={!templateChanged}
-                onClick={() =>
-                  run({
-                    type: "template",
-                    // Sept jours toujours envoyés : un jour absent voudrait dire
-                    // « inchangé », or l’écran veut dire « rien d’habituel ».
-                    days: Object.fromEntries(weekdayNames.map((_, i) => [String(i + 1), draft[String(i + 1)] ?? null])),
-                  })
-                }
-              >
-                Enregistrer le modèle
-              </Button>
-              <Button
-                className="full-width"
-                disabled={!open || !planned.length || templateChanged}
-                onClick={() =>
-                  confirm({
-                    title: `Appliquer le modèle à ${monthLabel(campaign.month)} ?`,
-                    description: `${planned.length} ${plural(planned.length, "jour")} ${plural(planned.length, "sera renseigné", "seront renseignés")} selon votre modèle, en remplaçant ce qui y figure${validated ? ", et votre réponse sera à valider de nouveau" : ""}. Les autres jours ne bougent pas.`,
-                    confirmLabel: "Appliquer le modèle",
-                    onConfirm: () =>
-                      run(
-                        { type: "applyTemplate", campaignId },
-                        unvalidates && `Disponibilité habituelle appliquée. ${unvalidates}`,
-                      ),
-                  })
-                }
-              >
-                <Repeat size={17} />
-                Appliquer à {monthLabel(campaign.month)}
-              </Button>
-            </div>
-            <p className="muted small">
-              Appliquer écrase les jours concernés et remet votre réponse à valider. Les autres jours ne bougent pas.
-            </p>
           </Panel>
           <div className="info-card">
             <Clock3 size={22} />
@@ -361,40 +297,33 @@ export function Availability() {
         </div>
       )}
       <Modal
-        open={editing || quick}
+        open={Boolean(day) || quick}
         onOpenChange={o => {
           if (!o) {
-            setEditing(false);
+            setDay(null);
             setQuick(false);
           }
         }}
-        title={
+        title={quick || !day ? "Saisie rapide" : dateLabel(day, { weekday: "long", day: "numeric", month: "long" })}
+        description={
           quick
-            ? "Saisie rapide"
-            : chosen.length === 1
-              ? dateLabel(chosen[0], { weekday: "long", day: "numeric", month: "long" })
-              : `${chosen.length} jours sélectionnés`
+            ? "Plusieurs jours en une fois. Ils seront enregistrés en brouillon jusqu’à votre validation."
+            : "Choisissez une disponibilité. Elle sera enregistrée en brouillon jusqu’à votre validation."
         }
-        description="Choisissez une disponibilité. Elle sera enregistrée en brouillon jusqu’à votre validation."
       >
         {quick && (
           <>
-            {/* Les deux onglets de la maquette. Le second est un sur-ensemble du
-                premier — il garde la période et y ajoute le filtre — pour ne pas
-                retirer « tous les lundis du 5 au 19 », qui n'a rien d'exotique.
-                Revenir sur « Période » efface le filtre, sinon l'onglet
-                mentirait sur ce qu'il applique. */}
+            {/* « Période » : une même valeur sur chaque jour. « Semaine type » : une
+                valeur par jour de semaine — c'est l'ancienne disponibilité
+                habituelle, et l'ancien onglet « Jours de la semaine », réunis. */}
             <SegmentedTabs
               size="lg"
-              label="Portée de la saisie rapide"
+              label="Façon de remplir"
               value={quickMode}
-              onChange={next => {
-                setQuickMode(next);
-                if (next === "period") setWeekdays([]);
-              }}
+              onChange={setQuickMode}
               options={[
                 { value: "period", label: "Période", icon: CalendarRange },
-                { value: "weekdays", label: "Jours de la semaine", icon: CalendarDays },
+                { value: "week", label: "Semaine type", icon: CalendarDays },
               ]}
             />
             <div className="form-grid">
@@ -419,63 +348,80 @@ export function Availability() {
                 />
               </label>
             </div>
-            {quickMode === "weekdays" && (
-              <>
-                <span className="field-label">Jours de la semaine retenus</span>
-                <div className="weekday-picker">
-                  {[1, 2, 3, 4, 5, 6, 0].map((day, i) => (
-                    <button
-                      key={day}
-                      aria-pressed={weekdays.includes(day)}
-                      className={weekdays.includes(day) ? "selected" : ""}
-                      onClick={() => setWeekdays(w => (w.includes(day) ? w.filter(d => d !== day) : [...w, day]))}
-                    >
-                      {["L", "M", "M", "J", "V", "S", "D"][i]}
-                      <span className="sr-only">
-                        {["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"][i]}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-            <div className="quick-summary">
-              <CalendarDays size={17} />
-              <span>
-                <strong>
-                  {chosen.length} {plural(chosen.length, "jour")} {plural(chosen.length, "sélectionné")}
-                </strong>
-                <small>
-                  {chosen.length
-                    ? `Du ${dateLabel(chosen[0], { weekday: "long", day: "numeric", month: "long" })} au ${dateLabel(chosen[chosen.length - 1], { weekday: "long", day: "numeric", month: "long" })}`
-                    : quickMode === "weekdays" && !weekdays.length
-                      ? "Cochez au moins un jour de la semaine."
-                      : "Aucun jour ne correspond à cette sélection."}
-                </small>
-              </span>
-            </div>
           </>
         )}
-        <div className="availability-choices">
-          {Object.entries(labels).map(([key, label]) => (
-            <button
-              key={key}
-              aria-pressed={value === key}
-              className={`${label.className} ${value === key ? "chosen" : ""}`}
-              onClick={() => setValue(key as Availability)}
-            >
-              <strong>{label.short}</strong>
-              <span>{label.label}</span>
-              {/* Les horaires viennent de la campagne, jamais d'un libellé écrit
-                  en dur : chaque campagne fige les siens à sa création. */}
-              {key !== "UNAVAILABLE" && <small>{hours(campaign, key as Shift | "FULL_24H")}</small>}
-              {value === key && <Check size={14} />}
+        {quick && quickMode === "week" ? (
+          <>
+            <div className="weekly-template">
+              {weekdayNames.map((name, index) => {
+                const weekday = String(index + 1);
+                const current = week[weekday];
+                return (
+                  <div key={weekday}>
+                    <span>{name}</span>
+                    <div className="weekly-choices">
+                      {(Object.keys(labels) as Availability[]).map(type => (
+                        <button
+                          key={type}
+                          type="button"
+                          aria-pressed={current === type}
+                          aria-label={`${name} : ${labels[type].label}`}
+                          className={`badge ${labels[type].className} ${current === type ? "chosen" : ""}`}
+                          onClick={() => setWeek(w => ({ ...w, [weekday]: current === type ? undefined : type }))}
+                        >
+                          {labels[type].short}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="muted small">Un jour sans choix ne change pas. Touchez de nouveau un choix pour l’enlever.</p>
+            <label className="checkbox-field quick-option">
+              <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} />
+              <span>
+                Garder comme ma semaine habituelle
+                <small>Elle sera préremplie ici les prochains mois.</small>
+              </span>
+            </label>
+          </>
+        ) : (
+          <>
+            {choices}
+            <button className="text-button" onClick={() => setValue(null)}>
+              {value === null ? "✓ " : ""}Remettre à « Non renseigné »
             </button>
-          ))}
-        </div>
-        <button className="text-button" onClick={() => setValue(null)}>
-          {value === null ? "✓ " : ""}Remettre à « Non renseigné »
-        </button>
+          </>
+        )}
+        {quick && filledInPeriod > 0 && !(quickMode === "period" && value === null) && (
+          <label className="checkbox-field quick-option">
+            <input type="checkbox" checked={keepFilled} onChange={e => setKeepFilled(e.target.checked)} />
+            <span>
+              Ne remplir que les jours non renseignés
+              <small>
+                {filledInPeriod} {plural(filledInPeriod, "jour")} de la période {plural(filledInPeriod, "est", "sont")}{" "}
+                déjà {plural(filledInPeriod, "renseigné")}.
+              </small>
+            </span>
+          </label>
+        )}
+        {quick && targets.length > 0 && (
+          <div className="quick-summary">
+            <CalendarDays size={17} />
+            <span>
+              <strong>
+                {targets.length} {plural(targets.length, "jour")} {plural(targets.length, "sera", "seront")}{" "}
+                {quickMode === "period" && value === null ? "effacé" : "renseigné"}
+                {targets.length > 1 ? "s" : ""}
+              </strong>
+              <small>
+                Du {dateLabel(targets[0], { weekday: "long", day: "numeric", month: "long" })} au{" "}
+                {dateLabel(targets[targets.length - 1], { weekday: "long", day: "numeric", month: "long" })}
+              </small>
+            </span>
+          </div>
+        )}
         <label className="field">
           Commentaire facultatif
           <textarea
@@ -486,10 +432,9 @@ export function Availability() {
           />
         </label>
         {/* Un jour ouvert depuis le calendrier montre déjà sa valeur cochée : lui
-            annoncer qu'elle « sera remplacée » n'apprenait rien, et doublait
-            l'avertissement de revalidation. L'annonce reste pour les saisies
-            qui touchent des jours qu'on ne voit pas. */}
-        {(quick || multiple) && overwritten > 0 && (
+            annoncer qu'elle « sera remplacée » n'apprenait rien. L'annonce reste
+            pour la saisie rapide, qui touche des jours qu'on ne voit pas. */}
+        {overwritten > 0 && (
           <div className="warning small">
             <CircleAlert size={18} />
             {overwritten} {plural(overwritten, "jour")} déjà {plural(overwritten, "renseigné")}{" "}
@@ -504,19 +449,20 @@ export function Availability() {
         )}
         <Button
           className="full-width"
-          disabled={!chosen.length || value === undefined}
-          aria-describedby={value === undefined ? "availability-choice-hint" : undefined}
+          disabled={Boolean(hint)}
+          aria-describedby={hint ? "availability-choice-hint" : undefined}
           onClick={save}
         >
-          Enregistrer {chosen.length > 1 ? `les ${chosen.length} jours` : "la disponibilité"}
+          {quick
+            ? `Enregistrer ${targets.length > 1 ? `les ${targets.length} jours` : "le jour"}`
+            : "Enregistrer la disponibilité"}
         </Button>
-        {value === undefined && (
+        {hint && (
           <p id="availability-choice-hint" className="muted small button-hint">
-            Choisissez d’abord une disponibilité.
+            {hint}
           </p>
         )}
       </Modal>
-      {confirmation}
     </>
   );
 }

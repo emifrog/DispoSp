@@ -758,6 +758,19 @@ export const commandSchema = z.discriminatedUnion("type", [
     days: z.record(z.string().regex(/^[1-7]$/), availabilitySchema.nullable()),
   }),
   z.object({ type: z.literal("applyTemplate"), campaignId: id }),
+  // La saisie rapide, onglet « Semaine type » : une valeur par jour de semaine,
+  // ou rien, sur une période. `keepFilled` épargne les jours déjà renseignés ;
+  // `remember` garde la semaine comme disponibilité habituelle.
+  z.object({
+    type: z.literal("applyWeek"),
+    campaignId: id,
+    week: z.record(z.string().regex(/^[1-7]$/), availabilitySchema.nullable()),
+    from: isoDate,
+    to: isoDate,
+    keepFilled: z.boolean(),
+    comment: z.string().max(500),
+    remember: z.boolean(),
+  }),
   // Sans identifiant, ou vide : une équipe à créer.
   z.object({
     type: z.literal("team"),
@@ -801,6 +814,25 @@ export const notificationLabels: Record<string, string> = {
   WITHDRAWAL_REQUESTED: "Désistement signalé",
   WITHDRAWAL_DECIDED: "Réponse à votre désistement",
 };
+/**
+ * Ce que chaque message invite à faire, et l'écran où cela se fait.
+ *
+ * L'email porte ce lien, et l'écran Notifications aussi : un message n'y était
+ * qu'un texte à marquer comme lu, et la notification du téléphone, qui mène à
+ * cet écran, s'y arrêtait. Un genre inconnu n'a pas de lien : l'email garde la
+ * racine, qui aiguille selon le rôle.
+ *
+ * Tous, sauf la publication, portaient autrefois « Renseigner mes
+ * disponibilités » et menaient à la racine : un gestionnaire prévenu d'un
+ * désistement était invité à saisir ses propres disponibilités.
+ */
+export const notificationTargets: Record<string, { label: string; path: string }> = {
+  CAMPAIGN_OPENED: { label: "Renseigner mes disponibilités", path: "/mes-disponibilites" },
+  CAMPAIGN_REMINDER: { label: "Renseigner mes disponibilités", path: "/mes-disponibilites" },
+  SCHEDULE_PUBLISHED: { label: "Consulter mon planning", path: "/mon-planning" },
+  WITHDRAWAL_REQUESTED: { label: "Examiner le désistement", path: "/demandes" },
+  WITHDRAWAL_DECIDED: { label: "Consulter mon planning", path: "/mon-planning" },
+};
 export const commandLabels: Record<Command["type"], string> = {
   availability: "Disponibilités modifiées",
   validate: "Réponse validée",
@@ -823,4 +855,5 @@ export const commandLabels: Record<Command["type"], string> = {
   remind: "Relance envoyée",
   template: "Disponibilité habituelle enregistrée",
   applyTemplate: "Disponibilité habituelle appliquée",
+  applyWeek: "Disponibilités modifiées",
 };

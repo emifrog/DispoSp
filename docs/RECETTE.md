@@ -125,7 +125,7 @@ Si cette partie échoue, rien d'autre ne sert : personne n'entre.
 
 **Faire** — L'invité ouvre l'application.
 
-**Attendu** — Il arrive sur son **Accueil** — campagne en cours, avancement, prochaines gardes — et voit **l'espace agent seulement** : Accueil, Disponibilités, Mon planning, Mon profil, Notifications. Ni Planning, ni Besoins, ni Campagnes, ni Agents & équipes, ni Demandes, ni Statistiques, ni Historique, ni Paramètres.
+**Attendu** — Il arrive sur son **Accueil** — campagne en cours, avancement, prochaines gardes — et voit **l'espace agent seulement** : Accueil, Disponibilités, Mon planning, Mon profil, Notifications. Ni Planning, ni Besoins, ni Campagnes, ni Agents & équipes, ni Désistements, ni Statistiques, ni Historique, ni Paramètres.
 
 **Sinon** — S'il voit encore « Compte en attente de rattachement », le déclencheur n'a pas trouvé l'invitation : l'adresse saisie ne correspond pas exactement à l'adresse invitée. S'il voit les écrans d'administration, arrêtez et signalez-le — ce serait un défaut de droits, pas de confort.
 
@@ -169,15 +169,15 @@ Rien n'est perdu : la file garde le message et le renverra à la prochaine actio
 
 ## Partie 3 — La saisie de l'agent
 
-### 3.1 La disponibilité habituelle
+### 3.1 La semaine type
 
-**Faire** — Côté agent, **Mes disponibilités**. Dans « Ma disponibilité habituelle », composer une semaine — par exemple lundi indisponible, samedi 24 h. **Enregistrer**, puis **Appliquer au mois**.
+**Faire** — Côté agent, **Mes disponibilités**, **Saisie rapide**, onglet **Semaine type**. Composer une semaine — par exemple lundi indisponible, samedi 24 h —, laisser « Garder comme ma semaine habituelle » coché, puis **Enregistrer**.
 
-**Attendu** — Le panneau annonce d'abord combien de jours seraient renseignés ; après application, tous les lundis et samedis du mois portent la valeur choisie. Les autres jours ne bougent pas.
+**Attendu** — La boîte annonce d’abord combien de jours seront renseignés. Après l’enregistrement, tous les lundis et samedis du mois portent la valeur choisie, et les autres jours ne bougent pas. Si des jours étaient déjà renseignés, « Ne remplir que les jours non renseignés », coché d’office, les épargne ; décoché, la boîte annonce combien seront remplacés.
 
-**Sinon** — Si le bouton Appliquer reste inactif, c'est que le brouillon n'est pas enregistré : c'est voulu, il ne faut pas appliquer autre chose que ce qui est affiché.
+**Sinon** — Si « Enregistrer » reste inactif, la phrase dessous dit pourquoi : aucune disponibilité choisie, ou tous les jours concernés déjà renseignés.
 
-**À vérifier** — Se déconnecter, se reconnecter : le modèle doit être toujours là.
+**À vérifier** — Se déconnecter, se reconnecter, rouvrir la semaine type : la semaine est préremplie.
 
 ### 3.2 La validation explicite
 
@@ -231,7 +231,7 @@ Rien n'est perdu : la file garde le message et le renverra à la prochaine actio
 
 **Faire** — Côté agent, **Mon planning**, sur la garde publiée : **Je ne peux plus**. Indiquer un motif, envoyer.
 
-**Attendu** — La garde porte « Désistement en attente », et l'agent peut encore le retirer. Côté administrateur, une pastille rouge apparaît sur **Demandes**, et la demande y figure avec le motif. Une notification est arrivée à tous ceux qui encadrent le centre.
+**Attendu** — La garde porte « Désistement en attente », et l'agent peut encore le retirer. Côté administrateur, une pastille rouge apparaît sur **Désistements** — dans le menu, et dans la barre du bas sur téléphone —, le tableau de bord annonce « 1 désistement en attente », et la demande figure à l’écran avec le motif. Une notification est arrivée à tous ceux qui encadrent le centre ; dans **Notifications**, son lien « Examiner le désistement » mène à l’écran.
 
 **Sinon** — Si le bouton refuse, vérifier que la garde est bien **publiée** : on ne se désiste pas d'un brouillon, et la base l'exige.
 
@@ -284,7 +284,7 @@ Ces vérifications ne sont pas du confort. Elles portent sur des données person
 
 **Attendu** — Un écran « Accès réservé », et **aucune donnée**. `/tableau-de-bord` fait exception : il renvoie l'agent vers son accueil, parce qu'un agent n'y verrait qu'une synthèse du centre calculée sur une seule personne — la sienne.
 
-**Faire, côté agent** — Ouvrir **Demandes** d'un autre centre n'est pas possible ; vérifier plutôt qu'un agent ne voit que **ses propres** désistements, jamais ceux d'un collègue.
+**Faire, côté agent** — Ouvrir **Désistements** d'un autre centre n'est pas possible ; vérifier plutôt qu'un agent ne voit que **ses propres** désistements, jamais ceux d'un collègue.
 
 **Faire, côté administrateur** — Chercher la disponibilité habituelle d'un agent.
 

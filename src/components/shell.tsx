@@ -29,10 +29,17 @@ import { InstallButton, SignOutForm } from "./pwa";
 import { Button } from "./ui/button";
 import { defaultCampaign, monthLabel } from "@/lib/domain";
 import { roleLabels, type AttachedSession } from "@/lib/session";
+// Comme pour l'agent, la barre du bas sur téléphone ne garde que les quatre
+// premiers : les désistements y sont, parce qu'un agent attend la réponse ; les
+// besoins, qui se fixent une fois par mois, passent au menu.
 const managerNav = [
   { href: "/tableau-de-bord", label: "Tableau de bord", icon: LayoutDashboard },
   { href: "/disponibilites", label: "Disponibilités", icon: CalendarDays },
   { href: "/planning", label: "Planning", icon: CalendarCheck2 },
+  // « Demandes » ne disait pas de quoi : l'écran ne traite que des désistements,
+  // le travail courant de l'encadrement et non de l'administration. L'adresse
+  // reste /demandes, celle des emails déjà partis.
+  { href: "/demandes", label: "Désistements", icon: Inbox },
   { href: "/besoins", label: "Besoins", icon: BarChart3 },
   { href: "/campagnes", label: "Campagnes", icon: Megaphone },
   { href: "/agents", label: "Agents & équipes", icon: Users },
@@ -45,7 +52,6 @@ const managerNav = [
 // Les écrans d'administration : la barre latérale les range sous leur propre
 // titre, et seul qui administre les voit.
 const adminNav = [
-  { href: "/demandes", label: "Demandes", icon: Inbox },
   { href: "/statistiques", label: "Statistiques", icon: TrendingUp },
   { href: "/historique", label: "Historique", icon: History },
   { href: "/parametres", label: "Paramètres", icon: Settings2 },
@@ -84,7 +90,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
   const path = usePathname();
   const [menu, setMenu] = useState(false);
   const nav = actor.role === "MANAGER" ? managerNav : agentNav;
-  // Tous les écrans d'encadrement, administration comprise : « Demandes » et
+  // Tous les écrans d'encadrement, administration comprise : « Désistements » et
   // « Statistiques » manquaient, et un agent qui en tapait l'adresse voyait
   // l'écran s'ouvrir. Les pages le renvoient aussi côté serveur ; ceci couvre
   // la navigation déjà dans le navigateur.
@@ -92,9 +98,16 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
   const current = (href: string) => (path === href ? ("page" as const) : undefined);
   const space = roleLabels[memberRole].toUpperCase();
   const unread = state.notifications.filter(n => !n.readAt).length;
-  // Une demande en attente bloque quelqu'un : elle se compte dans la barre,
-  // pas seulement sur son écran.
+  // Un désistement en attente bloque quelqu'un : il se compte sur l'entrée du
+  // menu et dans la barre du bas, pas seulement sur son écran.
   const pendingWithdrawals = state.withdrawals.filter(w => w.state === "PENDING").length;
+  const badge = (href: string) =>
+    href === "/demandes" && pendingWithdrawals > 0 ? (
+      <span className="nav-badge">
+        {pendingWithdrawals}
+        <span className="sr-only"> en attente</span>
+      </span>
+    ) : null;
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main">
@@ -130,7 +143,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
             >
               <item.icon size={20} />
               {item.label}
-              {path === item.href && <span className="active-dot" />}
+              {badge(item.href) ?? (path === item.href && <span className="active-dot" />)}
             </Link>
           ))}
         </nav>
@@ -148,9 +161,6 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
                 >
                   <item.icon size={19} />
                   {item.label}
-                  {item.href === "/demandes" && pendingWithdrawals > 0 && (
-                    <span className="nav-badge">{pendingWithdrawals}</span>
-                  )}
                 </Link>
               ))}
             </nav>
@@ -301,6 +311,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
           <Link key={n.href} href={n.href} aria-current={current(n.href)} className={path === n.href ? "active" : ""}>
             <n.icon size={21} />
             <span>{n.label}</span>
+            {badge(n.href)}
           </Link>
         ))}
       </nav>

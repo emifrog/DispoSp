@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { message, type Pending } from "../src/lib/email";
+import { notificationLabels, notificationTargets } from "../src/lib/domain";
 
 const notice = (overrides: Partial<Pending> = {}): Pending => ({
   id: "n1",
@@ -38,7 +39,7 @@ describe("Message envoyé à un agent", () => {
     ["CAMPAIGN_OPENED", "Renseigner mes disponibilités", "/mes-disponibilites"],
     ["CAMPAIGN_REMINDER", "Renseigner mes disponibilités", "/mes-disponibilites"],
     ["SCHEDULE_PUBLISHED", "Consulter mon planning", "/mon-planning"],
-    ["WITHDRAWAL_REQUESTED", "Examiner la demande", "/demandes"],
+    ["WITHDRAWAL_REQUESTED", "Examiner le désistement", "/demandes"],
     ["WITHDRAWAL_DECIDED", "Consulter mon planning", "/mon-planning"],
   ])("mène %s à son propre écran", (kind, call, path) => {
     const built = message(notice({ kind }), "https://x.fr/");
@@ -47,6 +48,12 @@ describe("Message envoyé à un agent", () => {
     expect(built.html).toContain(`>${call}</a>`);
     // Le logo, lui, reste à la racine.
     expect(built.html).toContain('src="https://x.fr/logo-disposp.png"');
+  });
+
+  // L'email et l'écran Notifications partagent ces liens : un genre de message
+  // sans écran laisserait une notification sans suite, là où le téléphone mène.
+  it("donne un écran à chaque genre de message connu", () => {
+    expect(Object.keys(notificationTargets).sort()).toEqual(Object.keys(notificationLabels).sort());
   });
 
   it("ne promet rien de précis pour un genre qu’il ne connaît pas", () => {

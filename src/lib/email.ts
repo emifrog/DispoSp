@@ -1,4 +1,4 @@
-import { notificationLabels } from "./domain";
+import { notificationLabels, notificationTargets } from "./domain";
 
 /** A row of the dispatch queue, as public.pending_notifications() returns it. */
 export type Pending = { id: string; email: string; kind: string; subject: string; body: string | null };
@@ -7,22 +7,9 @@ export type Message = { to: string; subject: string; text: string; html: string 
 const escape = (value: string) =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-/**
- * Ce que chaque message invite à faire, et l'écran où cela se fait.
- *
- * Tous, sauf la publication, portaient « Renseigner mes disponibilités » et
- * menaient à la racine : un gestionnaire prévenu d'un désistement était invité
- * à saisir ses propres disponibilités, et l'agent à qui l'on répondait aussi.
- * Un genre inconnu garde la racine, qui aiguille selon le rôle, et un appel
- * qui ne promet rien de précis.
- */
-export const callsToAction: Record<string, { label: string; path: string }> = {
-  CAMPAIGN_OPENED: { label: "Renseigner mes disponibilités", path: "/mes-disponibilites" },
-  CAMPAIGN_REMINDER: { label: "Renseigner mes disponibilités", path: "/mes-disponibilites" },
-  SCHEDULE_PUBLISHED: { label: "Consulter mon planning", path: "/mon-planning" },
-  WITHDRAWAL_REQUESTED: { label: "Examiner la demande", path: "/demandes" },
-  WITHDRAWAL_DECIDED: { label: "Consulter mon planning", path: "/mon-planning" },
-};
+// Ce que chaque message invite à faire vit dans le domaine (`notificationTargets`) :
+// l'écran Notifications porte le même lien. Un genre inconnu garde la racine, qui
+// aiguille selon le rôle, et un appel qui ne promet rien de précis.
 const OPEN_APP = { label: "Ouvrir DispoSP", path: "" };
 
 // Sober on purpose. An operational message is read on a phone, between two other
@@ -32,7 +19,7 @@ export function message(notice: Pending, appUrl: string): Message {
   const root = appUrl.replace(/\/+$/, "");
   const kind = notificationLabels[notice.kind] ?? notice.kind;
   const body = notice.body?.trim() ?? "";
-  const { label: call, path } = callsToAction[notice.kind] ?? OPEN_APP;
+  const { label: call, path } = notificationTargets[notice.kind] ?? OPEN_APP;
   const link = `${root}${path}`;
   // Sans corps, le message commence par son appel : deux lignes vides en tête
   // se lisaient comme un message tronqué.

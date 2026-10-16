@@ -34,7 +34,7 @@ const statePills: Record<Withdrawal["state"], string> = {
  */
 export function Withdrawals() {
   const { state, canAdminister, run } = useApp();
-  if (!canAdminister) return <AdministrationOnly title="Demandes des agents" />;
+  if (!canAdminister) return <AdministrationOnly title="Désistements" />;
 
   const byDate = (a: Withdrawal, b: Withdrawal) => a.date.localeCompare(b.date);
   const pending = state.withdrawals.filter(w => w.state === "PENDING").sort(byDate);
@@ -43,17 +43,17 @@ export function Withdrawals() {
   return (
     <>
       <PageTitle
-        title="Demandes des agents"
-        description="Désistements sur les gardes publiées. Trancher répond à l’agent ; réaffecter se fait au planning."
+        title="Désistements"
+        description="Les agents qui ne peuvent plus tenir une garde publiée. Accepter ou refuser leur répond ; le remplacement se fait au planning."
       />
 
       <Panel
         title="En attente"
-        subtitle="Chacune attend une réponse, et chaque acceptation laisse une place à reprendre."
+        subtitle="Chacun attend une réponse, et chaque acceptation laisse une place à reprendre."
         action={
           pending.length ? (
             <span className="pill pill-orange">
-              {pending.length} {plural(pending.length, "demande")}
+              {pending.length} {plural(pending.length, "désistement")}
             </span>
           ) : undefined
         }
@@ -61,8 +61,8 @@ export function Withdrawals() {
         {!pending.length ? (
           <div className="empty-state">
             <Inbox size={40} />
-            <h2>Aucune demande en attente</h2>
-            <p>Les désistements signalés par les agents apparaîtront ici.</p>
+            <h2>Aucun désistement en attente</h2>
+            <p>Quand un agent signale qu’il ne peut plus tenir une garde, sa demande arrive ici.</p>
           </div>
         ) : (
           <div className="withdrawal-list">
@@ -74,7 +74,7 @@ export function Withdrawals() {
       </Panel>
 
       {settled.length > 0 && (
-        <Panel title="Déjà tranchées" subtitle="Les demandes closes, les plus récentes en tête.">
+        <Panel title="Déjà traités" subtitle="Acceptés, refusés ou retirés, les plus récents en tête.">
           <div className="withdrawal-list settled">
             {settled.slice(0, 20).map(w => (
               <Row key={w.id} withdrawal={w} state={state} run={run} />
@@ -162,7 +162,9 @@ function Row({
                 title: "Accepter le désistement ?",
                 description: `${who} ne sera plus attendu ${slot}, et en est prévenu. Sa place reste à reprendre au planning : tant qu’il y figure, la garde ne peut pas être republiée.`,
                 confirmLabel: "Accepter",
-                onConfirm: () => run({ type: "decideWithdrawal", withdrawalId: withdrawal.id, accepted: true }),
+                // « Désistement tranché » ne disait pas lequel des deux gestes était parti.
+                onConfirm: () =>
+                  run({ type: "decideWithdrawal", withdrawalId: withdrawal.id, accepted: true }, "Désistement accepté"),
               })
             }
           >
@@ -178,7 +180,8 @@ function Row({
                 description: `${who} reste attendu ${slot}, et en est prévenu.`,
                 confirmLabel: "Refuser",
                 danger: true,
-                onConfirm: () => run({ type: "decideWithdrawal", withdrawalId: withdrawal.id, accepted: false }),
+                onConfirm: () =>
+                  run({ type: "decideWithdrawal", withdrawalId: withdrawal.id, accepted: false }, "Désistement refusé"),
               })
             }
           >

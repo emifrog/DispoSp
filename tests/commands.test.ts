@@ -104,6 +104,57 @@ describe("Disponibilité habituelle depuis le serveur", () => {
   });
 });
 
+// C4 de la revue d'ergonomie (16 octobre) : la saisie rapide applique une
+// semaine type, et peut la garder comme disponibilité habituelle.
+describe("Semaine type depuis le serveur", () => {
+  const agent: AttachedSession = { ...session, userId: "agent", membership: { ...session.membership, role: "AGENT" } };
+  const week = {
+    type: "applyWeek" as const,
+    campaignId: CAMPAGNE,
+    week: { 1: "UNAVAILABLE" as const, 6: "FULL_24H" as const },
+    from: "2096-10-05",
+    to: "2096-10-19",
+    keepFilled: true,
+    comment: "après 9 h",
+    remember: true,
+  };
+
+  it("garde la semaine, sept jours complets, puis l’applique d’un seul appel", async () => {
+    rpc.mockResolvedValue({ error: null });
+    await runCommand(agent, week);
+    expect(rpc.mock.calls).toEqual([
+      [
+        "save_availability_template",
+        { org: "centre", days: { 1: "UNAVAILABLE", 2: null, 3: null, 4: null, 5: null, 6: "FULL_24H", 7: null } },
+      ],
+      [
+        "apply_week",
+        {
+          campaign: CAMPAGNE,
+          week: { 1: "UNAVAILABLE", 6: "FULL_24H" },
+          first_day: "2096-10-05",
+          last_day: "2096-10-19",
+          keep_filled: true,
+          note: "après 9 h",
+        },
+      ],
+    ]);
+  });
+
+  it("n’enregistre pas la semaine habituelle quand l’agent ne la garde pas", async () => {
+    rpc.mockResolvedValue({ error: null });
+    await runCommand(agent, { ...week, remember: false });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("apply_week", expect.objectContaining({ keep_filled: true }));
+  });
+
+  it("traduit le refus de la base", async () => {
+    rpc.mockResolvedValue({ error: { message: "Invalid availability period", code: "22023" } });
+    await expect(runCommand(agent, { ...week, remember: false })).rejects.toThrow(
+      "Choisissez une période valide : le premier jour avant le dernier.",
+    );
+  });
+});
+
 // C8 de l'analyse du 23 septembre : « Relance envoyée » quand personne n'était
 // à relancer laissait croire à un envoi. Le compte revient de la base.
 describe("Relance d’une campagne depuis le serveur", () => {

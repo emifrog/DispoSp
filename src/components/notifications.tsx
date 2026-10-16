@@ -1,10 +1,11 @@
 "use client";
-import { Bell, BellRing, Check, Inbox } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, Bell, BellRing, Check, Inbox } from "lucide-react";
 import { useApp } from "./provider";
 import { PageTitle, Panel } from "./common";
 import { PushNotifications } from "./pwa";
 import { Button } from "./ui/button";
-import { notificationLabels, plural, stampLabel } from "@/lib/domain";
+import { notificationLabels, notificationTargets, plural, stampLabel } from "@/lib/domain";
 
 export function Notifications() {
   const { state, run } = useApp();
@@ -13,7 +14,7 @@ export function Notifications() {
     <>
       <PageTitle
         title="Notifications"
-        description="Ouverture d’une campagne, rappel avant clôture, publication d’un planning."
+        description="Ouvertures de campagne, rappels, plannings publiés et désistements : chaque message mène à l’écran où agir."
         action={
           unread.length ? (
             <Button variant="secondary" onClick={() => run({ type: "readNotifications", ids: unread.map(n => n.id) })}>
@@ -34,31 +35,46 @@ export function Notifications() {
         {!state.notifications.length ? (
           <div className="empty-small notice-empty">
             <Inbox />
-            <p>Aucune notification pour le moment. Elles arriveront à l’ouverture d’une campagne.</p>
+            <p>Aucune notification pour le moment.</p>
           </div>
         ) : (
           <ol className="notice-list">
-            {state.notifications.map(notice => (
-              <li key={notice.id} className={notice.readAt ? "" : "unread"}>
-                <span className="notice-icon">{notice.readAt ? <Bell size={18} /> : <BellRing size={18} />}</span>
-                <div>
-                  <h3>{notice.subject}</h3>
-                  {notice.body && <p>{notice.body}</p>}
-                  <small>
-                    {notificationLabels[notice.kind] ?? notice.kind} · {stampLabel(notice.createdAt)}
-                  </small>
-                </div>
-                {!notice.readAt && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => run({ type: "readNotifications", ids: [notice.id] })}
-                  >
-                    Marquer comme lu
-                  </Button>
-                )}
-              </li>
-            ))}
+            {state.notifications.map(notice => {
+              // Le message n'était qu'un texte à marquer comme lu, et la
+              // notification du téléphone, qui mène ici, s'y arrêtait : chacun
+              // porte désormais le lien de son email. L'ouvrir vaut lecture.
+              const target = notificationTargets[notice.kind];
+              const open = () => {
+                if (!notice.readAt) void run({ type: "readNotifications", ids: [notice.id] });
+              };
+              return (
+                <li key={notice.id} className={notice.readAt ? "" : "unread"}>
+                  <span className="notice-icon">{notice.readAt ? <Bell size={18} /> : <BellRing size={18} />}</span>
+                  <div>
+                    <h3>{notice.subject}</h3>
+                    {notice.body && <p>{notice.body}</p>}
+                    <small>
+                      {notificationLabels[notice.kind] ?? notice.kind} · {stampLabel(notice.createdAt)}
+                    </small>
+                    {target && (
+                      <Link className="notice-action" href={target.path} onClick={open}>
+                        {target.label}
+                        <ArrowRight size={14} />
+                      </Link>
+                    )}
+                  </div>
+                  {!notice.readAt && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => run({ type: "readNotifications", ids: [notice.id] })}
+                    >
+                      Marquer comme lu
+                    </Button>
+                  )}
+                </li>
+              );
+            })}
           </ol>
         )}
       </Panel>

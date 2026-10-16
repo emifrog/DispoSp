@@ -67,6 +67,8 @@ export async function runCommand(session: AttachedSession, command: Command): Pr
       return writeTemplate(client, session, command);
     case "applyTemplate":
       return applyTemplate(client, command);
+    case "applyWeek":
+      return applyWeek(client, session, command);
   }
 }
 
@@ -91,6 +93,28 @@ async function writeTemplate(client: Client, session: AttachedSession, command: 
 // bloc, avec ses règles habituelles : fenêtre ouverte et invalidation de la réponse.
 async function applyTemplate(client: Client, command: Of<"applyTemplate">) {
   const { error } = await client.rpc("apply_availability_template", { campaign: command.campaignId });
+  if (error) fail(error);
+}
+
+// La saisie rapide, onglet « Semaine type ». La semaine habituelle s'enregistre
+// d'abord, si l'agent la garde : c'est ce qu'il a composé, même si la saisie est
+// ensuite refusée. Puis la base écrit la période d'un bloc — tout ou rien —, avec
+// les règles de toute saisie.
+async function applyWeek(client: Client, session: AttachedSession, command: Of<"applyWeek">) {
+  if (command.remember)
+    await writeTemplate(client, session, {
+      type: "template",
+      // Les sept jours, toujours : un jour absent voudrait dire « inchangé ».
+      days: Object.fromEntries(["1", "2", "3", "4", "5", "6", "7"].map(day => [day, command.week[day] ?? null])),
+    });
+  const { error } = await client.rpc("apply_week", {
+    campaign: command.campaignId,
+    week: command.week,
+    first_day: command.from,
+    last_day: command.to,
+    keep_filled: command.keepFilled,
+    note: command.comment,
+  });
   if (error) fail(error);
 }
 

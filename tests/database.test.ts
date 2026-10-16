@@ -5832,3 +5832,162 @@ describe("Migration 20261016150000 — rattrapage et gardes d’application", ()
     await early.close();
   }, 90000);
 });
+
+// C4 de la revue d'ergonomie (16 octobre) : la saisie rapide applique une
+// semaine type — une valeur par jour de semaine, ou rien — sur une période, en
+// une seule écriture, et peut ne remplir que les jours non renseignés.
+describe("Semaine type — apply_week", () => {
+  const org = "10000000-0000-0000-0000-0000000000a4";
+  const team = "20000000-0000-0000-0000-0000000000a4";
+  const agent = "30000000-0000-0000-0000-0000000000a4";
+  const outsider = "30000000-0000-0000-0000-0000000000a5";
+  const october = "40000000-0000-0000-0000-0000000000a4";
+  const closed = "40000000-0000-0000-0000-0000000000a5";
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+  const applyWeek = async (
+    week: Record<string, string | null>,
+    { from = "2026-10-01", to = "2026-10-31", keep = false, note = "", campaign = october } = {},
+  ) =>
+    (
+      await live.query<{ n: number }>("select public.apply_week($1, $2::jsonb, $3, $4, $5, $6) as n", [
+        campaign,
+        JSON.stringify(week),
+        from,
+        to,
+        keep,
+        note,
+      ])
+    ).rows[0].n;
+  const entries = async () => {
+    await live.exec("reset role");
+    return Object.fromEntries(
+      (
+        await live.query<{ date: string; availability_type: string; comment: string }>(
+          "select date::text as date, availability_type, comment from public.availability_entries where campaign_id=$1 and user_id=$2 order by date",
+          [october, agent],
+        )
+      ).rows.map(row => [row.date, `${row.availability_type}${row.comment ? ` (${row.comment})` : ""}`]),
+    );
+  };
+  const validated = async () => {
+    await live.exec("reset role");
+    return (
+      await live.query<{ validated_at: unknown }>(
+        "select validated_at from public.campaign_participants where campaign_id=$1 and user_id=$2",
+        [october, agent],
+      )
+    ).rows[0].validated_at;
+  };
+
+  beforeAll(async () => {
+    live = await freshDatabase();
+    await live.exec(`insert into auth.users(id) values ('${agent}'), ('${outsider}');
+      insert into public.profiles(user_id,display_name) values ('${agent}','Agent'), ('${outsider}','Hors campagne');
+      insert into public.organizations(id,name) values ('${org}','Centre semaine');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values ('${org}','${agent}','${team}','AGENT',true), ('${org}','${outsider}','${team}','AGENT',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at) values
+        ('${october}','${org}','${team}','Octobre','2026-10-01','2026-10-31',now()-interval '1 day',now()+interval '10 days'),
+        ('${closed}','${org}','${team}','Septembre','2026-09-01','2026-09-30',now()-interval '40 days',now()-interval '10 days');
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values
+        ('${org}','${october}','${agent}'), ('${org}','${closed}','${agent}');`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("écrit chaque jour de semaine choisi sur la période, et seulement eux", async () => {
+    await be(agent);
+    // Lundis indisponibles, samedis 24 h, du 5 au 19 : le 26 n'est pas touché.
+    expect(
+      await applyWeek({ 1: "UNAVAILABLE", 6: "FULL_24H", 2: null }, { from: "2026-10-05", to: "2026-10-19" }),
+    ).toBe(5);
+    expect(await entries()).toEqual({
+      "2026-10-05": "UNAVAILABLE",
+      "2026-10-10": "FULL_24H",
+      "2026-10-12": "UNAVAILABLE",
+      "2026-10-17": "FULL_24H",
+      "2026-10-19": "UNAVAILABLE",
+    });
+  });
+
+  it("ne remplit que les jours non renseignés quand on le demande, et sinon remplace", async () => {
+    await be(agent);
+    // Tous les lundis de jour, sans toucher aux lundis déjà renseignés.
+    expect(await applyWeek({ 1: "DAY" }, { keep: true, note: "après 9 h" })).toBe(1);
+    expect((await entries())["2026-10-05"]).toBe("UNAVAILABLE");
+    expect((await entries())["2026-10-26"]).toBe("DAY (après 9 h)");
+    // Sans la précaution, la semaine l'emporte.
+    await be(agent);
+    expect(await applyWeek({ 1: "NIGHT" })).toBe(4);
+    expect((await entries())["2026-10-05"]).toBe("NIGHT");
+  });
+
+  it("ramène la période à la campagne", async () => {
+    await be(agent);
+    // Dimanches : du 1er septembre au 30 novembre, seuls ceux d'octobre existent.
+    expect(await applyWeek({ 7: "DAY" }, { from: "2026-09-01", to: "2026-11-30" })).toBe(4);
+  });
+
+  it("remet une réponse validée à valider, comme toute saisie", async () => {
+    await be(agent);
+    await applyWeek({ 1: "DAY", 2: "DAY", 3: "DAY", 4: "DAY", 5: "DAY", 6: "DAY", 7: "DAY" });
+    await live.query("update public.campaign_participants set validated_at=now() where campaign_id=$1", [october]);
+    expect(await validated()).not.toBeNull();
+    await be(agent);
+    await applyWeek({ 3: "NIGHT" }, { from: "2026-10-07", to: "2026-10-07" });
+    expect(await validated()).toBeNull();
+  });
+
+  it("refuse une semaine mal formée, une période à l’envers, une campagne close ou sans participation", async () => {
+    await be(agent);
+    await expect(applyWeek({ 8: "DAY" })).rejects.toThrow("Invalid availability week");
+    await expect(applyWeek({ 1: "MATIN" })).rejects.toThrow("Invalid availability week");
+    await expect(applyWeek({ 1: "DAY" }, { from: "2026-10-20", to: "2026-10-10" })).rejects.toThrow(
+      "Invalid availability period",
+    );
+    await expect(applyWeek({ 1: "DAY" }, { note: "x".repeat(501) })).rejects.toThrow(
+      "Availability comment is too long",
+    );
+    await expect(applyWeek({ 1: "DAY" }, { campaign: closed, from: "2026-09-01", to: "2026-09-30" })).rejects.toThrow(
+      "Campaign is closed",
+    );
+    await be(outsider);
+    await expect(applyWeek({ 1: "DAY" })).rejects.toThrow("Not a participant of this campaign");
+  });
+
+  it("n’ouvre la fonction qu’aux comptes connectés", async () => {
+    await live.exec("reset role");
+    await live.exec("set role anon");
+    await expect(applyWeek({ 1: "DAY" })).rejects.toThrow();
+    await live.exec("reset role");
+  });
+});
+
+describe("Migration 20261016200000 — gardes d’application", () => {
+  const target = MIGRATIONS.indexOf("20261016200000_semaine_type.sql");
+  const migration = () =>
+    readFileSync(new URL(`../supabase/migrations/${MIGRATIONS[target]}`, import.meta.url), "utf8");
+  const upTo = async (count: number) => {
+    const db = new PGlite();
+    await db.exec(baseAuthSchema);
+    for (const m of MIGRATIONS.slice(0, count))
+      await db.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    return db;
+  };
+
+  it("refuse un second passage et un passage avant sa dépendance", async () => {
+    expect(target).toBeGreaterThan(0);
+    const applied = await upTo(target + 1);
+    await expect(applied.exec(migration())).rejects.toThrow("déjà été appliquée");
+    await applied.close();
+    const early = await upTo(target - 1);
+    await expect(early.exec(migration())).rejects.toThrow("20261016150000_encadrement_hors_campagnes.sql");
+    await early.close();
+  }, 90000);
+});

@@ -1568,6 +1568,19 @@ label {
   margin-bottom: 18px;
   font-size: 12px;
 }
+/* Les désistements en attente, en tête du tableau de bord. */
+.dashboard-alert {
+  font-size: 13px;
+}
+.dashboard-alert a {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 650;
+  white-space: nowrap;
+  color: inherit;
+}
 .success-note {
   display: flex;
   gap: 9px;
@@ -2529,6 +2542,17 @@ label {
 }
 .notice-list li.unread h3 {
   font-weight: 600;
+}
+/* Le lien du message, comme dans son email : assez grand pour le doigt. */
+.notice-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--blue);
 }
 .notice-empty {
   padding: 30px 22px 40px;
@@ -3766,6 +3790,7 @@ fieldset.field legend {
     box-shadow: 0 -5px 20px #20375704;
   }
   .mobile-nav a {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -3773,6 +3798,14 @@ fieldset.field legend {
     color: var(--subtle);
     font-size: 9px;
     min-width: 60px;
+  }
+  /* Sur l'icône, comme celle de la cloche : dans la barre du bas, la pastille
+     des désistements se voit sans ouvrir le menu. */
+  .mobile-nav .nav-badge {
+    position: absolute;
+    top: -7px;
+    left: calc(50% + 4px);
+    margin: 0;
   }
   .mobile-nav a.active {
     color: var(--blue);
@@ -4356,6 +4389,33 @@ fieldset.field legend {
 .weekly-choices {
   display: flex;
   gap: 5px;
+}
+/* La semaine type se compose dans la saisie rapide, au doigt : des cibles de
+   44 px, là où le panneau d'autrefois en offrait 30 × 26. */
+.modal-content .weekly-template {
+  padding: 4px 0 6px;
+  gap: 8px;
+}
+.modal-content .weekly-choices {
+  gap: 6px;
+}
+.modal-content .weekly-choices button {
+  width: 44px;
+  height: 40px;
+  font-size: 13px;
+}
+/* Les options de la saisie rapide : la case, puis ce qu'elle fait et ce
+   qu'elle épargne. */
+.quick-option {
+  align-items: flex-start;
+  margin: 4px 0 14px;
+  font-size: 13px;
+}
+.quick-option small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
 }
 .weekly-choices button {
   width: 30px;

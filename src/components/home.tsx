@@ -145,13 +145,13 @@ export function AgentHome() {
           </span>
           <ChevronRight size={18} />
         </Link>
-        <Link className="shortcut" href="/mes-disponibilites#modele">
+        <Link className="shortcut" href="/mes-disponibilites?saisie=semaine">
           <span className="shortcut-icon">
             <Settings2 size={20} />
           </span>
           <span>
-            <strong>Ma disponibilité habituelle</strong>
-            <small>Appliquer un modèle récurrent</small>
+            <strong>Ma semaine type</strong>
+            <small>Appliquer ma semaine habituelle au mois</small>
           </span>
           <ChevronRight size={18} />
         </Link>
