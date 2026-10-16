@@ -183,7 +183,7 @@ Rien n'est perdu : la file garde le message et le renverra à la prochaine actio
 
 **Faire** — Compléter les jours restants, puis **Valider mes disponibilités**.
 
-**Attendu** — Le bouton reste **inactif tant que le mois n'est pas complet**. Une fois validé, l'écran affiche « Votre réponse est validée » et le tableau de bord de l'administrateur compte une réponse de plus.
+**Attendu** — Un jour encore vide s'ouvre **sans disponibilité cochée** : « Enregistrer » attend qu'on choisisse. Le bouton de validation reste **inactif tant que le mois n'est pas complet**. Sur téléphone, dès le dernier jour renseigné, une barre « 31 / 31 jours renseignés — Valider » reste au bas de l'écran pendant le défilement. Une fois validé, l'écran affiche « Votre réponse est validée » et le tableau de bord de l'administrateur compte une réponse de plus.
 
 **Sinon** — Si la validation passe avec des jours vides, signalez-le : la règle est tenue par la base, pas par l'écran.
 
@@ -191,7 +191,7 @@ Rien n'est perdu : la file garde le message et le renverra à la prochaine actio
 
 **Faire** — Changer un seul jour.
 
-**Attendu** — La réponse **repasse à valider**, immédiatement. Une nouvelle validation explicite est nécessaire.
+**Attendu** — Avant d'enregistrer, la boîte prévient : « Votre réponse est validée : après ce changement, il faudra la valider de nouveau. » Après, le message dit « Disponibilités modifiées. Votre réponse est à valider de nouveau. » La réponse **repasse à valider**, immédiatement, et sur téléphone la barre « Valider » revient. Une nouvelle validation explicite est nécessaire.
 
 **Sinon** — Si la réponse reste validée, la couverture affichée ne correspondrait plus à ce que l'agent a réellement confirmé.
 

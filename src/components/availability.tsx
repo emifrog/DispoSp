@@ -63,7 +63,11 @@ export function Availability() {
   const [draft, setDraft] = useState<Record<string, Availability | undefined>>(() => ({ ...state.template }));
   const templateChanged = JSON.stringify(clean(draft)) !== JSON.stringify(clean(state.template));
   const planned = templateEntries(clean(draft), campaign.month);
-  const [value, setValue] = useState<Availability | null>("DAY");
+  // `undefined` : rien de choisi encore. `null` : « Non renseigné », choisi.
+  // Un jour vide s'ouvrait sur « Jour » déjà coché : toucher « Enregistrer »
+  // sans rien choisir enregistrait une disponibilité que l'agent n'avait pas
+  // donnée (revue d'ergonomie du 16 octobre, C4).
+  const [value, setValue] = useState<Availability | null | undefined>(undefined);
   const [comment, setComment] = useState("");
   const [start, setStart] = useState(days[0]);
   const [end, setEnd] = useState(days[days.length - 1]);
@@ -79,10 +83,16 @@ export function Availability() {
   const [confirm, confirmation] = useConfirmation();
   const overwritten = chosen.filter(d => state.entries[entryKey(campaignId, actor.id, d)]).length;
   const icons = { DAY: Sun, NIGHT: Moon, FULL_24H: Clock3, UNAVAILABLE: X };
+  // Toute écriture d'un jour remet la réponse à valider, même à valeur égale
+  // (check_availability_write, 0001_foundation.sql). « Disponibilités
+  // modifiées » laissait croire à l'agent qu'il avait fini (C2).
+  const unvalidates = validated ? "Votre réponse est à valider de nouveau" : undefined;
   // Awaited on purpose: the dialog stays open when the database refuses, so the
   // refusal is read next to the entry that caused it.
   async function save() {
-    if (await run({ type: "availability", campaignId, dates: chosen, value, comment })) {
+    if (value === undefined) return;
+    const success = unvalidates && `Disponibilités modifiées. ${unvalidates}`;
+    if (await run({ type: "availability", campaignId, dates: chosen, value, comment }, success)) {
       setEditing(false);
       setQuick(false);
       setSelected([]);
@@ -93,7 +103,7 @@ export function Availability() {
     else {
       const entry = state.entries[entryKey(campaignId, actor.id, date)];
       setSelected([date]);
-      setValue(entry?.type ?? "DAY");
+      setValue(entry?.type);
       setComment(entry?.comment ?? "");
       setEditing(true);
     }
@@ -108,7 +118,7 @@ export function Availability() {
             disabled={!open}
             onClick={() => {
               setQuick(true);
-              setValue("DAY");
+              setValue(undefined);
               setComment("");
               setStart(days[0]);
               setEnd(days[days.length - 1]);
@@ -217,6 +227,7 @@ export function Availability() {
                 size="sm"
                 disabled={!selected.length}
                 onClick={() => {
+                  setValue(undefined);
                   setComment("");
                   setEditing(true);
                 }}
@@ -303,7 +314,11 @@ export function Availability() {
                     title: `Appliquer le modèle à ${monthLabel(campaign.month)} ?`,
                     description: `${planned.length} ${plural(planned.length, "jour")} ${plural(planned.length, "sera renseigné", "seront renseignés")} selon votre modèle, en remplaçant ce qui y figure${validated ? ", et votre réponse sera à valider de nouveau" : ""}. Les autres jours ne bougent pas.`,
                     confirmLabel: "Appliquer le modèle",
-                    onConfirm: () => run({ type: "applyTemplate", campaignId }),
+                    onConfirm: () =>
+                      run(
+                        { type: "applyTemplate", campaignId },
+                        unvalidates && `Disponibilité habituelle appliquée. ${unvalidates}`,
+                      ),
                   })
                 }
               >
@@ -326,6 +341,25 @@ export function Availability() {
           </div>
         </div>
       </div>
+      {/* Sur téléphone, la validation passe sous le calendrier et sa légende :
+          l'agent qui venait de remplir son mois, ou d'en corriger un jour, ne la
+          voyait pas et partait sans avoir répondu (C2). Le mois complet, le geste
+          qui reste suit le défilement. Au-delà de 1000 px le panneau est à côté
+          du calendrier, et la barre ne s'affiche pas. */}
+      {open && !validated && filled === days.length && (
+        <div className="validate-bar">
+          <span>
+            <strong>
+              {filled} / {days.length}
+            </strong>{" "}
+            {plural(days.length, "jour")} {plural(days.length, "renseigné")}
+          </span>
+          <Button onClick={() => run({ type: "validate", campaignId })}>
+            <CheckCheck size={18} />
+            Valider
+          </Button>
+        </div>
+      )}
       <Modal
         open={editing || quick}
         onOpenChange={o => {
@@ -451,16 +485,36 @@ export function Availability() {
             placeholder="Une précision à transmettre au responsable…"
           />
         </label>
-        {overwritten > 0 && (
+        {/* Un jour ouvert depuis le calendrier montre déjà sa valeur cochée : lui
+            annoncer qu'elle « sera remplacée » n'apprenait rien, et doublait
+            l'avertissement de revalidation. L'annonce reste pour les saisies
+            qui touchent des jours qu'on ne voit pas. */}
+        {(quick || multiple) && overwritten > 0 && (
           <div className="warning small">
             <CircleAlert size={18} />
             {overwritten} {plural(overwritten, "jour")} déjà {plural(overwritten, "renseigné")}{" "}
             {plural(overwritten, "sera", "seront")} remplacé{overwritten > 1 ? "s" : ""}.
           </div>
         )}
-        <Button className="full-width" disabled={!chosen.length} onClick={save}>
+        {validated && (
+          <div className="warning small">
+            <CircleAlert size={18} />
+            Votre réponse est validée : après ce changement, il faudra la valider de nouveau.
+          </div>
+        )}
+        <Button
+          className="full-width"
+          disabled={!chosen.length || value === undefined}
+          aria-describedby={value === undefined ? "availability-choice-hint" : undefined}
+          onClick={save}
+        >
           Enregistrer {chosen.length > 1 ? `les ${chosen.length} jours` : "la disponibilité"}
         </Button>
+        {value === undefined && (
+          <p id="availability-choice-hint" className="muted small button-hint">
+            Choisissez d’abord une disponibilité.
+          </p>
+        )}
       </Modal>
       {confirmation}
     </>

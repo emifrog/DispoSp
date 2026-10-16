@@ -38,8 +38,13 @@ type Context = {
   agent: Agent;
   campaignId: string;
   setCampaignId: (id: string) => void;
-  /** Resolves once the write is settled, that is once the database has answered. */
-  run: (command: Command) => Promise<boolean>;
+  /**
+   * Resolves once the write is settled, that is once the database has answered.
+   *
+   * `success` remplace le message de réussite de la commande quand l'écran sait
+   * ce qu'elle a changé de plus : une réponse validée qui repasse à valider.
+   */
+  run: (command: Command, success?: string) => Promise<boolean>;
   /** Une écriture est en cours, ou l'écran se relit après elle. */
   busy: boolean;
   /** Relire l'état depuis le serveur, sans écrire : l'archive qui tarde. */
@@ -164,7 +169,7 @@ export function AppProvider({
   // commandes, dont la seconde buterait sur ce que la première a changé.
   const running = useRef(false);
 
-  async function run(command: Command): Promise<boolean> {
+  async function run(command: Command, success?: string): Promise<boolean> {
     // Un second clic pendant une écriture n'en déclenche pas une seconde, et
     // le dit : ignoré en silence, deux « + » rapides n'affectaient qu'un agent
     // sans que rien ne le montre.
@@ -195,7 +200,7 @@ export function AppProvider({
       // The screens are built by the server render: re-read the database rather
       // than patch a local copy of what we believe was just written.
       startRefresh(() => router.refresh());
-      notice(result.label + ".");
+      notice((success ?? result.label) + ".");
       return true;
     } catch {
       // L'action serveur n'a pas répondu — réseau coupé, déploiement en cours.

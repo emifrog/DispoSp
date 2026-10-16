@@ -1541,6 +1541,11 @@ label {
 .info-card.horizontal svg {
   margin: 0;
 }
+/* La barre de validation n'existe que là où le panneau de validation passe sous
+   le calendrier : voir la règle à 1000 px. */
+.validate-bar {
+  display: none;
+}
 .selection-bar {
   padding: 14px 22px;
   background: #f3f7ff;
@@ -3507,6 +3512,23 @@ fieldset.field legend {
     gap: 20px;
     align-items: start;
   }
+  /* Collée au bas de l'écran pendant le défilement, elle reprend sa place en
+     fin de page : rien de ce qui précède ne passe dessous. */
+  .validate-bar {
+    position: sticky;
+    bottom: 12px;
+    z-index: 27;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 18px;
+    padding: 10px 10px 10px 18px;
+    background: #fff;
+    border: 1px solid #d9e6fb;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgb(20 43 80 / 14%);
+  }
   .page-heading {
     align-items: flex-start;
   }
@@ -3805,6 +3827,10 @@ fieldset.field legend {
   .availability-layout {
     gap: 0;
   }
+  /* Au-dessus de la barre de navigation, dont elle reprend le calcul de hauteur. */
+  .validate-bar {
+    bottom: calc(62px + max(13px, env(safe-area-inset-bottom)));
+  }
   .planning-toolbar {
     flex-wrap: wrap;
     padding: 12px;
@@ -3932,6 +3958,11 @@ fieldset.field legend {
     left: 50%;
     width: calc(100vw - 30px);
     font-size: 11px;
+  }
+  /* Le message qui suit une saisie ne doit pas cacher la barre de validation :
+     c'est justement elle qu'il invite à toucher. */
+  body:has(.validate-bar) .toast {
+    bottom: calc(140px + max(13px, env(safe-area-inset-bottom)));
   }
   .modal-content {
     padding: 24px 20px;
