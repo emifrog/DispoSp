@@ -5,7 +5,8 @@
 -- propriétaire, depuis l'éditeur SQL du tableau de bord Supabase.
 --
 -- Par défaut : le mois prochain, réponses ouvertes jusqu'à la fin du mois en
--- cours. Tous les membres actifs de l'équipe sont inscrits comme participants.
+-- cours. Les agents actifs de l'équipe sont inscrits comme participants ;
+-- l'encadrement, qui ne prend pas de garde, ne l'est pas (décision C6).
 
 begin;
 do $$
@@ -73,11 +74,13 @@ begin
             v_day, v_night)
     returning id into v_campaign;
 
-  -- Chaque membre actif de l'équipe est invité à répondre.
+  -- Chaque agent actif de l'équipe est invité à répondre. La condition est celle
+  -- de private.takes_shifts(), écrite en clair : ce script ne doit pas dépendre
+  -- de la migration du 16 octobre pour s'exécuter.
   insert into public.campaign_participants (organization_id, campaign_id, user_id)
     select v_org, v_campaign, m.user_id
       from public.memberships m
-     where m.organization_id = v_org and m.team_id = v_team and m.active;
+     where m.organization_id = v_org and m.team_id = v_team and m.active and m.role = 'AGENT';
   get diagnostics v_invited = row_count;
 
   -- Le planning du mois, avec ses créneaux Jour et Nuit, prêt à être construit.

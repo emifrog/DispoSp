@@ -29,6 +29,17 @@ Conséquences fonctionnelles :
 
 Restent à définir : possibilité de valider une réponse incomplète et effet d'une modification après validation.
 
+### L'encadrement ne prend pas de garde
+
+Décision du porteur du projet, 16 octobre 2026 (question C6 des analyses). Les gestionnaires et les administrateurs gèrent les effectifs ; ils ne prennent pas de garde.
+
+Conséquences fonctionnelles :
+
+- Seuls les agents actifs de l'équipe sont inscrits à une campagne : à sa création, à leur arrivée en cours de campagne, à leur retour au rôle d'agent, et au déverrouillage.
+- L'encadrement n'est ni compté dans le taux de réponse, ni relancé, ni proposé au planning.
+- Les écrans « Accueil », « Mes disponibilités » et « Mon planning » le renvoient au tableau de bord. « Mon profil » lui reste, pour les notifications de son appareil.
+- Un agent qui passe à l'encadrement en cours de campagne reste inscrit et garde ce qu'il a saisi, mais ne compte plus. Les campagnes antérieures à la décision restent telles qu'elles étaient ; l'encadrement qui y figure n'est plus compté.
+
 ### Couverture potentielle et couverture planifiée
 
 Les deux mesures sont distinctes et doivent être nommées explicitement dans le tableau de bord, les synthèses et les exports qui les présentent.

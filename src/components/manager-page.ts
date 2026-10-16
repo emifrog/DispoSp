@@ -19,3 +19,16 @@ export async function refuseAgents() {
   const session = await readSession();
   if (session?.membership?.role === "AGENT") redirect("/accueil");
 }
+
+/**
+ * Renvoie l'encadrement vers son tableau de bord avant qu'un écran d'agent se
+ * rende : accueil, saisie, planning personnel.
+ *
+ * L'encadrement ne prend pas de garde (décision C6, 16 octobre) et n'est plus
+ * inscrit aux campagnes. Ces écrans lui proposaient de saisir un mois que la
+ * base refusera d'enregistrer, ou lui parlaient de gardes qu'il ne tient pas.
+ */
+export async function refuseManagers() {
+  const session = await readSession();
+  if (session?.membership && session.membership.role !== "AGENT") redirect("/tableau-de-bord");
+}

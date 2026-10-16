@@ -41,6 +41,7 @@ export const MIGRATIONS = [
   "20261005120000_suspension_file_email.sql",
   "20261007090000_conduite.sql",
   "20261007150000_droits_par_ensemble.sql",
+  "20261016150000_encadrement_hors_campagnes.sql",
 ];
 
 /**

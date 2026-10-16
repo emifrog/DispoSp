@@ -23,6 +23,7 @@ import { Button } from "./ui/button";
 import { Modal } from "./ui/dialog";
 import {
   availableAgents,
+  campaignAgents,
   coverage,
   dateLabel,
   grades,
@@ -425,7 +426,9 @@ export function Planning() {
               </tr>
             </thead>
             <tbody>
-              {state.agents
+              {/* Les agents de la campagne : l'encadrement, qui ne prend pas de
+                  garde, n'a pas de charge à y répartir (décision C6). */}
+              {campaignAgents(state, campaignId)
                 .map(a => ({ agent: a, load: workload(state, campaignId, a.id) }))
                 .sort((x, y) => y.load.total - x.load.total || x.agent.name.localeCompare(y.agent.name, "fr"))
                 .map(({ agent, load }) => (

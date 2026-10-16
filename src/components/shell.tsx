@@ -36,6 +36,11 @@ const managerNav = [
   { href: "/besoins", label: "Besoins", icon: BarChart3 },
   { href: "/campagnes", label: "Campagnes", icon: Megaphone },
   { href: "/agents", label: "Agents & équipes", icon: Users },
+  // L'encadrement ne prend pas de garde (décision C6) : ni « Mes
+  // disponibilités » ni « Mon planning ». Son profil, si : c'est là que se
+  // règlent les notifications de l'appareil, et que la fenêtre qui les propose
+  // le renvoie.
+  { href: "/profil", label: "Mon profil", icon: UserRound },
 ];
 // Les écrans d'administration : la barre latérale les range sous leur propre
 // titre, et seul qui administre les voit.

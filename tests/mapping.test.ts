@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildState, campaignsToLoad, taken, READ_FAILED, type Raw } from "../src/lib/data-mapping";
 import {
   auditFamilies,
+  availableAgents,
   campaignAgents,
   coverage,
   entryKey,
@@ -258,11 +259,11 @@ describe("Construction de l’état depuis la base", () => {
     // ouverte à un seul, qui a validé. Le taux est de 100 %, pas de 50 % — le
     // second n’a jamais été invité, il n’est donc pas un non-répondant.
     const state = buildState(
-      raw({ participants: [{ campaign_id: CAMPAIGN, user_id: "u1", validated_at: "2026-09-17T09:30:00Z" }] }),
+      raw({ participants: [{ campaign_id: CAMPAIGN, user_id: "u2", validated_at: "2026-09-17T09:30:00Z" }] }),
       "Secours",
     );
     const concerned = campaignAgents(state, CAMPAIGN);
-    expect(concerned.map(a => a.id)).toEqual(["u1"]);
+    expect(concerned.map(a => a.id)).toEqual(["u2"]);
     expect(concerned.filter(a => isValidated(state, CAMPAIGN, a.id))).toHaveLength(1);
     // L’effectif actif du centre en compte bien deux : c’est la comparaison
     // avec lui qui donnait 50 %.
@@ -274,14 +275,27 @@ describe("Construction de l’état depuis la base", () => {
     const state = buildState(
       raw({
         participants: [
-          { campaign_id: CAMPAIGN, user_id: "u1", validated_at: null },
+          { campaign_id: CAMPAIGN, user_id: "u2", validated_at: null },
           { campaign_id: CAMPAIGN, user_id: "u3", validated_at: null },
         ],
       }),
       "Secours",
     );
     expect(state.campaigns[0].participants).toContain("u3");
-    expect(campaignAgents(state, CAMPAIGN).map(a => a.id)).toEqual(["u1"]);
+    expect(campaignAgents(state, CAMPAIGN).map(a => a.id)).toEqual(["u2"]);
+  });
+
+  it("écarte l’encadrement resté inscrit d’avant la décision C6, même validé et disponible", () => {
+    // L'état par défaut est celui d'avant la décision : u1, administrateur, est
+    // inscrit, a validé, et se dit disponible 24 h le 1er octobre.
+    const state = buildState(raw(), "Secours");
+    expect(state.campaigns[0].participants).toContain("u1");
+    expect(isValidated(state, CAMPAIGN, "u1")).toBe(true);
+    // Il ne compte ni dans le périmètre de la campagne, ni parmi les disponibles.
+    expect(campaignAgents(state, CAMPAIGN).map(a => a.id)).toEqual(["u2"]);
+    expect(availableAgents(state, CAMPAIGN, "2026-10-01", "DAY").map(a => a.id)).not.toContain("u1");
+    // u2 n'a pas validé : la couverture potentielle est nulle, et non d'un agent.
+    expect(coverage(state, CAMPAIGN, "2026-10-01", "DAY", "potential").actual).toBe(0);
   });
 
   it("ne propose à un agent que les campagnes où il est convié", () => {

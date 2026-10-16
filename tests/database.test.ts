@@ -443,6 +443,14 @@ describe("Ouverture de la première campagne", () => {
         team_name: "Bon Voyage",
       }),
     );
+    // Un agent dans l'équipe : depuis la décision C6, l'administrateur que crée
+    // premiere-organisation.sql ne prend pas de garde, et n'est donc pas inscrit.
+    await fresh.exec(`
+      insert into auth.users(id,email,email_confirmed_at) values (gen_random_uuid(), 'agent@example.org', now());
+      insert into public.profiles(user_id,display_name) select id, 'Agent' from auth.users where email='agent@example.org';
+      insert into public.memberships(organization_id,user_id,team_id,role,active)
+        select t.organization_id, u.id, t.id, 'AGENT', true
+          from public.teams t, auth.users u where t.name = 'Bon Voyage' and u.email = 'agent@example.org';`);
     return fresh;
   }
 
@@ -455,7 +463,7 @@ describe("Ouverture de la première campagne", () => {
     await fresh.close();
   }, 30000);
 
-  it("ouvre une campagne cohérente, invite l’équipe et prépare les créneaux", async () => {
+  it("ouvre une campagne cohérente, invite les agents de l’équipe et prépare les créneaux", async () => {
     const fresh = await provisioned();
     await fresh.exec(file("premiere-campagne.sql"));
 
@@ -478,7 +486,14 @@ describe("Ouverture de la première campagne", () => {
     expect(row.night_start).toBe(20);
     expect(row.ouverte).toBe(true);
 
-    expect((await fresh.query("select 1 from public.campaign_participants")).rows).toHaveLength(1);
+    // L'agent, et lui seul : l'administrateur ne prend pas de garde.
+    expect(
+      (
+        await fresh.query(
+          "select u.email from public.campaign_participants p join auth.users u on u.id = p.user_id order by u.email",
+        )
+      ).rows,
+    ).toEqual([{ email: "agent@example.org" }]);
     expect((await fresh.query("select 1 from public.schedules")).rows).toHaveLength(1);
     const shifts = await fresh.query<{ count: number }>("select count(*)::int as count from public.schedule_shifts");
     const days = (new Date(row.ends_on).getTime() - new Date(row.starts_on).getTime()) / 86400000 + 1;
@@ -493,7 +508,7 @@ describe("Ouverture de la première campagne", () => {
   it("laisse l’agent saisir puis valider sa réponse sous RLS", async () => {
     const fresh = await provisioned();
     await fresh.exec(file("premiere-campagne.sql"));
-    const me = await fresh.query<{ id: string }>("select id from auth.users where email='chef@example.org'");
+    const me = await fresh.query<{ id: string }>("select id from auth.users where email='agent@example.org'");
     const campaign = await fresh.query<{ id: string; starts_on: string; ends_on: string }>(
       "select id, starts_on, ends_on from public.availability_campaigns",
     );
@@ -1226,7 +1241,9 @@ describe("Création atomique d’une campagne", () => {
     await live.close();
   });
 
-  it("crée un mois bissextile complet, avec les horaires du centre et ses seuls membres actifs", async () => {
+  // Ses seuls agents actifs : depuis la décision C6 (16 octobre), l'encadrement
+  // ne prend pas de garde, et n'est donc ni inscrit ni prévenu de l'ouverture.
+  it("crée un mois bissextile complet, avec les horaires du centre et ses seuls agents actifs", async () => {
     await be(manager);
     const id = await create({ name: "  Février 2096  " });
     expect(
@@ -1269,10 +1286,7 @@ describe("Création atomique d’une campagne", () => {
           [id],
         )
       ).rows,
-    ).toEqual([
-      { user_id: manager, validated_at: null },
-      { user_id: agent, validated_at: null },
-    ]);
+    ).toEqual([{ user_id: agent, validated_at: null }]);
     await live.exec("reset role");
     expect(
       (
@@ -1280,7 +1294,7 @@ describe("Création atomique d’une campagne", () => {
           "select user_id from public.notifications where subject='Campagne ouverte : Février 2096' order by user_id",
         )
       ).rows,
-    ).toEqual([{ user_id: manager }, { user_id: agent }]);
+    ).toEqual([{ user_id: agent }]);
     expect(
       (
         await live.query(
@@ -5609,6 +5623,212 @@ describe("Migration 20261007150000 — gardes d’application", () => {
     await applied.close();
     const early = await upTo(target - 1);
     await expect(early.exec(migration())).rejects.toThrow("20261007090000_conduite.sql");
+    await early.close();
+  }, 90000);
+});
+
+// Décision C6 (16 octobre) : l'encadrement — gestionnaires et administrateurs —
+// ne prend pas de garde, il gère les effectifs. Seuls les agents sont inscrits
+// aux campagnes, par chacun des chemins d'inscription, et seuls eux sont relancés.
+describe("Encadrement hors des campagnes — seuls les agents prennent des gardes", () => {
+  const org = "10000000-0000-0000-0000-0000000000c6";
+  const team = "20000000-0000-0000-0000-0000000000c6";
+  const admin = "30000000-0000-0000-0000-0000000000c1";
+  const chef = "30000000-0000-0000-0000-0000000000c2";
+  const agent = "30000000-0000-0000-0000-0000000000c3";
+  const promoted = "30000000-0000-0000-0000-0000000000c4";
+  const demoted = "30000000-0000-0000-0000-0000000000c5";
+  const newChef = "30000000-0000-0000-0000-0000000000c6";
+  const newAgent = "30000000-0000-0000-0000-0000000000c7";
+  const open = "40000000-0000-0000-0000-0000000000c1";
+  const locked = "40000000-0000-0000-0000-0000000000c2";
+  let live: PGlite;
+  const be = async (id: string | null) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id ?? ""]);
+    if (id) await live.exec("set role authenticated");
+  };
+  const participants = async (campaign: string) => {
+    await be(null);
+    return (
+      await live.query<{ user_id: string }>(
+        "select user_id from public.campaign_participants where campaign_id=$1 order by user_id",
+        [campaign],
+      )
+    ).rows.map(row => row.user_id);
+  };
+
+  beforeAll(async () => {
+    live = await freshDatabase();
+    await live.exec(`
+      insert into auth.users(id) values ('${admin}'), ('${chef}'), ('${agent}'), ('${promoted}'), ('${demoted}'),
+        ('${newChef}'), ('${newAgent}');
+      insert into public.profiles(user_id,display_name) values ('${admin}','Admin'), ('${chef}','Chef'),
+        ('${agent}','Agent'), ('${promoted}','Promu'), ('${demoted}','De retour'), ('${newChef}','Nouveau chef'),
+        ('${newAgent}','Nouvel agent');
+      insert into public.organizations(id,name) values ('${org}','Centre C6');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values
+        ('${org}','${admin}','${team}','ADMIN',true),
+        ('${org}','${chef}','${team}','GESTIONNAIRE',true),
+        ('${org}','${agent}','${team}','AGENT',true),
+        ('${org}','${promoted}','${team}','AGENT',true),
+        ('${org}','${demoted}','${team}','GESTIONNAIRE',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at,locked) values
+        ('${open}','${org}','${team}','Octobre C6','2026-10-01','2026-10-01',now()-interval '1 day',now()+interval '9 days',false),
+        ('${locked}','${org}','${team}','Novembre C6','2026-11-01','2026-11-01',now()-interval '1 day',now()+interval '9 days',true);
+      -- L'état d'avant la décision : l'encadrement inscrit comme les agents.
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values
+        ('${org}','${open}','${chef}'), ('${org}','${open}','${agent}'), ('${org}','${open}','${promoted}');`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("n’inscrit que les agents à la création d’une campagne, administrateur et gestionnaire exclus", async () => {
+    await be(chef);
+    const created = await live.query<{ id: string }>("select public.create_campaign($1,$2,$3,$4,$5) as id", [
+      org,
+      team,
+      "Décembre C6",
+      "2096-12-01",
+      "2096-11-20",
+    ]);
+    expect(await participants(created.rows[0].id)).toEqual([agent, promoted].sort());
+  });
+
+  it("n’inscrit pas l’encadrement qui arrive en cours de campagne, mais l’agent si", async () => {
+    await be(null);
+    await live.exec(`insert into public.memberships values
+      ('${org}','${newChef}','${team}','GESTIONNAIRE',true), ('${org}','${newAgent}','${team}','AGENT',true);`);
+    const enrolled = await participants(open);
+    expect(enrolled).toContain(newAgent);
+    expect(enrolled).not.toContain(newChef);
+  });
+
+  it("fait rejoindre les campagnes ouvertes à qui redevient agent", async () => {
+    expect(await participants(open)).not.toContain(demoted);
+    await be(admin);
+    await live.query("update public.memberships set role='AGENT' where organization_id=$1 and user_id=$2", [
+      org,
+      demoted,
+    ]);
+    expect(await participants(open)).toContain(demoted);
+    // La verrouillée attend son déverrouillage, comme pour un arrivant.
+    expect(await participants(locked)).not.toContain(demoted);
+  });
+
+  it("garde inscrit l’agent passé à l’encadrement, sans rien effacer, mais ne le relance plus", async () => {
+    await be(promoted);
+    await live.query(
+      "insert into public.availability_entries(campaign_id,user_id,date,availability_type) values ($1,$2,'2026-10-01','DAY')",
+      [open, promoted],
+    );
+    await be(admin);
+    await live.query("update public.memberships set role='GESTIONNAIRE' where organization_id=$1 and user_id=$2", [
+      org,
+      promoted,
+    ]);
+    expect(await participants(open)).toContain(promoted);
+    await be(null);
+    expect(
+      (
+        await live.query("select 1 from public.availability_entries where campaign_id=$1 and user_id=$2", [
+          open,
+          promoted,
+        ])
+      ).rows,
+    ).toHaveLength(1);
+    // La relance : les agents qui n'ont pas validé, et pas l'encadrement resté
+    // inscrit — le gestionnaire d'avant la décision, ni l'agent promu depuis.
+    await be(chef);
+    await live.query("select public.remind_campaign($1)", [open]);
+    await be(null);
+    const reminded = (
+      await live.query<{ user_id: string }>(
+        "select user_id from public.notifications where kind='CAMPAIGN_REMINDER' and organization_id=$1 order by user_id",
+        [org],
+      )
+    ).rows.map(row => row.user_id);
+    expect(reminded).toEqual([agent, demoted, newAgent].sort());
+  });
+
+  it("au déverrouillage, n’inscrit que les agents", async () => {
+    await be(admin);
+    await live.query("update public.availability_campaigns set locked=false where id=$1", [locked]);
+    expect(await participants(locked)).toEqual([agent, demoted, newAgent].sort());
+  });
+
+  it("n’ouvre pas la règle aux visiteurs sans compte", async () => {
+    await live.exec("reset role");
+    await live.exec("set role anon");
+    await expect(live.query("select private.takes_shifts('AGENT')")).rejects.toThrow();
+    await live.exec("reset role");
+  });
+});
+
+describe("Migration 20261016150000 — rattrapage et gardes d’application", () => {
+  const target = MIGRATIONS.indexOf("20261016150000_encadrement_hors_campagnes.sql");
+  const migration = () =>
+    readFileSync(new URL(`../supabase/migrations/${MIGRATIONS[target]}`, import.meta.url), "utf8");
+  const upTo = async (count: number) => {
+    const db = new PGlite();
+    await db.exec(baseAuthSchema);
+    for (const m of MIGRATIONS.slice(0, count))
+      await db.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    return db;
+  };
+
+  it("retire l’encadrement des campagnes en cours s’il n’y a rien saisi, sans toucher aux saisies ni à l’historique", async () => {
+    const org = "10000000-0000-0000-0000-0000000000c7";
+    const team = "20000000-0000-0000-0000-0000000000c7";
+    const chef = "30000000-0000-0000-0000-0000000000d1";
+    const busyChef = "30000000-0000-0000-0000-0000000000d2";
+    const agent = "30000000-0000-0000-0000-0000000000d3";
+    const open = "40000000-0000-0000-0000-0000000000d1";
+    const closed = "40000000-0000-0000-0000-0000000000d2";
+    const before = await upTo(target);
+    await before.exec(`
+      insert into auth.users(id) values ('${chef}'), ('${busyChef}'), ('${agent}');
+      insert into public.profiles(user_id,display_name) values ('${chef}','Chef'), ('${busyChef}','Chef qui a saisi'), ('${agent}','Agent');
+      insert into public.organizations(id,name) values ('${org}','Centre C7');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values
+        ('${org}','${chef}','${team}','GESTIONNAIRE',true),
+        ('${org}','${busyChef}','${team}','ADMIN',true),
+        ('${org}','${agent}','${team}','AGENT',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at) values
+        ('${open}','${org}','${team}','Octobre C7','2026-10-01','2026-10-01',now()-interval '1 day',now()+interval '9 days'),
+        ('${closed}','${org}','${team}','Septembre C7','2026-09-01','2026-09-01',now()-interval '30 days',now()-interval '1 day');
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values
+        ('${org}','${open}','${chef}'), ('${org}','${open}','${busyChef}'), ('${org}','${open}','${agent}'),
+        ('${org}','${closed}','${chef}'), ('${org}','${closed}','${agent}');
+      insert into public.availability_entries(campaign_id,user_id,date,availability_type) values
+        ('${open}','${busyChef}','2026-10-01','NIGHT');`);
+    await before.exec(migration());
+    const rows = await before.query<{ campaign_id: string; user_id: string }>(
+      "select campaign_id, user_id from public.campaign_participants where organization_id=$1 order by campaign_id, user_id",
+      [org],
+    );
+    expect(rows.rows).toEqual([
+      { campaign_id: open, user_id: busyChef },
+      { campaign_id: open, user_id: agent },
+      { campaign_id: closed, user_id: chef },
+      { campaign_id: closed, user_id: agent },
+    ]);
+    expect(
+      (await before.query("select 1 from public.availability_entries where user_id=$1", [busyChef])).rows,
+    ).toHaveLength(1);
+    await before.close();
+  }, 90000);
+
+  it("refuse un second passage et un passage avant sa dépendance", async () => {
+    expect(target).toBeGreaterThan(0);
+    const applied = await upTo(target + 1);
+    await expect(applied.exec(migration())).rejects.toThrow("déjà été appliquée");
+    await applied.close();
+    const early = await upTo(target - 1);
+    await expect(early.exec(migration())).rejects.toThrow("20261007150000_droits_par_ensemble.sql");
     await early.close();
   }, 90000);
 });

@@ -14,6 +14,13 @@ export const memberRoles = ["AGENT", "GESTIONNAIRE", "ADMIN"] as const;
 export const memberRoleSchema = z.enum(memberRoles);
 export type MemberRole = (typeof memberRoles)[number];
 export const administers = (role: MemberRole) => role === "GESTIONNAIRE" || role === "ADMIN";
+/**
+ * Qui prend des gardes, donc répond aux campagnes : les agents. L'encadrement
+ * gère les effectifs (décision C6, 16 octobre). La base applique la même règle
+ * à l'inscription (`private.takes_shifts`) ; l'écran l'applique aussi aux
+ * campagnes d'avant la décision, où l'encadrement reste inscrit.
+ */
+export const takesShifts = (role: MemberRole) => role === "AGENT";
 /** Les grades proposés à la saisie, du plus bas au plus élevé. La base, elle,
     accepte n'importe quel texte : cette liste guide l'écran sans interdire une
     valeur déjà enregistrée qui n'y figurerait pas. */
@@ -520,12 +527,16 @@ export function workload(state: AppState, campaignId: string, userId: string) {
  * C'est le dénominateur de tout ce qui se compte « sur la campagne ». L'écran
  * prenait l'effectif du centre, ce qui faisait passer pour non-répondant
  * quelqu'un qui n'avait jamais été invité.
+ *
+ * L'encadrement en est écarté même inscrit : dans les campagnes d'avant la
+ * décision C6, ou passé à l'encadrement en cours de mois. Il ne prend pas de
+ * garde, et ne doit compter ni dans un taux ni dans un planning.
  */
 export function campaignAgents(state: AppState, campaignId: string) {
   const campaign = state.campaigns.find(c => c.id === campaignId);
   if (!campaign) return [];
   const invited = new Set(campaign.participants);
-  return state.agents.filter(a => invited.has(a.id));
+  return state.agents.filter(a => invited.has(a.id) && takesShifts(a.role));
 }
 /** Les campagnes qu'un agent peut ouvrir. Qui encadre les voit toutes. */
 export const visibleCampaigns = (state: AppState, userId: string, manages: boolean) =>
@@ -544,7 +555,7 @@ export const withdrawnFrom = (state: AppState, campaignId: string, date: string,
   );
 
 export function availableAgents(state: AppState, campaignId: string, date: string, shift: Shift) {
-  return state.agents.filter(
+  return campaignAgents(state, campaignId).filter(
     a =>
       isValidated(state, campaignId, a.id) && isAvailable(state.entries[entryKey(campaignId, a.id, date)]?.type, shift),
   );

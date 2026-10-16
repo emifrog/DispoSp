@@ -149,7 +149,7 @@ Si cette partie échoue, rien d'autre ne sert : personne n'entre.
 
 **Faire** — Écran **Campagnes**, **Nouvelle campagne**. Nom, mois choisi, date de clôture à venir.
 
-**Attendu** — La campagne s'ouvre et devient active. Sur le tableau de bord, le compteur de réponses affiche 0 sur le nombre d'agents actifs de l'équipe.
+**Attendu** — La campagne s'ouvre et devient active. Sur le tableau de bord, le compteur de réponses affiche 0 sur le nombre d'agents actifs de l'équipe : gestionnaires et administrateurs n'y figurent pas, ils ne prennent pas de garde.
 
 **Sinon** — Un refus en français dit lequel des contrôles a mordu (nom trop court, mois invalide, clôture dans le passé). C'est normal et voulu.
 
