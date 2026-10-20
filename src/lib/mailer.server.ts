@@ -121,7 +121,7 @@ async function send(notice: Job, key: string, from: string, appUrl: string): Pro
  * désiste n'a aucun droit sur la file et que personne ne devait attendre
  * qu'un gestionnaire agisse pour être prévenu.
  */
-export async function dispatchEmails() {
+export async function dispatchEmails({ deadline }: { deadline?: number } = {}) {
   const key = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM;
   const appUrl = process.env.APP_URL;
@@ -145,6 +145,9 @@ export async function dispatchEmails() {
   let processed = 0;
   let sent = 0;
   for (let pass = 0; pass < MAX_PASSES; pass++) {
+    // Le traitement planifié borne sa durée : passé l’échéance, il laisse la
+    // suite au passage suivant plutôt que de dépasser le temps accordé.
+    if (deadline && Date.now() > deadline) break;
     const { data, error } = await client.rpc("claim_email_deliveries", { batch: BATCH });
     // Le message de la base, pour savoir où chercher : il part au journal du
     // serveur, jamais à l'écran.

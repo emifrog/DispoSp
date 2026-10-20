@@ -40,6 +40,8 @@ export function pushPayload(id: string, kind: string) {
     SCHEDULE_PUBLISHED: "Votre planning a été publié ou modifié.",
     WITHDRAWAL_REQUESTED: "Une demande de désistement attend votre réponse.",
     WITHDRAWAL_DECIDED: "Une réponse à votre désistement est disponible.",
+    // Ni date ni horaires sur l’écran verrouillé : le détail est dans l’application.
+    SHIFT_REMINDER: "Rappel : une garde vous attend.",
   };
   // Aucun nom, motif de désistement ou détail de garde sur l'écran verrouillé.
   return {

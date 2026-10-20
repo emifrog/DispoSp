@@ -99,6 +99,10 @@ export const stateSchema = z.object({
     name: z.string(),
     dayStart: z.number().int().min(0).max(23),
     nightStart: z.number().int().min(0).max(23),
+    /** Rappels de garde et relances automatiques, activés par l’encadrement (lot A). */
+    remindersEnabled: z.boolean().default(false),
+    /** L’heure du rappel, la veille de la garde, heure du centre. */
+    shiftReminderHour: z.number().int().min(0).max(23).default(18),
   }),
   agents: z.array(
     z.object({
@@ -758,6 +762,9 @@ export const commandSchema = z.discriminatedUnion("type", [
     days: z.record(z.string().regex(/^[1-7]$/), availabilitySchema.nullable()),
   }),
   z.object({ type: z.literal("applyTemplate"), campaignId: id }),
+  // Les rappels automatiques du centre (lot A) : activés ou non, et l’heure du
+  // rappel de garde, la veille.
+  z.object({ type: z.literal("reminders"), enabled: z.boolean(), hour: z.number().int().min(0).max(23) }),
   // La saisie rapide, onglet « Semaine type » : une valeur par jour de semaine,
   // ou rien, sur une période. `keepFilled` épargne les jours déjà renseignés ;
   // `remember` garde la semaine comme disponibilité habituelle.
@@ -813,6 +820,7 @@ export const notificationLabels: Record<string, string> = {
   SCHEDULE_PUBLISHED: "Planning publié",
   WITHDRAWAL_REQUESTED: "Désistement signalé",
   WITHDRAWAL_DECIDED: "Réponse à votre désistement",
+  SHIFT_REMINDER: "Rappel de garde",
 };
 /**
  * Ce que chaque message invite à faire, et l'écran où cela se fait.
@@ -832,6 +840,7 @@ export const notificationTargets: Record<string, { label: string; path: string }
   SCHEDULE_PUBLISHED: { label: "Consulter mon planning", path: "/mon-planning" },
   WITHDRAWAL_REQUESTED: { label: "Examiner le désistement", path: "/demandes" },
   WITHDRAWAL_DECIDED: { label: "Consulter mon planning", path: "/mon-planning" },
+  SHIFT_REMINDER: { label: "Consulter mon planning", path: "/mon-planning" },
 };
 export const commandLabels: Record<Command["type"], string> = {
   availability: "Disponibilités modifiées",
@@ -856,4 +865,5 @@ export const commandLabels: Record<Command["type"], string> = {
   template: "Disponibilité habituelle enregistrée",
   applyTemplate: "Disponibilité habituelle appliquée",
   applyWeek: "Disponibilités modifiées",
+  reminders: "Rappels automatiques enregistrés",
 };

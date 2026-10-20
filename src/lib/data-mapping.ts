@@ -187,7 +187,15 @@ export const dayIn = (timestamp: string) => localDate(new Date(timestamp));
 
 // The rows exactly as PostgREST returns them for the queries in data.server.ts.
 export type Raw = {
-  organization: { name: string; day_start: number; night_start: number } | null;
+  // Les réglages de rappel (20261020090000) sont optionnels : une base qui ne
+  // les a pas encore lit les valeurs par défaut au lieu d’échouer.
+  organization: {
+    name: string;
+    day_start: number;
+    night_start: number;
+    reminders_enabled?: boolean;
+    shift_reminder_hour?: number;
+  } | null;
   members: {
     user_id: string;
     role: string;
@@ -312,6 +320,7 @@ const auditLabels: Record<string, string> = {
   "schedule_assignment/UNASSIGN": "Affectation retirée du brouillon",
   "schedule_shift/PUBLISH": "Créneau publié",
   "organization/HOURS": "Horaires par défaut modifiés",
+  "organization/REMINDERS": "Rappels automatiques modifiés",
   "qualification/CREATE": "Qualification créée",
   "qualification/RENAME": "Qualification renommée",
   "qualification/DELETE": "Qualification supprimée",
@@ -379,6 +388,10 @@ function auditDetail(entity: string, previous: Values, after: Values, nameById: 
       return `version ${num(after, "revision") ?? "?"} · ${headcount} ${plural(headcount, "agent")}`;
     }
     case "organization": {
+      // Le réglage des rappels (20261020090000) a sa propre ligne : il ne
+      // porte pas d'horaires, et les afficher dirait « undefined h ».
+      if (after && "reminders_enabled" in after)
+        return `${after.reminders_enabled ? "activés" : "désactivés"} · rappel de garde à ${num(after, "shift_reminder_hour")} h`;
       const range = (from: Values) => `${num(from, "day_start")} h – ${num(from, "night_start")} h`;
       return previous ? `${range(previous)} → ${range(after)}` : range(after);
     }
@@ -455,6 +468,8 @@ export function buildState(raw: Raw, fallbackOrganizationName: string, window?: 
       name: raw.organization?.name ?? fallbackOrganizationName,
       dayStart: raw.organization?.day_start ?? 8,
       nightStart: raw.organization?.night_start ?? 20,
+      remindersEnabled: raw.organization?.reminders_enabled ?? false,
+      shiftReminderHour: raw.organization?.shift_reminder_hour ?? 18,
     },
     agents,
     inactiveAgents,

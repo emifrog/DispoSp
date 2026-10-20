@@ -81,7 +81,11 @@ export async function loadState(session: AttachedSession, asked?: string | null)
     template,
     invitations,
   ] = await Promise.all([
-    supabase.from("organizations").select("name, day_start, night_start").eq("id", organizationId).maybeSingle(),
+    supabase
+      .from("organizations")
+      .select("name, day_start, night_start, reminders_enabled, shift_reminder_hour")
+      .eq("id", organizationId)
+      .maybeSingle(),
     // Deactivated members are loaded too: the administration screen has to show
     // them to bring anyone back. buildState keeps the two rosters apart.
     paged<"members">(

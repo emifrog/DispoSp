@@ -25,6 +25,10 @@ const byMessage: [RegExp, (match: RegExpMatchArray) => string][] = [
   [/^Invalid availability week/, () => "La semaine envoyée est mal formée. Rechargez l’écran et recommencez."],
   [/^Invalid availability period/, () => "Choisissez une période valide : le premier jour avant le dernier."],
   [/^Availability comment is too long/, () => "Le commentaire ne doit pas dépasser 500 caractères."],
+  [
+    /^Not allowed to read the scheduled tasks/,
+    () => "Seul l’encadrement du centre voit l’état des traitements planifiés.",
+  ],
   [/^Not a participant of this campaign/, () => "Vous ne participez pas à cette campagne."],
   [/^Availability template is empty/, () => "Votre disponibilité habituelle est vide : renseignez-la d’abord."],
   [/^Campaign is closed/, () => "La campagne est fermée : la saisie n’est plus possible."],

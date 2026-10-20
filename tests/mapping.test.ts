@@ -222,7 +222,27 @@ describe("Construction de l’état depuis la base", () => {
 
   it("garde les horaires de l’organisation et complète les agents incomplets", () => {
     const state = buildState(raw(), "Secours");
-    expect(state.organization).toEqual({ name: "CIS Test", dayStart: 7, nightStart: 19 });
+    // Une base sans les réglages de rappel (avant 20261020090000) : désactivés, 18 h.
+    expect(state.organization).toEqual({
+      name: "CIS Test",
+      dayStart: 7,
+      nightStart: 19,
+      remindersEnabled: false,
+      shiftReminderHour: 18,
+    });
+    const withReminders = buildState(
+      raw({
+        organization: {
+          name: "CIS Test",
+          day_start: 7,
+          night_start: 19,
+          reminders_enabled: true,
+          shift_reminder_hour: 19,
+        },
+      }),
+      "Secours",
+    );
+    expect(withReminders.organization).toMatchObject({ remindersEnabled: true, shiftReminderHour: 19 });
     expect(state.agents[0]).toEqual({
       id: "u1",
       name: "Chef Un",
@@ -528,6 +548,15 @@ describe("Construction de l’état depuis la base", () => {
             old_value: { day_start: 8, night_start: 20 },
             new_value: { day_start: 7, night_start: 19 },
           },
+          {
+            id: 5,
+            occurred_at: "2026-09-20T12:00:00Z",
+            action: "REMINDERS",
+            entity: "organization",
+            actor_id: "u1",
+            old_value: { reminders_enabled: false, shift_reminder_hour: 18 },
+            new_value: { reminders_enabled: true, shift_reminder_hour: 19 },
+          },
         ],
       }),
       "Secours",
@@ -537,6 +566,7 @@ describe("Construction de l’état depuis la base", () => {
       "Besoins définis — 1 octobre · Nuit · 6 → 1 agent",
       "Disponibilité renseignée — 1 octobre · 24 h",
       "Horaires par défaut modifiés — 8 h – 20 h → 7 h – 19 h",
+      "Rappels automatiques modifiés — activés · rappel de garde à 19 h",
     ]);
     for (const event of state.audit) expect(`${event.action}${event.detail}`).not.toMatch(/[{}"]|_[a-z]/);
     // L’entité voyage avec la ligne : c’est sur elle que l’écran filtre.
@@ -545,12 +575,19 @@ describe("Construction de l’état depuis la base", () => {
       "staffing_requirement",
       "availability_entry",
       "organization",
+      "organization",
     ]);
   });
 
   it("retombe sur le nom de la session si l’organisation n’est pas lisible", () => {
     const state = buildState(raw({ organization: null }), "Secours");
-    expect(state.organization).toEqual({ name: "Secours", dayStart: 8, nightStart: 20 });
+    expect(state.organization).toEqual({
+      name: "Secours",
+      dayStart: 8,
+      nightStart: 20,
+      remindersEnabled: false,
+      shiftReminderHour: 18,
+    });
   });
 });
 

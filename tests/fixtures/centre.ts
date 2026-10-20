@@ -26,7 +26,13 @@ export function sampleState(now = new Date()): AppState {
   const closesOn = lastDayOfMonth(responseMonth);
   const state: AppState = {
     version: 1,
-    organization: { name: "CIS Val de Loire", dayStart: 8, nightStart: 20 },
+    organization: {
+      name: "CIS Val de Loire",
+      dayStart: 8,
+      nightStart: 20,
+      remindersEnabled: false,
+      shiftReminderHour: 18,
+    },
     agents: [
       {
         id: "julien",

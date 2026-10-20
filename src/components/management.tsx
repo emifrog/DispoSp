@@ -968,11 +968,32 @@ export function Audit() {
   );
 }
 
-export function Settings() {
+/**
+ * L'état des traitements planifiés, tel que public.scheduled_status() le rend :
+ * des dates et des nombres, jamais un destinataire.
+ */
+export type ScheduledStatus = {
+  generation: string | null;
+  livraison: string | null;
+  erreurs_24h: number;
+  derniere_erreur: string | null;
+  emails_en_attente: number;
+  emails_en_echec_24h: number;
+  push_en_attente: number;
+  /** Aucun passage de génération réussi depuis un quart d’heure. */
+  silencieux: boolean;
+  /** La génération tourne, mais aucune livraison ne l’a suivie depuis un quart d’heure. */
+  livraison_silencieuse: boolean;
+};
+
+export function Settings({ scheduled }: { scheduled?: ScheduledStatus | null }) {
   const { state, run, canAdminister } = useApp();
   const [dayStart, setDayStart] = useState(state.organization.dayStart);
   const [nightStart, setNightStart] = useState(state.organization.nightStart);
   const [saving, setSaving] = useState(false);
+  const [remindersEnabled, setRemindersEnabled] = useState(state.organization.remindersEnabled);
+  const [reminderHour, setReminderHour] = useState(state.organization.shiftReminderHour);
+  const [savingReminders, setSavingReminders] = useState(false);
   if (!canAdminister) return <AdministrationOnly title="Paramètres du centre" />;
   return (
     <>
@@ -1025,6 +1046,85 @@ export function Settings() {
             plannings déjà saisis.
           </p>
         </div>
+        {/* Lot A : l'activation est un geste explicite, désactivé par défaut, et
+            entre au journal. Sans les traitements planifiés du projet, le
+            réglage est gardé mais rien ne part : le suivi ci-dessous le montre. */}
+        <Panel
+          title="Rappels automatiques"
+          subtitle="Rappel de garde la veille, relances avant la clôture d’une campagne."
+        >
+          <form
+            onSubmit={async e => {
+              e.preventDefault();
+              setSavingReminders(true);
+              await run({ type: "reminders", enabled: remindersEnabled, hour: reminderHour });
+              setSavingReminders(false);
+            }}
+          >
+            <label className="checkbox-field quick-option">
+              <input type="checkbox" checked={remindersEnabled} onChange={e => setRemindersEnabled(e.target.checked)} />
+              <span>
+                Activer les rappels automatiques
+                <small>
+                  Chaque agent est prévenu la veille d’une garde publiée. Ceux qui n’ont pas validé leur réponse sont
+                  relancés 48 h puis 24 h avant la clôture. Les gestionnaires et administrateurs ne reçoivent ni l’un ni
+                  l’autre.
+                </small>
+              </span>
+            </label>
+            <label className="field">
+              Heure du rappel de garde, la veille
+              <select value={reminderHour} onChange={e => setReminderHour(Number(e.target.value))}>
+                {Array.from({ length: 24 }, (_, h) => (
+                  <option key={h} value={h}>
+                    {h} h
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button type="submit" pending={savingReminders}>
+              Enregistrer les rappels
+            </Button>
+          </form>
+        </Panel>
+        <Panel title="Traitements planifiés" subtitle="Le dernier passage, et ce qui attend d’être envoyé.">
+          {scheduled ? (
+            <>
+              {scheduled.silencieux && (
+                <div className="warning small">
+                  Aucun passage de génération depuis plus de quinze minutes : les traitements planifiés ne sont
+                  peut-être pas activés sur le projet. Les rappels ne partent pas tant qu’ils ne le sont pas.
+                </div>
+              )}
+              {!scheduled.silencieux && scheduled.livraison_silencieuse && (
+                <div className="warning small">
+                  Les rappels sont créés, mais la livraison planifiée n’a pas répondu depuis plus de quinze minutes :
+                  l’adresse de l’application ou le secret du traitement est sans doute à revoir. En attendant, les
+                  messages partent après chaque action dans l’application.
+                </div>
+              )}
+              <dl className="scheduled-status">
+                <dt>Dernière génération</dt>
+                <dd>{scheduled.generation ? stampLabel(scheduled.generation) : "jamais"}</dd>
+                <dt>Dernière livraison</dt>
+                <dd>{scheduled.livraison ? stampLabel(scheduled.livraison) : "jamais"}</dd>
+                <dt>Passages en erreur (24 h)</dt>
+                <dd>
+                  {scheduled.erreurs_24h}
+                  {scheduled.derniere_erreur ? ` · le dernier le ${stampLabel(scheduled.derniere_erreur)}` : ""}
+                </dd>
+                <dt>Emails en attente</dt>
+                <dd>{scheduled.emails_en_attente}</dd>
+                <dt>Emails en échec (24 h)</dt>
+                <dd>{scheduled.emails_en_echec_24h}</dd>
+                <dt>Notifications push en attente</dt>
+                <dd>{scheduled.push_en_attente}</dd>
+              </dl>
+            </>
+          ) : (
+            <p className="muted">État indisponible : la base n’a pas encore la migration des traitements planifiés.</p>
+          )}
+        </Panel>
       </div>
     </>
   );

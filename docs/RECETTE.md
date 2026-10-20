@@ -251,13 +251,35 @@ Rien n'est perdu : la file garde le message et le renverra à la prochaine actio
 
 **Attendu** — Seuls les agents **n'ayant pas validé** le reçoivent. Un second rappel pour la même campagne doit être refusé tant que le premier est en attente.
 
-**À savoir** — **Ce rappel est un geste manuel.** Rien ne le déclenche tout seul : il n'y a pas d'ordonnanceur. Si vous voulez qu'il parte trois jours avant la clôture, il faut que quelqu'un s'en charge. Notez-le dans vos habitudes de service.
+**À savoir** — **Ce rappel est un geste manuel.** Rien ne le déclenche tout seul, sauf si le centre a activé les rappels automatiques (étape 5.3) : ils relancent alors 48 h puis 24 h avant la clôture, et partagent avec ce bouton la règle des 12 heures.
 
 ### 5.2 La clôture
 
 **Faire** — Clôturer la campagne.
 
 **Attendu** — La saisie n'est plus possible, avec un message clair côté agent.
+
+### 5.3 Les rappels automatiques
+
+**Où** — Sur la recette isolée (préalable 0 des [évolutions opérationnelles](SPECIFICATIONS_EVOLUTIONS_OPERATIONNELLES.md)), avec des comptes et des adresses d'essai. **Pas sur le site en service** : une fois les tâches planifiées actives, les messages partent vers de vrais agents.
+
+**Préparer** — La migration `20261020090000` appliquée, `SCHEDULED_TASKS_SECRET` déclaré sur l'hébergeur, puis `supabase/provisioning/activer-les-traitements-planifies.sql` exécuté avec l'adresse et le secret de cette recette. Voir le README, « Rappels automatiques et traitements planifiés ».
+
+**Faire** — Côté administrateur, Paramètres → Rappels automatiques : cocher, choisir une heure déjà passée aujourd'hui, enregistrer. Avoir publié une garde **pour demain** à un agent d'essai, et à un gestionnaire.
+
+**Attendu**
+
+- Au passage suivant (cinq minutes au plus), l'agent reçoit « Rappel : garde demain » dans Notifications, par email avec la date et les horaires, et par push sur l'appareil activé : « Rappel : une garde vous attend. », sans plus de détail.
+- Le gestionnaire ne reçoit rien.
+- Un second passage ne renvoie rien.
+- Historique : « Rappels automatiques modifiés — activés · rappel de garde à … h ».
+- Paramètres → Traitements planifiés : les deux derniers passages datés de quelques minutes, aucun avertissement.
+
+**À vérifier** — Avant l'heure du rappel d'un autre jour, accepter le désistement d'un agent sur sa garde du lendemain. Au moment du rappel, **il ne reçoit rien**, et les autres agents de cette garde le reçoivent.
+
+**À vérifier aussi** — Une campagne qui ferme dans moins de 48 h : les agents qui n'ont pas validé reçoivent une relance, ceux qui ont validé n'en reçoivent pas, et le bouton de relance manuelle refuse pendant 12 heures.
+
+**Sinon** — « Aucun passage de génération depuis plus de quinze minutes » : les tâches ne sont pas planifiées, relancer le script d'activation. « La livraison planifiée n'a pas répondu » : l'adresse ou le secret recopiés dans Vault ne correspondent pas à ceux de l'hébergeur. Pour tout arrêter : `desactiver-les-traitements-planifies.sql`.
 
 ---
 
@@ -397,6 +419,7 @@ Prévoir où regarder quand quelque chose ne va pas : les logs de l'hébergeur, 
 | 4.5   |      |     |          |          |
 | 5.1   |      |     |          |          |
 | 5.2   |      |     |          |          |
+| 5.3   |      |     |          |          |
 | 6     |      |     |          |          |
 | 7     |      |     |          |          |
 | 8     |      |     |          |          |

@@ -69,6 +69,8 @@ export async function runCommand(session: AttachedSession, command: Command): Pr
       return applyTemplate(client, command);
     case "applyWeek":
       return applyWeek(client, session, command);
+    case "reminders":
+      return writeReminders(client, session, command);
   }
 }
 
@@ -573,6 +575,19 @@ async function writeTeam(client: Client, session: AttachedSession, command: Of<"
     .from("teams")
     .insert({ organization_id: session.membership.organizationId, name: command.name });
   if (error) fail(error);
+}
+
+// Les rappels automatiques du centre (lot A). La policy organization_hours
+// réserve l'écriture à l'encadrement ; un agent n'atteint aucune ligne.
+async function writeReminders(client: Client, session: AttachedSession, command: Of<"reminders">) {
+  const { data, error } = await client
+    .from("organizations")
+    .update({ reminders_enabled: command.enabled, shift_reminder_hour: command.hour })
+    .eq("id", session.membership.organizationId)
+    .select("id");
+  if (error) fail(error);
+  if (!data?.length)
+    throw new Error("Seuls un gestionnaire ou un administrateur peuvent régler les rappels du centre.");
 }
 
 async function writeSettings(client: Client, session: AttachedSession, command: Of<"settings">) {

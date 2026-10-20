@@ -91,7 +91,7 @@ async function deliver(subscription: PushSubscriptionInput, payload: string): Pr
  * interruption ne perde rien. On repasse tant que la base rend un lot plein :
  * une campagne ouverte pour trente agents n'a pas à attendre trois clics.
  */
-export async function dispatchPush() {
+export async function dispatchPush({ deadline }: { deadline?: number } = {}) {
   // La raison, et pas seulement le constat : c'est elle que le journal retient.
   if (!pushConfigured()) throw new Error(`Push non configuré : ${pushMisconfiguration()}`);
   // Client privilégié dédié au worker, jamais partagé avec une commande utilisateur.
@@ -101,6 +101,8 @@ export async function dispatchPush() {
   let processed = 0;
   let sent = 0;
   for (let pass = 0; pass < MAX_PASSES; pass++) {
+    // Voir dispatchEmails : le traitement planifié borne sa durée.
+    if (deadline && Date.now() > deadline) break;
     const { data, error } = await client.rpc("claim_push_deliveries");
     if (error) throw new Error(`Réservation des envois impossible : ${error.message}`);
     const jobs = (data ?? []) as {

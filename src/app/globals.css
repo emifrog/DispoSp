@@ -2365,6 +2365,40 @@ label {
 .settings-width .panel form {
   padding: 3px 22px 24px;
 }
+/* L'encadré n'est plus le dernier élément de l'écran : il garde l'écart des panneaux. */
+.settings-width > .info-card {
+  margin-bottom: 18px;
+}
+/* Le suivi des traitements planifiés : un libellé, une valeur ; une seule
+   colonne sur un écran étroit. */
+.scheduled-status {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 18px;
+  margin: 0;
+  padding: 3px 22px 22px;
+  font-size: 13px;
+}
+.scheduled-status dt {
+  color: var(--muted);
+}
+.scheduled-status dd {
+  margin: 0;
+  font-weight: 600;
+}
+.settings-width .panel > .warning,
+.settings-width .panel > .muted {
+  margin: 3px 22px 16px;
+}
+@media (max-width: 760px) {
+  .scheduled-status {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .scheduled-status dd {
+    margin-bottom: 8px;
+  }
+}
 .settings-width form > .muted {
   margin: 12px 0 20px;
   font-size: 12px;

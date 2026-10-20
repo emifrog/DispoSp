@@ -43,6 +43,7 @@ export const MIGRATIONS = [
   "20261007150000_droits_par_ensemble.sql",
   "20261016150000_encadrement_hors_campagnes.sql",
   "20261016200000_semaine_type.sql",
+  "20261020090000_traitements_planifies.sql",
 ];
 
 /**

@@ -48,4 +48,8 @@ export const publicPaths = [
   "/installation.js",
   "/hors-ligne",
   "/api/push/dispatch",
+  // Le passage de livraison du traitement planifié (lot A) : Supabase Cron
+  // l'appelle avec son propre secret, sans cookie. Cette route seule, pas
+  // l'ensemble de /api.
+  "/api/traitements",
 ];

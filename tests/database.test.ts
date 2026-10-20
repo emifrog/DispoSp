@@ -5991,3 +5991,550 @@ describe("Migration 20261016200000 — gardes d’application", () => {
     await early.close();
   }, 90000);
 });
+
+// Lot A des évolutions opérationnelles (20 octobre) : ce que le traitement
+// planifié crée — rappels de garde la veille, relances avant clôture —, ce
+// qu'il annule, et ce qu'il retient. Les instants sont donnés explicitement :
+// le calcul de « la veille à 18 h » se vérifie de part et d'autre de l'heure.
+describe("Traitements planifiés — rappels de garde", () => {
+  const org = "10000000-0000-0000-0000-0000000000b1";
+  const off = "10000000-0000-0000-0000-0000000000b2";
+  const team = "20000000-0000-0000-0000-0000000000b1";
+  const offTeam = "20000000-0000-0000-0000-0000000000b2";
+  const agent = "30000000-0000-0000-0000-0000000000b1";
+  const night = "30000000-0000-0000-0000-0000000000b2";
+  const chef = "30000000-0000-0000-0000-0000000000b3";
+  const gone = "30000000-0000-0000-0000-0000000000b4";
+  const relieved = "30000000-0000-0000-0000-0000000000b5";
+  const removed = "30000000-0000-0000-0000-0000000000b6";
+  const elsewhere = "30000000-0000-0000-0000-0000000000b7";
+  const leaving = "30000000-0000-0000-0000-0000000000b8";
+  const campaign = "40000000-0000-0000-0000-0000000000b1";
+  const offCampaign = "40000000-0000-0000-0000-0000000000b2";
+  const schedule = "50000000-0000-0000-0000-0000000000b1";
+  const offSchedule = "50000000-0000-0000-0000-0000000000b2";
+  let live: PGlite;
+  let shiftCount = 0;
+  const generate = async (at: string) => {
+    await live.exec("reset role");
+    return (await live.query<{ r: Record<string, number> }>("select private.generate_due_notifications($1) as r", [at]))
+      .rows[0].r;
+  };
+  const reminders = async () => {
+    await live.exec("reset role");
+    return (
+      await live.query<{ user_id: string; body: string; email_status: string }>(
+        "select user_id, body, email_status from public.notifications where kind='SHIFT_REMINDER' order by user_id, event_key",
+      )
+    ).rows;
+  };
+  // Une garde publiée, avec ses affectés à la version publiée, insérée sans les
+  // contrôles de saisie : on vérifie ici ce que le traitement en lit.
+  const publish = async (
+    date: string,
+    shift: "DAY" | "NIGHT",
+    users: string[],
+    { publishedAt = "2026-10-20 08:00:00+00", sched = schedule, orgId = org } = {},
+  ) => {
+    shiftCount++;
+    const id = `60000000-0000-0000-0000-${String(shiftCount).padStart(12, "0")}`;
+    await live.exec("reset role");
+    await live.exec("set session_replication_role = replica");
+    await live.query(
+      "insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code,published_revision,published_at) values ($1,$2,$3,$4,$5,1,$6)",
+      [id, orgId, sched, date, shift, publishedAt],
+    );
+    for (const user of users)
+      await live.query(
+        "insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,revision,status,assigned_by) values ($1,$2,$3,1,'CONFIRMED',$3)",
+        [orgId, id, user],
+      );
+    await live.exec("set session_replication_role = origin");
+    return id;
+  };
+
+  beforeAll(async () => {
+    live = await freshDatabase();
+    await live.exec(`
+      insert into auth.users(id) values ('${agent}'), ('${night}'), ('${chef}'), ('${gone}'), ('${relieved}'),
+        ('${removed}'), ('${elsewhere}'), ('${leaving}');
+      insert into public.profiles(user_id,display_name) values ('${agent}','Agent'), ('${night}','Nuit'), ('${chef}','Chef'),
+        ('${gone}','Parti'), ('${relieved}','Relevé'), ('${removed}','Retiré'), ('${elsewhere}','Ailleurs'), ('${leaving}','Sur le départ');
+      insert into public.organizations(id,name,reminders_enabled) values ('${org}','Centre rappels',true), ('${off}','Centre sans rappels',false);
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha'), ('${offTeam}','${off}','Alpha');
+      insert into public.memberships values
+        ('${org}','${agent}','${team}','AGENT',true), ('${org}','${night}','${team}','AGENT',true),
+        ('${org}','${chef}','${team}','GESTIONNAIRE',true), ('${org}','${gone}','${team}','AGENT',false),
+        ('${org}','${relieved}','${team}','AGENT',true), ('${org}','${removed}','${team}','AGENT',true),
+        ('${org}','${leaving}','${team}','AGENT',true), ('${off}','${elsewhere}','${offTeam}','AGENT',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at) values
+        ('${campaign}','${org}','${team}','Novembre','2026-11-01','2026-11-30',now()-interval '30 days',now()-interval '1 day'),
+        ('${offCampaign}','${off}','${offTeam}','Novembre','2026-11-01','2026-11-30',now()-interval '30 days',now()-interval '1 day');
+      insert into public.schedules(id,organization_id,campaign_id,team_id) values
+        ('${schedule}','${org}','${campaign}','${team}'), ('${offSchedule}','${off}','${offCampaign}','${offTeam}');`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("rappelle la veille à 18 h, heure du centre, une seule fois, et réunit le Jour et la Nuit en 24 h", async () => {
+    // Le 3 novembre : l'agent tient le Jour et la Nuit. La version publiée du
+    // Jour (2) a retiré un agent ; un autre s'est désisté après publication.
+    const day = await publish("2026-11-03", "DAY", [agent, chef, gone, relieved]);
+    await publish("2026-11-03", "NIGHT", [agent]);
+    await live.exec("set session_replication_role = replica");
+    await live.query(
+      "update public.schedule_shifts set published_revision=2, published_at='2026-10-21 08:00:00+00' where id=$1",
+      [day],
+    );
+    await live.query("update public.schedule_assignments set revision=2 where schedule_shift_id=$1", [day]);
+    await live.query(
+      "insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,revision,status,assigned_by) values ($1,$2,$3,1,'CONFIRMED',$3)",
+      [org, day, removed],
+    );
+    await live.query(
+      `insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id,state,decided_at,decided_by)
+       values ($1,$2,$3,'ACCEPTED','2026-10-25 08:00:00+00',$4)`,
+      [org, day, relieved, chef],
+    );
+    await live.exec("set session_replication_role = origin");
+    await publish("2026-11-03", "DAY", [elsewhere], { sched: offSchedule, orgId: off });
+
+    // 18 h à Paris le 2 novembre : 17 h UTC.
+    expect((await generate("2026-11-02 16:59:00+00")).rappels_de_garde).toBe(0);
+    expect((await generate("2026-11-02 17:01:00+00")).rappels_de_garde).toBe(1);
+    expect(await reminders()).toEqual([
+      {
+        user_id: agent,
+        body: "Vous êtes de garde demain, mardi 3 novembre, de 8 h à 8 h le lendemain (24 h).",
+        email_status: "pending",
+      },
+    ]);
+    // Le passage suivant ne recrée rien.
+    expect((await generate("2026-11-02 17:06:00+00")).rappels_de_garde).toBe(0);
+  });
+
+  it("dit la nuit, et n’envoie rien pour une garde publiée après l’heure du rappel", async () => {
+    await publish("2026-11-04", "NIGHT", [night]);
+    await publish("2026-11-05", "DAY", [night], { publishedAt: "2026-11-04 17:30:00+00" });
+    expect((await generate("2026-11-03 17:05:00+00")).rappels_de_garde).toBe(1);
+    expect((await reminders()).find(r => r.user_id === night)?.body).toBe(
+      "Vous êtes de garde demain, mercredi 4 novembre, de 20 h à 8 h le lendemain.",
+    );
+    // L'avis de publication vient de partir : pas de rappel en plus.
+    expect((await generate("2026-11-04 17:35:00+00")).rappels_de_garde).toBe(0);
+  });
+
+  it("ne rattrape pas un rappel manqué : passé minuit, « demain » serait faux", async () => {
+    await publish("2026-11-06", "DAY", [night]);
+    // 0 h 30 à Paris le 6 novembre.
+    expect((await generate("2026-11-05 23:30:00+00")).rappels_de_garde).toBe(0);
+  });
+
+  it("suit l’heure locale quand l’heure change dans la nuit", async () => {
+    // Retour à l'heure d'hiver le dimanche 25 octobre 2026 : 18 h y vaut 17 h UTC.
+    await publish("2026-10-26", "DAY", [night]);
+    expect((await generate("2026-10-25 16:59:00+00")).rappels_de_garde).toBe(0);
+    expect((await generate("2026-10-25 17:01:00+00")).rappels_de_garde).toBe(1);
+    // Passage à l'heure d'été le dimanche 28 mars 2027 : 18 h y vaut 16 h UTC.
+    await publish("2027-03-29", "DAY", [night]);
+    expect((await generate("2027-03-28 15:59:00+00")).rappels_de_garde).toBe(0);
+    expect((await generate("2027-03-28 16:01:00+00")).rappels_de_garde).toBe(1);
+  });
+
+  it("annule un rappel encore en attente quand l’agent ne tient plus la garde", async () => {
+    await live.exec("reset role");
+    await live.query(
+      "insert into public.push_subscriptions(organization_id,user_id,endpoint,p256dh,auth) values ($1,$2,$3,$4,$5)",
+      [org, leaving, "https://fcm.googleapis.com/fcm/send/essai-depart", "A".repeat(87), "B".repeat(22)],
+    );
+    await publish("2026-11-10", "DAY", [leaving]);
+    expect((await generate("2026-11-09 17:05:00+00")).rappels_de_garde).toBe(1);
+    const pending = await live.query<{ status: string }>(
+      "select d.status from public.push_deliveries d join public.notifications n on n.id=d.notification_id where n.user_id=$1 and n.kind='SHIFT_REMINDER'",
+      [leaving],
+    );
+    expect(pending.rows).toEqual([{ status: "pending" }]);
+    // Désactivé avant l'envoi : ni email, ni push.
+    await live.exec("set session_replication_role = replica");
+    await live.query("update public.memberships set active=false where user_id=$1", [leaving]);
+    await live.exec("set session_replication_role = origin");
+    expect((await generate("2026-11-09 17:10:00+00")).annulations).toBe(1);
+    expect((await reminders()).find(r => r.user_id === leaving)?.email_status).toBe("skipped");
+    const after = await live.query<{ status: string }>(
+      "select d.status from public.push_deliveries d join public.notifications n on n.id=d.notification_id where n.user_id=$1 and n.kind='SHIFT_REMINDER'",
+      [leaving],
+    );
+    expect(after.rows).toEqual([{ status: "suppressed" }]);
+  });
+
+  it("inscrit chaque passage au journal", async () => {
+    await live.exec("reset role");
+    const runs = await live.query<{ ok: boolean; summary: Record<string, number> }>(
+      "select ok, summary from private.scheduled_runs where task='generation' order by id desc limit 1",
+    );
+    expect(runs.rows[0].ok).toBe(true);
+    expect(Object.keys(runs.rows[0].summary).sort()).toEqual(["annulations", "rappels_de_garde", "relances"]);
+  });
+
+  // Les files se vident aussi après chaque commande : le désistement accepté
+  // déclenche un vidage juste après. L'agent reste actif, la réservation ne
+  // l'écartait donc pas d'elle-même. Elle recontrôle à l'instant présent : la
+  // garde est datée d'après l'horloge, pas d'une date fixe.
+  it("ne laisse partir par aucune réservation le rappel d’une garde qui n’est plus tenue", async () => {
+    const kept = "30000000-0000-0000-0000-0000000000b9";
+    const withdrawn = "30000000-0000-0000-0000-0000000000ba";
+    await live.exec("reset role");
+    await live.query(
+      "insert into auth.users(id,email) values ($1,'garde@rappels.test'), ($2,'desistement@rappels.test')",
+      [kept, withdrawn],
+    );
+    await live.query("insert into public.profiles(user_id,display_name) values ($1,'Garde'), ($2,'Désistement')", [
+      kept,
+      withdrawn,
+    ]);
+    await live.query("insert into public.memberships values ($1,$2,$3,'AGENT',true), ($1,$4,$3,'AGENT',true)", [
+      org,
+      kept,
+      team,
+      withdrawn,
+    ]);
+    for (const [user, name] of [
+      [kept, "garde"],
+      [withdrawn, "desistement"],
+    ])
+      await live.query(
+        "insert into public.push_subscriptions(organization_id,user_id,endpoint,p256dh,auth) values ($1,$2,$3,$4,$5)",
+        [org, user, `https://fcm.googleapis.com/fcm/send/essai-${name}`, "A".repeat(87), "B".repeat(22)],
+      );
+    const { day, eve } = (
+      await live.query<{ day: string; eve: string }>(
+        `select to_char(d, 'YYYY-MM-DD') as day, (((d - 1) + time '18:05') at time zone 'Europe/Paris')::text as eve
+           from (select (now() at time zone 'Europe/Paris')::date + 2 as d) t`,
+      )
+    ).rows[0];
+    const shift = await publish(day, "DAY", [kept, withdrawn]);
+    await generate(eve);
+    const reminder = async (user: string) =>
+      (
+        await live.query<{ id: string; email_status: string }>(
+          "select id, email_status from public.notifications where kind='SHIFT_REMINDER' and user_id=$1",
+          [user],
+        )
+      ).rows[0];
+    expect((await reminder(kept)).email_status).toBe("pending");
+    expect((await reminder(withdrawn)).email_status).toBe("pending");
+
+    await live.exec("set session_replication_role = replica");
+    await live.query(
+      `insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id,state,decided_at,decided_by)
+       values ($1,$2,$3,'ACCEPTED',now(),$4)`,
+      [org, shift, withdrawn, chef],
+    );
+    await live.exec("set session_replication_role = origin");
+
+    await live.exec("set role service_role");
+    const emails = (await live.query<{ id: string }>("select id from public.claim_email_deliveries(200)")).rows.map(
+      r => r.id,
+    );
+    const pushes = (
+      await live.query<{ notification_id: string }>("select notification_id from public.claim_push_deliveries()")
+    ).rows.map(r => r.notification_id);
+    await live.exec("reset role");
+    const keptReminder = await reminder(kept);
+    const withdrawnReminder = await reminder(withdrawn);
+    expect(emails).toContain(keptReminder.id);
+    expect(pushes).toContain(keptReminder.id);
+    expect(emails).not.toContain(withdrawnReminder.id);
+    expect(pushes).not.toContain(withdrawnReminder.id);
+    expect(withdrawnReminder.email_status).toBe("skipped");
+    const push = await live.query<{ status: string }>(
+      "select status from public.push_deliveries where notification_id=$1",
+      [withdrawnReminder.id],
+    );
+    expect(push.rows).toEqual([{ status: "suppressed" }]);
+  });
+});
+
+describe("Traitements planifiés — relances avant clôture", () => {
+  const org = "10000000-0000-0000-0000-0000000000b3";
+  const team = "20000000-0000-0000-0000-0000000000b3";
+  const late = "30000000-0000-0000-0000-0000000000c8";
+  const done = "30000000-0000-0000-0000-0000000000c9";
+  const chef = "30000000-0000-0000-0000-0000000000ca";
+  let live: PGlite;
+  let campaignCount = 0;
+  // Une campagne qui clôt à `closes`, ouverte depuis `opened`.
+  const campaign = async (closes: string, opened: string, { locked = false } = {}) => {
+    campaignCount++;
+    const id = `40000000-0000-0000-0000-${String(campaignCount).padStart(12, "0")}`;
+    const month = `2027-${String(campaignCount).padStart(2, "0")}-01`;
+    await live.exec("reset role");
+    await live.exec("set session_replication_role = replica");
+    await live.query(
+      "insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at,locked) values ($1,$2,$3,$4,$5,$5,$6,$7,$8)",
+      [id, org, team, `Campagne ${campaignCount}`, month, opened, closes, locked],
+    );
+    await live.query(
+      `insert into public.campaign_participants(organization_id,campaign_id,user_id,validated_at) values
+         ($1,$2,$3,null), ($1,$2,$4,now()), ($1,$2,$5,null)`,
+      [org, id, late, done, chef],
+    );
+    await live.exec("set session_replication_role = origin");
+    return id;
+  };
+  const generate = async (at: string) => {
+    await live.exec("reset role");
+    return (await live.query<{ r: Record<string, number> }>("select private.generate_due_notifications($1) as r", [at]))
+      .rows[0].r;
+  };
+  const stages = async (id: string) => {
+    await live.exec("reset role");
+    return (
+      await live.query<{ stage: string; outcome: string; recipients: number }>(
+        "select stage, outcome, recipients from private.campaign_auto_reminders where campaign_id=$1 order by stage desc",
+        [id],
+      )
+    ).rows;
+  };
+
+  beforeAll(async () => {
+    live = await freshDatabase();
+    await live.exec(`
+      insert into auth.users(id) values ('${late}'), ('${done}'), ('${chef}');
+      insert into public.profiles(user_id,display_name) values ('${late}','En retard'), ('${done}','A validé'), ('${chef}','Chef');
+      insert into public.organizations(id,name,reminders_enabled) values ('${org}','Centre relances',true);
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values ('${org}','${late}','${team}','AGENT',true),
+        ('${org}','${done}','${team}','AGENT',true), ('${org}','${chef}','${team}','GESTIONNAIRE',true);`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("relance 48 h puis 24 h avant la clôture, l’agent qui n’a pas validé, et lui seul", async () => {
+    const id = await campaign("2026-12-20 22:59:59+00", "2026-12-01 00:00:00+00");
+    expect((await generate("2026-12-18 23:30:00+00")).relances).toBe(1);
+    expect(await stages(id)).toEqual([{ stage: "48h", outcome: "sent", recipients: 1 }]);
+    const sent = await live.query<{ user_id: string; body: string }>(
+      "select user_id, body from public.notifications where kind='CAMPAIGN_REMINDER' and event_key like $1",
+      [`campaign-reminder:${id}:%`],
+    );
+    expect(sent.rows).toEqual([
+      { user_id: late, body: "Votre réponse n'est pas encore validée. La saisie ferme le 20/12/2026." },
+    ]);
+    expect((await generate("2026-12-19 01:00:00+00")).relances).toBe(0);
+    // 24 h avant : la relance de 48 h date de plus de 12 h, celle-ci part.
+    expect((await generate("2026-12-20 00:00:00+00")).relances).toBe(1);
+    expect(await stages(id)).toEqual([
+      { stage: "48h", outcome: "sent", recipients: 1 },
+      { stage: "24h", outcome: "sent", recipients: 1 },
+    ]);
+  });
+
+  it("ne rattrape pas l’échéance de 48 h après une interruption", async () => {
+    const id = await campaign("2026-12-21 22:59:59+00", "2026-12-01 00:00:00+00");
+    expect((await generate("2026-12-21 03:00:00+00")).relances).toBe(1);
+    expect(await stages(id)).toEqual([
+      { stage: "48h", outcome: "superseded", recipients: 0 },
+      { stage: "24h", outcome: "sent", recipients: 1 },
+    ]);
+  });
+
+  it("partage la règle des 12 heures avec la relance manuelle, et compte l’ouverture", async () => {
+    const recent = await campaign("2026-12-22 22:59:59+00", "2026-12-01 00:00:00+00");
+    await live.query("insert into private.campaign_reminders(campaign_id,reminded_at,recipients) values ($1,$2,1)", [
+      recent,
+      "2026-12-21 20:00:00+00",
+    ]);
+    expect((await generate("2026-12-22 01:00:00+00")).relances).toBe(0);
+    expect(await stages(recent)).toEqual([
+      { stage: "48h", outcome: "superseded", recipients: 0 },
+      { stage: "24h", outcome: "recent", recipients: 0 },
+    ]);
+    // Ouverte il y a deux heures : l'avis d'ouverture vient de partir.
+    const fresh = await campaign("2026-12-25 12:00:00+00", "2026-12-23 22:00:00+00");
+    expect((await generate("2026-12-24 00:00:00+00")).relances).toBe(0);
+    expect(await stages(fresh)).toEqual([{ stage: "48h", outcome: "recent", recipients: 0 }]);
+    // Verrouillée : rien.
+    const locked = await campaign("2026-12-28 12:00:00+00", "2026-12-01 00:00:00+00", { locked: true });
+    expect((await generate("2026-12-27 00:00:00+00")).relances).toBe(0);
+    expect(await stages(locked)).toEqual([]);
+  });
+
+  it("annule la relance encore en attente d’un agent qui vient de valider", async () => {
+    const id = await campaign("2026-12-30 22:59:59+00", "2026-12-01 00:00:00+00");
+    expect((await generate("2026-12-29 00:00:00+00")).relances).toBe(1);
+    await live.exec("set session_replication_role = replica");
+    await live.query("update public.campaign_participants set validated_at=now() where campaign_id=$1 and user_id=$2", [
+      id,
+      late,
+    ]);
+    await live.exec("set session_replication_role = origin");
+    expect((await generate("2026-12-29 00:05:00+00")).annulations).toBe(1);
+    const status = await live.query<{ email_status: string }>(
+      "select email_status from public.notifications where event_key like $1",
+      [`campaign-reminder:${id}:%`],
+    );
+    expect(status.rows).toEqual([{ email_status: "skipped" }]);
+  });
+});
+
+describe("Traitements planifiés — réglage, suivi et droits", () => {
+  const org = "10000000-0000-0000-0000-0000000000b4";
+  const team = "20000000-0000-0000-0000-0000000000b4";
+  const agent = "30000000-0000-0000-0000-0000000000d1";
+  const chef = "30000000-0000-0000-0000-0000000000d2";
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+
+  beforeAll(async () => {
+    live = await freshDatabase();
+    await live.exec(`
+      insert into auth.users(id) values ('${agent}'), ('${chef}');
+      insert into public.profiles(user_id,display_name) values ('${agent}','Agent'), ('${chef}','Chef');
+      insert into public.organizations(id,name) values ('${org}','Centre réglages');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values ('${org}','${agent}','${team}','AGENT',true), ('${org}','${chef}','${team}','GESTIONNAIRE',true);`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("laisse l’encadrement activer les rappels et choisir l’heure, pas l’agent", async () => {
+    const read = async () =>
+      (
+        await live.query<{ reminders_enabled: boolean; shift_reminder_hour: number }>(
+          "select reminders_enabled, shift_reminder_hour from public.organizations where id=$1",
+          [org],
+        )
+      ).rows[0];
+    await be(agent);
+    await live.query("update public.organizations set reminders_enabled=true where id=$1", [org]);
+    await live.exec("reset role");
+    expect(await read()).toEqual({ reminders_enabled: false, shift_reminder_hour: 18 });
+    await be(chef);
+    await live.query("update public.organizations set reminders_enabled=true, shift_reminder_hour=19 where id=$1", [
+      org,
+    ]);
+    await live.exec("reset role");
+    expect(await read()).toEqual({ reminders_enabled: true, shift_reminder_hour: 19 });
+    // L'activation est un acte : elle entre au journal, avec son auteur.
+    expect(
+      (
+        await live.query<{ actor_id: string; action: string; new_value: unknown }>(
+          "select actor_id, action, new_value from public.audit_logs where organization_id=$1 and action='REMINDERS'",
+          [org],
+        )
+      ).rows,
+    ).toEqual([
+      { actor_id: chef, action: "REMINDERS", new_value: { reminders_enabled: true, shift_reminder_hour: 19 } },
+    ]);
+    await be(chef);
+    await expect(
+      live.query("update public.organizations set shift_reminder_hour=24 where id=$1", [org]),
+    ).rejects.toThrow();
+  });
+
+  it("montre l’état des traitements à l’encadrement seulement, sans détail personnel", async () => {
+    await live.exec("reset role");
+    await live.query("select private.generate_due_notifications(now())");
+    await be(chef);
+    const status = (await live.query<{ s: Record<string, unknown> }>("select public.scheduled_status($1) as s", [org]))
+      .rows[0].s;
+    expect(Object.keys(status).sort()).toEqual([
+      "derniere_erreur",
+      "emails_en_attente",
+      "emails_en_echec_24h",
+      "erreurs_24h",
+      "generation",
+      "livraison",
+      "livraison_silencieuse",
+      "push_en_attente",
+      "silencieux",
+    ]);
+    expect(status.silencieux).toBe(false);
+    expect(status.livraison_silencieuse).toBe(false);
+    expect(status.generation).not.toBeNull();
+    await be(agent);
+    await expect(live.query("select public.scheduled_status($1)", [org])).rejects.toThrow(
+      "Not allowed to read the scheduled tasks",
+    );
+  });
+
+  it("réserve la livraison et son journal à la clé du serveur", async () => {
+    await be(chef);
+    await expect(live.query("select public.cancel_obsolete_notifications()")).rejects.toThrow();
+    await expect(
+      live.query("select public.record_scheduled_run('livraison', true, '{}'::jsonb, null)"),
+    ).rejects.toThrow();
+    await live.exec("reset role");
+    await live.exec("set role service_role");
+    await live.query("select public.cancel_obsolete_notifications()");
+    await live.query("select public.record_scheduled_run('livraison', true, '{\"emails\":0}'::jsonb, null)");
+    await live.exec("reset role");
+    const last = await live.query<{ task: string; ok: boolean }>(
+      "select task, ok from private.scheduled_runs order by id desc limit 1",
+    );
+    expect(last.rows).toEqual([{ task: "livraison", ok: true }]);
+  });
+
+  // Le secret mal recopié dans Vault : la génération tourne, la livraison
+  // n'arrive jamais à l'application et n'inscrit rien.
+  it("signale une livraison qui ne suit plus la génération, pas celle qui n’a pas encore eu le temps", async () => {
+    const silent = async () => {
+      await be(chef);
+      const status = (
+        await live.query<{ s: Record<string, unknown> }>("select public.scheduled_status($1) as s", [org])
+      ).rows[0].s;
+      await live.exec("reset role");
+      return status.livraison_silencieuse;
+    };
+    const run = (task: string, minutesAgo: number) =>
+      live.query(
+        `insert into private.scheduled_runs(task, started_at, finished_at, ok)
+         values ($1, now() - make_interval(mins => $2), now() - make_interval(mins => $2), true)`,
+        [task, minutesAgo],
+      );
+    await live.exec("reset role");
+    await live.exec("delete from private.scheduled_runs");
+    // Juste après l'activation : une génération, pas encore de livraison.
+    await run("generation", 1);
+    expect(await silent()).toBe(false);
+    // Trois générations depuis la dernière livraison, la première il y a vingt minutes.
+    await run("livraison", 25);
+    await run("generation", 20);
+    await run("generation", 10);
+    expect(await silent()).toBe(true);
+    // Une livraison en échec arrive quand même : elle se compte comme erreur, pas comme silence.
+    await live.query("insert into private.scheduled_runs(task, finished_at, ok) values ('livraison', now(), false)");
+    expect(await silent()).toBe(false);
+  });
+});
+
+describe("Migration 20261020090000 — gardes d’application", () => {
+  const target = MIGRATIONS.indexOf("20261020090000_traitements_planifies.sql");
+  const migration = () =>
+    readFileSync(new URL(`../supabase/migrations/${MIGRATIONS[target]}`, import.meta.url), "utf8");
+  const upTo = async (count: number) => {
+    const db = new PGlite();
+    await db.exec(baseAuthSchema);
+    for (const m of MIGRATIONS.slice(0, count))
+      await db.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    return db;
+  };
+
+  it("refuse un second passage et un passage avant sa dépendance", async () => {
+    expect(target).toBeGreaterThan(0);
+    const applied = await upTo(target + 1);
+    await expect(applied.exec(migration())).rejects.toThrow("déjà été appliquée");
+    await applied.close();
+    const early = await upTo(target - 1);
+    await expect(early.exec(migration())).rejects.toThrow("20261016200000_semaine_type.sql");
+    await early.close();
+  }, 90000);
+});
