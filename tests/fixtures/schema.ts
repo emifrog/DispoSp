@@ -44,6 +44,7 @@ export const MIGRATIONS = [
   "20261016150000_encadrement_hors_campagnes.sql",
   "20261016200000_semaine_type.sql",
   "20261020090000_traitements_planifies.sql",
+  "20261020150000_photographies.sql",
 ];
 
 /**

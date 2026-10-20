@@ -100,6 +100,9 @@ describe("Bascule du centre d’essai vers un vrai centre", () => {
     await expect(live.exec(bascule("inconnu@essai.test"))).rejects.toThrow("Aucun compte");
     expect(await count("organizations")).toBe(1);
     expect(await count("availability_entries")).toBe(2);
+    // La publication du planning d'essai a sa photographie : la bascule devra
+    // l'effacer, ou buter sur la clé qui la lie au centre.
+    expect((await live.query("select revision from private.publication_facts")).rows).toEqual([{ revision: 1 }]);
   });
 
   it("refuse aussi un compte repris qui n’existe pas, avant d’effacer quoi que ce soit", async () => {
@@ -220,6 +223,12 @@ describe("Bascule du centre d’essai vers un vrai centre", () => {
       expect(await count(table), table).toBe(0);
     expect(await count("organizations", "where name='CIS Test'")).toBe(0);
     expect(await count("audit_logs", `where organization_id='${org}'`)).toBe(0);
+    // Les photographies du lot A partent aussi : ce sont des données d'essai.
+    for (const table of ["publication_facts", "publication_assignees", "closure_facts", "shift_start_facts"])
+      expect(
+        Number((await live.query<{ n: number }>(`select count(*) as n from private.${table}`)).rows[0].n),
+        table,
+      ).toBe(0);
   });
 
   it("garde au journal la trace de la création du nouveau centre", async () => {

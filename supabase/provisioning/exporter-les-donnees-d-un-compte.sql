@@ -61,6 +61,19 @@ select jsonb_pretty(jsonb_build_object(
   'envois_d_invitation', (
     select coalesce(jsonb_agg(s.sent_at order by s.sent_at), '[]')
       from private.invitation_sends s where s.email = (select lower(email) from compte)),
+  -- Les photographies du lot A : ce qu'elles ont retenu de la personne.
+  'photographies_publication', (
+    select coalesce(jsonb_agg(jsonb_build_object(
+      'date', f.date, 'creneau', f.shift_code, 'version', f.revision, 'publiee_le', f.published_at,
+      'role', pa.role, 'qualifications', pa.qualifications) order by f.date, f.shift_code, f.revision), '[]')
+      from private.publication_assignees pa join private.publication_facts f on f.id = pa.publication_id
+     where pa.user_id = (select id from compte)),
+  'photographies_cloture', (
+    select coalesce(jsonb_agg(jsonb_build_object(
+      'campagne', f.campaign_name, 'cloturee_le', f.closes_at, 'role', cp.role, 'actif', cp.active,
+      'attendu', cp.expected, 'reponse_validee_le', cp.validated_at) order by f.closes_at), '[]')
+      from private.closure_participants cp join private.closure_facts f on f.campaign_id = cp.campaign_id
+     where cp.user_id = (select id from compte)),
   -- Le journal : ce que la personne a fait, et ce qui a été fait sur sa fiche.
   'journal', (
     select coalesce(jsonb_agg(jsonb_build_object(

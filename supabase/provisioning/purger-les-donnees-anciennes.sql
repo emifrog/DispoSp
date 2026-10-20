@@ -14,7 +14,18 @@
 --     servent plus une fois le compte créé ou l'invitation oubliée ;
 --   — les campagnes terminées depuis plus longtemps que la durée des campagnes,
 --     avec tout ce qui en dépend : disponibilités, réponses, besoins, planning,
---     affectations, désistements.
+--     affectations, désistements ;
+--   — les détails des photographies du lot A (qui était affecté, qui était
+--     attendu), à la même échéance que leurs campagnes ;
+--   — les faits de ces photographies (des nombres, sans identifiant), à leur
+--     propre échéance. Elle est alignée sur celle des campagnes : rien n'est
+--     gardé plus longtemps qu'avant le lot A, tant que le DPO n'a pas décidé de
+--     l'allonger pour le bilan — et validé la manière de ne pas ré-identifier
+--     un agent dans un petit centre.
+--
+-- Les photographies dues sont prises avant tout effacement : une campagne close
+-- ou un début de garde passés, que le traitement planifié n'a pas encore pris,
+-- ne sont pas perdus.
 --
 -- Rien ne touche aux comptes, aux fiches ni aux rattachements : le départ d'un
 -- agent passe par retirer-un-compte.sql.
@@ -37,10 +48,15 @@ declare
   duree_notifications constant interval := '6 months';
   duree_invitations constant interval := '3 months';
   duree_campagnes constant interval := '24 months';
+  -- Les faits des photographies : par défaut, la durée des campagnes.
+  duree_faits constant interval := '24 months';
 
   anciennes uuid[];
   n int;
 begin
+  -- Avant de suspendre les déclencheurs et d'effacer quoi que ce soit.
+  perform private.take_due_snapshots(now(), null, 'script');
+
   alter table public.audit_logs disable trigger user;
   alter table public.notifications disable trigger user;
   alter table public.invitations disable trigger user;
@@ -71,6 +87,22 @@ begin
   delete from public.campaign_participants where campaign_id = any(anciennes);
   delete from public.availability_campaigns where id = any(anciennes);
   raise notice 'Campagnes terminées avant le % : % effacée(s).', current_date - duree_campagnes, cardinality(anciennes);
+
+  -- Les photographies, mois par mois comme les campagnes : un créneau compte
+  -- jusqu'au dernier jour de son mois. Les détails d'abord, puis les faits ;
+  -- un fait effacé emporte ses détails.
+  delete from private.publication_assignees pa using private.publication_facts f
+   where pa.publication_id = f.id
+     and (date_trunc('month', f.date) + interval '1 month - 1 day')::date < current_date - duree_campagnes;
+  delete from private.closure_participants cp using private.closure_facts f
+   where cp.campaign_id = f.campaign_id and f.ends_on < current_date - duree_campagnes;
+  delete from private.publication_facts
+   where (date_trunc('month', date) + interval '1 month - 1 day')::date < current_date - duree_faits;
+  delete from private.shift_start_facts
+   where (date_trunc('month', date) + interval '1 month - 1 day')::date < current_date - duree_faits;
+  delete from private.closure_facts where ends_on < current_date - duree_faits;
+  raise notice 'Photographies : détails jusqu''au %, faits jusqu''au % effacés.',
+    current_date - duree_campagnes, current_date - duree_faits;
 
   delete from public.invitations where created_at < now() - duree_invitations;
   get diagnostics n = row_count;

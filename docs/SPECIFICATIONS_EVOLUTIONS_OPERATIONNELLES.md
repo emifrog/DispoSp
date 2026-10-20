@@ -33,6 +33,7 @@ Le succès devra être évalué en recette puis en utilisation : diminution des 
 - Le bilan se prépare et se prévisualise avant tout envoi explicite.
 - **Décision du 20 octobre — la clôture qui fait foi est la date de clôture de la campagne** (`closes_at`). Elle est fixée à la création et irréversible : après elle, la base refuse toute saisie et toute validation. Le verrouillage (« Verrouiller la saisie ») reste une pause réversible, sans photographie.
 - **Décision du 20 octobre — les emails donnent la date et les horaires** des gardes concernées (rappel, récapitulatif, appel à remplacement), jamais le nom d’un autre agent ni le motif d’un désistement. Le push reste discret sur l’écran verrouillé.
+- **Décision du 20 octobre — pas de second projet Supabase.** Le développement et les essais automatiques se font sur la pile Supabase locale, avec des données fictives. La vérification hébergée se fait en production, progressivement : migrations appliquées, fonctions désactivées par défaut, puis activées centre par centre. Le préalable 0 est adapté en conséquence.
 
 ### Arbitrages recommandés après relecture du 17 octobre
 
@@ -42,7 +43,7 @@ Les constats techniques ci-dessous sont vérifiés dans le dépôt. Les choix no
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Disponibilité après clôture | « Je me propose » enregistre une déclaration explicite de disponibilité exceptionnelle pour ce créneau et cet appel, sans rouvrir ni revalider la campagne entière. Le gestionnaire confirme ensuite l'affectation.                                                                      |
 | Affectations incompatibles  | Bloquer un chevauchement horaire réel avec une autre affectation publiée encore effective, ainsi qu'un doublon sur le même créneau. Signaler les brouillons concurrents. Ne pas inventer de durée minimale de repos ; faire préciser la règle opérationnelle du centre avant activation. |
-| Recette                     | Un second projet Supabase **et** un déploiement HTTPS de recette relié uniquement à cette base. Une prévisualisation reliée à la production ne constitue pas une recette isolée.                                                                                                         |
+| Recette                     | Écarté par la décision du 20 octobre : pas de second projet Supabase. Pile locale pour les essais, mise en service progressive en production (préalable 0).                                                                                                                              |
 | Notifications               | Ne pas créer de préférences générales dans cette V1. Garder les emails pour les événements concernés et le push uniquement sur les appareils activés. Les rappels sont activés au niveau du centre ; aucun réglage individuel de rappel n'est présumé existant.                          |
 | Bilan                       | Photographies transactionnelles à chaque publication et à chaque clôture, puis agrégats historiques indépendants des comptes vivants. Adapter suppression et purge dès l'introduction de ces données.                                                                                    |
 
@@ -103,21 +104,60 @@ Les statistiques actuelles fondées sur l'effectif courant ne suffisent pas à c
 
 Constats vérifiés lors de la révision : `private.publish_schedule_shift` dans `20260927090000_correctifs_bilan.sql` exige une saisie correspondant au créneau et un participant validé. `campaignAgents` dans `src/lib/domain.ts` filtre les agents actuellement chargés et leur rôle actuel ; ce filtre, dont C6, ne doit pas servir au calcul historique. Les versions d'affectation publiées et le journal de publication fournissent déjà une partie de la chronologie, mais pas la photographie complète des besoins et qualifications. Les scripts `supabase/provisioning/retirer-un-compte.sql` et `supabase/provisioning/purger-les-donnees-anciennes.sql` suppriment aujourd'hui des sources de ces calculs.
 
-### Préalable 0 — Recette isolée et contrat d'historisation
+### Préalable 0 — Essais, mise en service et contrat d'historisation
 
-Le site hébergé sert actuellement à la fois de recette et de production, selon l'état communiqué par le porteur du projet. Ne pas lancer les essais automatiques de ces lots sur cette base.
+Le site hébergé sert à la fois de recette et de production. **Décision du 20 octobre : il n'y aura pas de second projet Supabase.** En conséquence :
 
-Préparer avant la recette intégrée :
+1. **Les essais automatiques et les données fictives restent sur la pile Supabase locale** (`supabase start`). Elle fournit Supabase Cron, `pg_net` et Vault réels, et l'application y est jointe par `host.docker.internal`. On y place au moins deux centres pour les tests de cloisonnement, plusieurs campagnes, agents et qualifications. Aucune donnée d'essai n'est écrite en production.
+2. **La mise en service en production est progressive.**
+   - Chaque migration est appliquée avant le code qui en dépend.
+   - Chaque fonction nouvelle est désactivée par défaut et s'active centre par centre.
+   - Les tâches planifiées ne s'activent qu'une fois les cibles vérifiées.
+3. **Les essais d'envoi en production** visent uniquement des comptes et des appareils du porteur du projet, par exemple des alias de son adresse, dans un centre d'essai. Aucun agent réel n'est sollicité pour valider un développement.
+4. **Ce qui ne peut se vérifier qu'à distance se vérifie en production**, sur ces mêmes comptes : l'appel de Supabase Cron vers l'hébergeur, et au lot D la lecture du flux par les serveurs de Google Agenda. N'exempter de la protection que les routes nécessaires, protégées par leurs propres secrets.
+5. **Un contrat de photographies défini avant les migrations des lots** : voir ci-dessous.
 
-1. Un second projet Supabase, avec les migrations nécessaires et des données fictives : au moins deux centres pour les tests de cloisonnement, plusieurs campagnes, agents et qualifications.
-2. Un déploiement HTTPS de recette, par exemple une prévisualisation Vercel avec une adresse stable, exclusivement relié à cette base. Le déclencheur distant doit atteindre sa route ; Google Agenda doit pouvoir lire le flux depuis ses serveurs sans session navigateur ni écran de protection du déploiement. N'exempter que les routes nécessaires, protégées par leurs propres secrets.
-3. Des variables propres à cet environnement : URL de l'application, URL et clés de base, secret du traitement, clés push et configuration d'envoi. Aucun abonnement push, jeton d'agenda ou jeu de données personnel de production n'est recopié.
-4. Des adresses et appareils de test explicitement autorisés, avec blocage des autres destinataires pour les essais d'envoi. Les tâches planifiées restent désactivées jusqu'à vérification des cibles.
-5. Un contrat de photographies défini avant les migrations des lots : événements, champs conservés, unités, suppression/purge, traitement des clôtures automatiques et des changements de besoin.
+La restauration d'une sauvegarde (recette, étape 9.1) se fait sur la pile locale, à partir d'une sauvegarde téléchargée.
 
-Les tests locaux peuvent commencer avant ce déploiement. En revanche, les lots A et D ne peuvent pas être déclarés validés de bout en bout sans cette recette accessible à distance. La création des services et leur éventuel coût constituent un travail séparé ; ce document ne les provisionne pas.
+### Contrat de photographies
 
-Acceptation du préalable : prouver que les données écrites en recette n'apparaissent pas en production ; vérifier les routes depuis l'extérieur avec leur authentification propre, le refus des accès invalides et le blocage des destinataires hors recette.
+Établi le 20 octobre 2026, avant les migrations de la seconde partie du lot A. Les lots B, C et E l'étendent sans le contredire.
+
+#### Principes
+
+- **La base prend chaque photographie**, dans la transaction de l'événement, ou au passage planifié qui suit l'instant prévu. Rien n'est recalculé plus tard à partir de l'état courant.
+- **Le rattrapage est exact.** Toute modification qui pourrait changer ce qu'une photographie due doit retenir prend d'abord les photographies dues du centre, dans sa propre transaction. Un passage en retard retrouve donc l'état de l'instant prévu. Les scripts de retrait et de purge font de même avant d'effacer.
+- **Deux niveaux.**
+  - Les **faits** : un par publication, par clôture et par début de créneau. Ils portent des nombres et des valeurs recopiées, sans aucun identifiant de personne. Ils n'ont aucune clé vers un compte, une campagne ou un créneau, et survivent donc au retrait d'un compte comme à la purge des campagnes.
+  - Les **détails** : une ligne par personne concernée, affecté ou participant. Ce sont des données personnelles, effacées par le retrait du compte et par la purge.
+- **Les référentiels sont recopiés** : identifiant et nom de chaque qualification, nom de la section. Les horaires du créneau sont figés en instants (`starts_at`, `ends_at`), calculés depuis les horaires de la campagne et le fuseau du centre.
+- **Pas de passé reconstitué.** L'historique commence à l'application de la migration (`private.history_start`). Avant cette date, le bilan affichera « donnée indisponible ».
+- **Les photographies sont immuables** : une clé unique par événement, une insertion qui n'écrase jamais. Aucune session n'y accède ; le lot E les exposera par des fonctions qui contrôlent les droits.
+
+#### Événements
+
+| Événement        | Quand                                                                                                                          | Fait                                                                                                                                                                                                                                   | Détails                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Publication      | Chaque nouvelle version publiée d'un créneau (unitaire aujourd'hui, mensuelle au lot B), dans la transaction de la publication | Section, campagne, créneau, horaires, version, date de publication, effectif requis, minima (qualification, minimum, détenteurs parmi les affectés), effectif affecté, nombre de détenteurs de chaque qualification parmi les affectés | Chaque affecté : rôle et section à cet instant, qualifications détenues (identifiants et noms)   |
+| Clôture          | La date de clôture passée (décision du 20 octobre) ; jamais au verrouillage                                                    | Section, campagne, période, date de clôture, règle d'inclusion, nombre de participants, d'attendus, de validés à la clôture                                                                                                            | Chaque participant : rôle, activité et section à cet instant, attendu ou non, date de validation |
+| Début de créneau | L'heure de début passée, pour chaque créneau du planning, publié ou non                                                        | Version publiée en vigueur, besoin applicable (effectif, minima) ou son absence, affectés publiés, effectif encore tenu, désistements acceptés, minima couverts, couverture complète ou non                                            | Aucun : les personnes sont dans la photographie de publication                                   |
+
+#### Règles
+
+- **Attendu à la clôture** : participant de la campagne, membre actif, de rôle AGENT (décision C6), à la date de clôture. **Validé** : une validation au plus tard à la clôture.
+- **Tenu au début** : affecté de la version publiée en vigueur, membre actif de rôle AGENT, sans désistement accepté entre la publication et le début. C'est la règle des rappels de garde.
+- **Qualifications de référence** : celles photographiées à la publication de la version en vigueur, comparées par identifiant. Une qualification acquise ou perdue ensuite n'y change rien. Si cette version a été publiée avant le début de l'historique, la couverture des minima est **indéterminée**, jamais présumée.
+- **Couverture complète** : besoin défini, effectif tenu au moins égal au requis, chaque minimum atteint par les agents tenus. Un créneau sans besoin n'est jamais compté couvert : il est compté à part.
+- **Les changements de besoin** entre publication et début se lisent par différence entre les deux photographies. Le détail de chaque modification reste au journal d'audit existant.
+- **Ce qui déclenche d'abord les photographies dues** : changement de rattachement (rôle, activité, section, suppression), participation supprimée, besoin ou minimum créé, modifié ou supprimé, désistement demandé ou tranché, nouvelle publication, affectation supprimée.
+
+#### Suppression, purge et conservation
+
+- **Retrait d'un compte** (`retirer-un-compte.sql`) : les photographies dues sont prises d'abord, puis les détails de la personne sont effacés. Les faits restent tels quels.
+- **Purge** (`purger-les-donnees-anciennes.sql`) : les photographies dues sont prises d'abord. Les détails partent avec les campagnes, au bout de 24 mois (proposition). Les faits suivent leur propre durée, `duree_faits`, alignée par défaut sur celle des campagnes : rien n'est gardé plus longtemps qu'aujourd'hui tant que le DPO n'a pas décidé de l'allonger pour le bilan.
+- **Bascule du centre d'essai** : ses faits et détails partent avec lui.
+- **Export d'un compte** : ses détails, c'est-à-dire les publications où il était affecté et les clôtures où il était participant.
+- **L'anonymat n'est pas promis.** Un fait sans identifiant reste ré-identifiable dans un petit centre, par exemple quand un seul agent détient une qualification rare un jour donné. Garder les faits plus longtemps que les détails, ou les montrer hors de l'encadrement, suppose une méthode d'agrégation ou de masquage validée par le DPO.
 
 ## 5. Lot A — Traitements planifiés et rappels
 
@@ -143,7 +183,14 @@ Les critères d'acceptation ci-dessous sont vérifiés par les tests PostgreSQL 
 
 Les horaires d'une campagne ne changent plus après sa création : le texte d'un rappel en attente ne peut donc devenir faux que par l'affectation, ce que le recontrôle couvre.
 
-**Reste (A2) :** photographies des publications unitaires et des clôtures, et adaptation de la suppression et de la purge. Ces migrations attendent la validation du contrat de photographies (préalable 0, point 5). La validation de bout en bout du lot attend la recette isolée (préalable 0, points 1 à 4).
+**Développé (A2), le même jour :** les photographies du contrat ci-dessus — publication, clôture, début de créneau — et l'adaptation du retrait d'un compte, de la purge, de la bascule du centre d'essai, de l'export et de l'inventaire.
+
+- Migration `20261020150000_photographies.sql`, **non appliquée**, à appliquer après `20261020090000`.
+- Vérifié par onze tests PostgreSQL et la suite des scripts de provisionnement.
+- Trois contre-épreuves échouent comme attendu : sans les déclencheurs « avant modification », avec les qualifications du jour au lieu de celles de la publication, et sans la prise des photographies dues dans le retrait d'un compte.
+- Pas encore appliquée sur la pile Supabase locale.
+
+**Reste pour le lot A :** la vérification hébergée, en production, sur des comptes d'essai (préalable 0) ; la durée des faits et la méthode contre la ré-identification, à faire décider par le DPO.
 
 ### Résultat attendu
 

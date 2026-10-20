@@ -6174,7 +6174,12 @@ describe("Traitements planifiés — rappels de garde", () => {
       "select ok, summary from private.scheduled_runs where task='generation' order by id desc limit 1",
     );
     expect(runs.rows[0].ok).toBe(true);
-    expect(Object.keys(runs.rows[0].summary).sort()).toEqual(["annulations", "rappels_de_garde", "relances"]);
+    expect(Object.keys(runs.rows[0].summary).sort()).toEqual([
+      "annulations",
+      "photographies",
+      "rappels_de_garde",
+      "relances",
+    ]);
   });
 
   // Les files se vident aussi après chaque commande : le désistement accepté
@@ -6535,6 +6540,434 @@ describe("Migration 20261020090000 — gardes d’application", () => {
     await applied.close();
     const early = await upTo(target - 1);
     await expect(early.exec(migration())).rejects.toThrow("20261016200000_semaine_type.sql");
+    await early.close();
+  }, 90000);
+});
+
+// Lot A, seconde partie (20 octobre) : le contrat de photographies de la
+// spécification. Chaque cas vérifie qu'un fait retient l'état de son instant —
+// publication, clôture, début de créneau — et que rien de ce qui suit ne le
+// réécrit : ni une qualification acquise, ni un départ, ni une promotion.
+describe("Photographies — publication, clôture et début de créneau", () => {
+  const org = "10000000-0000-0000-0000-0000000000e1";
+  const team = "20000000-0000-0000-0000-0000000000e1";
+  const bravo = "20000000-0000-0000-0000-0000000000e2";
+  const chef = "30000000-0000-0000-0000-0000000000e1";
+  const alice = "30000000-0000-0000-0000-0000000000e2";
+  const bob = "30000000-0000-0000-0000-0000000000e3";
+  const carl = "30000000-0000-0000-0000-0000000000e4";
+  const late = "30000000-0000-0000-0000-0000000000e5";
+  const campaign = "40000000-0000-0000-0000-0000000000e1";
+  const bravoCampaign = "40000000-0000-0000-0000-0000000000e2";
+  const schedule = "50000000-0000-0000-0000-0000000000e1";
+  const bravoSchedule = "50000000-0000-0000-0000-0000000000e2";
+  const day1 = "60000000-0000-0000-0000-0000000000e1";
+  const night1 = "60000000-0000-0000-0000-0000000000e2";
+  const day2 = "60000000-0000-0000-0000-0000000000e3";
+  const yesterday = "60000000-0000-0000-0000-0000000000e4";
+  const inc = "70000000-0000-0000-0000-0000000000e1";
+  const cod = "70000000-0000-0000-0000-0000000000e2";
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+  const rows = async <T>(sql: string, params: unknown[] = []) => {
+    await live.exec("reset role");
+    return (await live.query<T>(sql, params)).rows;
+  };
+  const generate = async (at: string) =>
+    (
+      await rows<{ r: { photographies: { clotures: number; debuts: number } } }>(
+        "select private.generate_due_notifications($1) as r",
+        [at],
+      )
+    )[0].r;
+
+  beforeAll(async () => {
+    live = await freshDatabase();
+    // Deux colonnes que Supabase fournit et que l'export lit.
+    await live.exec(
+      "alter table auth.users add column created_at timestamptz default now(), add column last_sign_in_at timestamptz",
+    );
+    await live.exec(`
+      insert into auth.users(id,email) values ('${chef}','chef@photos.test'), ('${alice}','alice@photos.test'),
+        ('${bob}','bob@photos.test'), ('${carl}','carl@photos.test'), ('${late}','late@photos.test');
+      insert into public.profiles(user_id,display_name) values ('${chef}','Chef'), ('${alice}','Alice'), ('${bob}','Bob'),
+        ('${carl}','Carl'), ('${late}','Tardif');
+      insert into public.organizations(id,name) values ('${org}','Centre photos');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha'), ('${bravo}','${org}','Bravo');
+      insert into public.memberships values ('${org}','${chef}','${team}','GESTIONNAIRE',true),
+        ('${org}','${alice}','${team}','AGENT',true), ('${org}','${bob}','${team}','AGENT',true),
+        ('${org}','${carl}','${team}','AGENT',true);
+      insert into public.qualifications(id,organization_id,name) values ('${inc}','${org}','INC1'), ('${cod}','${org}','COD2');
+      insert into public.user_qualifications(organization_id,user_id,qualification_id) values
+        ('${org}','${alice}','${inc}'), ('${org}','${bob}','${inc}'), ('${org}','${bob}','${cod}');
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        values ('${campaign}','${org}','${team}','Novembre','2026-11-01','2026-11-30',now()-interval '10 days',now()+interval '1 day');
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values
+        ('${org}','${campaign}','${alice}'), ('${org}','${campaign}','${bob}'), ('${org}','${campaign}','${carl}');
+      insert into public.schedules(id,organization_id,campaign_id,team_id) values ('${schedule}','${org}','${campaign}','${team}');
+      insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code) values
+        ('${day1}','${org}','${schedule}','2026-11-01','DAY'), ('${night1}','${org}','${schedule}','2026-11-01','NIGHT'),
+        ('${day2}','${org}','${schedule}','2026-11-02','DAY');
+      insert into public.staffing_requirements(organization_id,campaign_id,date,shift_code,headcount) values
+        ('${org}','${campaign}','2026-11-01','DAY',2), ('${org}','${campaign}','2026-11-01','NIGHT',1);
+      insert into public.staffing_requirement_qualifications(organization_id,requirement_id,qualification_id,minimum)
+        select '${org}', r.id, q.id, 1 from public.staffing_requirements r, public.qualifications q
+         where r.campaign_id='${campaign}' and r.shift_code='DAY';
+      set session_replication_role = replica;
+      insert into public.availability_entries(campaign_id,user_id,date,availability_type) values
+        ('${campaign}','${alice}','2026-11-01','FULL_24H'), ('${campaign}','${bob}','2026-11-01','FULL_24H');
+      update public.campaign_participants set validated_at = now() - interval '1 hour' where user_id in ('${alice}','${bob}');
+      set session_replication_role = origin;
+      -- L'historique a commencé avant ces campagnes.
+      update private.history_start set started_at = '2026-01-01';`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("fige à la publication le besoin, les minima et les qualifications de chaque affecté", async () => {
+    await be(chef);
+    for (const user of [alice, bob])
+      await live.query(
+        "insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,assigned_by) values ($1,$2,$3,$4)",
+        [org, day1, user, chef],
+      );
+    await live.query("select public.publish_shift($1)", [day1]);
+    expect(
+      await rows(
+        `select team_name, revision, headcount_required, assigned_count, minima, holders, starts_at, ends_at
+           from private.publication_facts where schedule_shift_id=$1`,
+        [day1],
+      ),
+    ).toEqual([
+      {
+        team_name: "Alpha",
+        revision: 1,
+        headcount_required: 2,
+        assigned_count: 2,
+        minima: [
+          { qualification_id: cod, qualification: "COD2", minimum: 1, holders: 1 },
+          { qualification_id: inc, qualification: "INC1", minimum: 1, holders: 2 },
+        ],
+        holders: [
+          { qualification_id: cod, qualification: "COD2", count: 1 },
+          { qualification_id: inc, qualification: "INC1", count: 2 },
+        ],
+        // 8 h et 20 h à Paris, à l'heure d'hiver.
+        starts_at: new Date("2026-11-01T07:00:00Z"),
+        ends_at: new Date("2026-11-01T19:00:00Z"),
+      },
+    ]);
+    expect(
+      await rows("select user_id, role, qualifications from private.publication_assignees order by user_id"),
+    ).toEqual([
+      { user_id: alice, role: "AGENT", qualifications: ["INC1"] },
+      { user_id: bob, role: "AGENT", qualifications: ["COD2", "INC1"] },
+    ]);
+  });
+
+  it("ajoute une version à chaque republication, et ne réécrit ni l’une ni l’autre", async () => {
+    await be(chef);
+    await live.query("select public.publish_shift($1)", [day1]);
+    // Bob perd sa COD2 après la publication : les photographies n'en savent rien.
+    await live.query("delete from public.user_qualifications where user_id=$1 and qualification_id=$2", [bob, cod]);
+    const facts = await rows<{ revision: number; holders: { qualification: string; count: number }[] }>(
+      "select revision, holders from private.publication_facts where schedule_shift_id=$1 order by revision",
+      [day1],
+    );
+    expect(facts.map(f => f.revision)).toEqual([1, 2]);
+    for (const fact of facts) expect(fact.holders.find(h => h.qualification === "COD2")?.count).toBe(1);
+    expect(
+      await rows(
+        "select count(*)::int as n from private.publication_assignees where user_id=$1 and 'COD2' = any(qualifications)",
+        [bob],
+      ),
+    ).toEqual([{ n: 2 }]);
+  });
+
+  it("fige la clôture à sa date, avant la modification qui précède le passage planifié", async () => {
+    await live.exec("reset role");
+    await live.query("update public.availability_campaigns set closes_at = now() - interval '1 minute' where id=$1", [
+      campaign,
+    ]);
+    // Carl est désactivé après la clôture, avant que le passage ne soit venu :
+    // la photographie se prend d'abord, et le compte attendu.
+    await live.query("update public.memberships set active=false where user_id=$1", [carl]);
+    const closure = () =>
+      rows("select source, participants, expected, validated from private.closure_facts where campaign_id=$1", [
+        campaign,
+      ]);
+    expect(await closure()).toEqual([{ source: "modification", participants: 3, expected: 3, validated: 2 }]);
+    expect(
+      await rows(
+        "select active, expected, validated_at is not null as validated from private.closure_participants where user_id=$1",
+        [carl],
+      ),
+    ).toEqual([{ active: true, expected: true, validated: false }]);
+    // Le passage, ensuite, ne la reprend pas ; une promotion et une arrivée
+    // après la clôture n'y changent rien.
+    expect((await generate(new Date().toISOString())).photographies.clotures).toBe(0);
+    await live.exec(`
+      set session_replication_role = replica;
+      update public.memberships set role='GESTIONNAIRE' where user_id='${alice}';
+      set session_replication_role = origin;
+      insert into public.memberships values ('${org}','${late}','${team}','AGENT',true);`);
+    expect((await generate(new Date().toISOString())).photographies.clotures).toBe(0);
+    expect(await closure()).toEqual([{ source: "modification", participants: 3, expected: 3, validated: 2 }]);
+    expect(await rows("select count(*)::int as n from private.closure_participants where user_id=$1", [late])).toEqual([
+      { n: 0 },
+    ]);
+  });
+
+  it("fige le début de chaque créneau : besoin, effectif tenu, qualifications de la publication", async () => {
+    // Bob se désiste du Jour publié, et l'encadrement accepte ; Alice obtient la
+    // COD2 après la publication — elle ne compterait pas pour ce créneau.
+    await be(bob);
+    await live.query(
+      "insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id,reason) values ($1,$2,$3,'Empêché')",
+      [org, day1, bob],
+    );
+    await be(chef);
+    await live.query("update public.shift_withdrawals set state='ACCEPTED' where user_id=$1", [bob]);
+    await live.exec("reset role");
+    await live.query(
+      "insert into public.user_qualifications(organization_id,user_id,qualification_id) values ($1,$2,$3)",
+      [org, alice, cod],
+    );
+    // L'historique commence à midi le 1er : le Jour de 8 h lui est antérieur.
+    await live.query("update private.history_start set started_at = '2026-11-01 12:00:00+01'");
+    expect((await generate("2026-11-02 08:30:00+01")).photographies.debuts).toBe(2);
+    await live.query("update private.history_start set started_at = '2026-01-01'");
+    expect((await generate("2026-11-02 08:30:00+01")).photographies.debuts).toBe(1);
+    const fact = async (shift: string) =>
+      (
+        await rows(
+          `select revision, headcount_required, published_count, effective_count, withdrawn_count, minima,
+                  minima_covered, covered from private.shift_start_facts where schedule_shift_id=$1`,
+          [shift],
+        )
+      )[0];
+    // Alice est passée gestionnaire au cas précédent : elle ne tient plus de
+    // garde. Bob s'est désisté. Plus personne n'est tenu sur ce Jour.
+    expect(await fact(day1)).toEqual({
+      revision: 2,
+      headcount_required: 2,
+      published_count: 2,
+      effective_count: 0,
+      withdrawn_count: 1,
+      minima: [
+        { qualification_id: cod, qualification: "COD2", minimum: 1, holders: 0 },
+        { qualification_id: inc, qualification: "INC1", minimum: 1, holders: 0 },
+      ],
+      minima_covered: false,
+      covered: false,
+    });
+    // Jamais publiée : besoin défini, personne.
+    expect(await fact(night1)).toMatchObject({
+      revision: 0,
+      headcount_required: 1,
+      effective_count: 0,
+      covered: false,
+    });
+    // Sans besoin : compté à part, jamais couvert.
+    expect(await fact(day2)).toMatchObject({ revision: 0, headcount_required: null, covered: false });
+  });
+
+  it("compte les qualifications de la publication, pas celles d’aujourd’hui", async () => {
+    // Le Jour du 2 novembre, publié avec Carl, revenu, sans COD2 ; il l'obtient
+    // ensuite. Au début du créneau, la COD2 exigée n'est pas couverte.
+    await live.exec(`
+      set session_replication_role = replica;
+      update public.memberships set active=true where user_id='${carl}';
+      insert into public.staffing_requirements(organization_id,campaign_id,date,shift_code,headcount)
+        values ('${org}','${campaign}','2026-11-03','DAY',1);
+      insert into public.staffing_requirement_qualifications(organization_id,requirement_id,qualification_id,minimum)
+        select '${org}', id, '${cod}', 1 from public.staffing_requirements where date='2026-11-03';
+      insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code)
+        values ('60000000-0000-0000-0000-0000000000e5','${org}','${schedule}','2026-11-03','DAY');
+      insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,revision,status,assigned_by)
+        values ('${org}','60000000-0000-0000-0000-0000000000e5','${carl}',1,'CONFIRMED','${chef}');
+      set session_replication_role = origin;
+      update public.schedule_shifts set published_revision=1, published_at=now()
+       where id='60000000-0000-0000-0000-0000000000e5';
+      insert into public.user_qualifications(organization_id,user_id,qualification_id) values ('${org}','${carl}','${cod}');`);
+    await generate("2026-11-03 08:30:00+01");
+    expect(
+      await rows(
+        "select effective_count, minima_covered, covered from private.shift_start_facts where schedule_shift_id=$1",
+        ["60000000-0000-0000-0000-0000000000e5"],
+      ),
+    ).toEqual([{ effective_count: 1, minima_covered: false, covered: false }]);
+  });
+
+  it("retrouve l’état de l’heure de début quand le passage planifié est en retard", async () => {
+    // Une garde d'hier, publiée, que le passage planifié n'a pas encore prise.
+    await live.exec("reset role");
+    await live.query(
+      `insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+       select $1, $2, $3, 'Bravo', date_trunc('month', y)::date, (date_trunc('month', y) + interval '1 month - 1 day')::date,
+              now() - interval '40 days', now() + interval '5 days'
+         from (select (now() at time zone 'Europe/Paris')::date - 1 as y) t`,
+      [bravoCampaign, org, bravo],
+    );
+    await live.exec(`
+      set session_replication_role = replica;
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values ('${org}','${bravoCampaign}','${bob}');
+      insert into public.schedules(id,organization_id,campaign_id,team_id) values ('${bravoSchedule}','${org}','${bravoCampaign}','${bravo}');
+      insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code,published_revision,published_at)
+        values ('${yesterday}','${org}','${bravoSchedule}',(now() at time zone 'Europe/Paris')::date - 1,'DAY',1,now() - interval '3 days');
+      insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,revision,status,assigned_by)
+        values ('${org}','${yesterday}','${bob}',1,'CONFIRMED','${chef}');
+      insert into public.staffing_requirements(organization_id,campaign_id,date,shift_code,headcount)
+        values ('${org}','${bravoCampaign}',(now() at time zone 'Europe/Paris')::date - 1,'DAY',1);
+      set session_replication_role = origin;`);
+    // Le besoin est relevé après coup : la photographie se prend d'abord.
+    await live.query("update public.staffing_requirements set headcount=2 where campaign_id=$1", [bravoCampaign]);
+    expect(
+      await rows(
+        "select source, headcount_required, effective_count, covered from private.shift_start_facts where schedule_shift_id=$1",
+        [yesterday],
+      ),
+    ).toEqual([{ source: "modification", headcount_required: 1, effective_count: 1, covered: true }]);
+    expect(
+      await rows("select headcount from public.staffing_requirements where campaign_id=$1", [bravoCampaign]),
+    ).toEqual([{ headcount: 2 }]);
+  });
+
+  it("retire les détails d’un compte et garde les faits, une fois les photographies dues prises", async () => {
+    // La campagne Bravo vient de fermer ; aucun passage ne l'a encore prise.
+    await live.exec("reset role");
+    await live.query("update public.availability_campaigns set closes_at = now() - interval '1 minute' where id=$1", [
+      bravoCampaign,
+    ]);
+    const facts = () =>
+      rows("select schedule_shift_id, revision, assigned_count, holders from private.publication_facts order by id");
+    const before = await facts();
+    await live.exec(
+      provisioningScript("retirer-un-compte.sql").replace("'agent.qui.part@exemple.fr'", "'bob@photos.test'"),
+    );
+    // Bravo a été photographiée avant le retrait : Bob y était attendu.
+    expect(
+      await rows("select source, participants, expected from private.closure_facts where campaign_id=$1", [
+        bravoCampaign,
+      ]),
+    ).toEqual([{ source: "script", participants: 1, expected: 1 }]);
+    expect(
+      await rows("select participants, expected, validated from private.closure_facts where campaign_id=$1", [
+        campaign,
+      ]),
+    ).toEqual([{ participants: 3, expected: 3, validated: 2 }]);
+    expect(await facts()).toEqual(before);
+    for (const table of ["publication_assignees", "closure_participants"])
+      expect(await rows(`select count(*)::int as n from private.${table} where user_id=$1`, [bob]), table).toEqual([
+        { n: 0 },
+      ]);
+  });
+
+  it("rend dans l’export d’un compte ce que les photographies ont retenu de lui", async () => {
+    const sql = provisioningScript("exporter-les-donnees-d-un-compte.sql").replace(
+      "'agent@exemple.fr'",
+      "'alice@photos.test'",
+    );
+    const data = JSON.parse((await rows<{ donnees: string }>(sql))[0].donnees);
+    expect(data.photographies_publication.map((p: { version: number }) => p.version)).toEqual([1, 2]);
+    expect(data.photographies_publication[0]).toMatchObject({ role: "AGENT", qualifications: ["INC1"] });
+    expect(data.photographies_cloture).toEqual([
+      expect.objectContaining({ campagne: "Novembre", attendu: true, role: "AGENT" }),
+    ]);
+    // L'inventaire du centre compte aussi les photographies.
+    const inventory = await rows<{ objet: string }>(provisioningScript("inventaire-du-centre.sql").split(";")[0]);
+    expect(inventory.map(r => r.objet)).toContain("photographies de publication");
+  });
+
+  it("purge détails et faits à leur échéance, chacun la sienne", async () => {
+    const old = "60000000-0000-0000-0000-0000000000ef";
+    const oldCampaign = "40000000-0000-0000-0000-0000000000ef";
+    const seed = () =>
+      live.exec(`
+        reset role;
+        insert into private.publication_facts(organization_id,team_id,team_name,campaign_id,schedule_shift_id,date,shift_code,
+          starts_at,ends_at,revision,published_at,headcount_required,assigned_count)
+          values ('${org}','${team}','Alpha','${oldCampaign}','${old}','2023-01-15','DAY','2023-01-15 07:00+00',
+                  '2023-01-15 19:00+00',1,'2023-01-10',1,1);
+        insert into private.publication_assignees(publication_id,organization_id,user_id,role,team_id)
+          select id,'${org}','${alice}','AGENT','${team}' from private.publication_facts where schedule_shift_id='${old}';
+        insert into private.closure_facts(campaign_id,organization_id,team_id,team_name,campaign_name,starts_on,ends_on,
+          closes_at,taken_at,source,rule,participants,expected,validated)
+          values ('${oldCampaign}','${org}','${team}','Alpha','Janvier 2023','2023-01-01','2023-01-31','2022-12-31',
+                  '2022-12-31','passage','règle',1,1,1);
+        insert into private.closure_participants(campaign_id,organization_id,user_id,role,active,team_id,expected)
+          values ('${oldCampaign}','${org}','${alice}','AGENT',true,'${team}',true);`);
+    const count = async (table: string, where: string) =>
+      (await rows<{ n: number }>(`select count(*)::int as n from private.${table} where ${where}`))[0].n;
+    // Par défaut, les faits suivent la durée des campagnes.
+    await seed();
+    await live.exec(provisioningScript("purger-les-donnees-anciennes.sql"));
+    expect(await count("publication_facts", `schedule_shift_id='${old}'`)).toBe(0);
+    expect(await count("closure_facts", `campaign_id='${oldCampaign}'`)).toBe(0);
+    expect(await count("publication_facts", `schedule_shift_id='${day1}'`)).toBe(2);
+    // Une durée des faits allongée, le jour où le DPO l'aura décidé : les
+    // détails partent, les faits restent.
+    await seed();
+    await live.exec(
+      provisioningScript("purger-les-donnees-anciennes.sql").replace(
+        "duree_faits constant interval := '24 months'",
+        "duree_faits constant interval := '60 months'",
+      ),
+    );
+    expect(await count("publication_facts", `schedule_shift_id='${old}'`)).toBe(1);
+    expect(await count("closure_facts", `campaign_id='${oldCampaign}'`)).toBe(1);
+    expect(
+      await count(
+        "publication_assignees",
+        `publication_id in (select id from private.publication_facts where schedule_shift_id='${old}')`,
+      ),
+    ).toBe(0);
+    expect(await count("closure_participants", `campaign_id='${oldCampaign}'`)).toBe(0);
+    // Les détails récents restent.
+    expect(await count("closure_participants", `campaign_id='${campaign}'`)).toBe(2);
+  });
+
+  it("ne s’ouvre à aucune session", async () => {
+    await be(chef);
+    for (const table of [
+      "publication_facts",
+      "publication_assignees",
+      "closure_facts",
+      "closure_participants",
+      "shift_start_facts",
+    ])
+      await expect(live.query(`select * from private.${table}`), table).rejects.toThrow();
+    await live.exec("reset role");
+    await be(chef);
+    await expect(live.query("select private.take_due_snapshots(now())")).rejects.toThrow();
+    await live.exec("reset role");
+  });
+});
+
+describe("Migration 20261020150000 — gardes d’application", () => {
+  const target = MIGRATIONS.indexOf("20261020150000_photographies.sql");
+  const migration = () =>
+    readFileSync(new URL(`../supabase/migrations/${MIGRATIONS[target]}`, import.meta.url), "utf8");
+  const upTo = async (count: number) => {
+    const db = new PGlite();
+    await db.exec(baseAuthSchema);
+    for (const m of MIGRATIONS.slice(0, count))
+      await db.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    return db;
+  };
+
+  it("refuse un second passage et un passage avant sa dépendance", async () => {
+    expect(target).toBeGreaterThan(0);
+    const applied = await upTo(target + 1);
+    await expect(applied.exec(migration())).rejects.toThrow("déjà été appliquée");
+    await applied.close();
+    const early = await upTo(target - 1);
+    await expect(early.exec(migration())).rejects.toThrow("20261020090000_traitements_planifies.sql");
     await early.close();
   }, 90000);
 });

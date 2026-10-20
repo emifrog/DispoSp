@@ -215,6 +215,8 @@ Rien n'est perdu : la file garde le message et le renverra à la prochaine actio
 
 **À vérifier** — Essayez de publier un créneau volontairement déficitaire : le refus doit être explicite et dire ce qui manque.
 
+**À vérifier aussi, une fois la migration `20261020150000` appliquée** — Dans l'éditeur SQL, après la publication : `select revision, headcount_required, assigned_count from private.publication_facts order by id desc limit 1;` rend la version que vous venez de publier, avec son effectif requis et son nombre d'affectés. Rien ne s'affiche dans l'application : c'est le bilan du lot E qui lira ces photographies.
+
 ### 4.3 Ce que voit l'agent
 
 **Faire** — Côté agent, **Mon planning**.
@@ -261,7 +263,7 @@ Rien n'est perdu : la file garde le message et le renverra à la prochaine actio
 
 ### 5.3 Les rappels automatiques
 
-**Où** — Sur la recette isolée (préalable 0 des [évolutions opérationnelles](SPECIFICATIONS_EVOLUTIONS_OPERATIONNELLES.md)), avec des comptes et des adresses d'essai. **Pas sur le site en service** : une fois les tâches planifiées actives, les messages partent vers de vrais agents.
+**Où** — Sur le site en service (il n'y a pas de second projet : décision du 20 octobre, préalable 0 des [évolutions opérationnelles](SPECIFICATIONS_EVOLUTIONS_OPERATIONNELLES.md)). **Dans un centre d'essai, avec vos seuls comptes d'essai**, par exemple des alias de votre adresse. Les rappels ne partent que vers les centres qui les ont activés : n'activez pas le vrai centre avant d'avoir vu cette étape réussir, et prévenez ses agents avant de le faire.
 
 **Préparer** — La migration `20261020090000` appliquée, `SCHEDULED_TASKS_SECRET` déclaré sur l'hébergeur, puis `supabase/provisioning/activer-les-traitements-planifies.sql` exécuté avec l'adresse et le secret de cette recette. Voir le README, « Rappels automatiques et traitements planifiés ».
 

@@ -13,6 +13,10 @@
 -- auteur devient anonyme. C'est la traçabilité du §12 : elle survit au départ de
 -- la personne, sans conserver son identité.
 --
+-- Les photographies du lot A non plus : les faits — des nombres, sans
+-- identifiant — restent ; les détails de la personne partent, après que les
+-- photographies dues ont été prises.
+--
 -- Ce qu'il en retire, en revanche : les coordonnées que le journal avait
 -- recopiées. Chaque modification d'une fiche y inscrit l'avant et l'après —
 -- nom, téléphone, matricule —, chaque saisie son commentaire, chaque
@@ -82,6 +86,12 @@ begin
     end if;
   end if;
 
+  -- Les photographies dues d'abord (lot A) : une clôture ou un début de garde
+  -- passés, que le traitement planifié n'a pas encore pris, comptent encore
+  -- cette personne. Les faits restent ensuite tels quels ; seuls ses détails
+  -- partent, plus bas.
+  perform private.take_due_snapshots(now(), null, 'script');
+
   -- L'ordre suit les dépendances, du plus dépendant au plus porteur.
   delete from public.push_deliveries d using public.push_subscriptions s
     where d.subscription_id = s.id and s.user_id = cible;
@@ -121,6 +131,11 @@ begin
   -- Le journal des envois d'invitation garde l'adresse, invitation effacée ou non.
   delete from private.invitation_sends where email = lower(btrim(compte));
   update public.invitations set invited_by = releve where invited_by = cible;
+  -- Ce que les photographies savaient de la personne : les publications où elle
+  -- était affectée, les clôtures où elle était attendue. Les faits — des
+  -- nombres, sans identifiant — ne changent pas.
+  delete from private.publication_assignees where user_id = cible;
+  delete from private.closure_participants where user_id = cible;
   delete from public.memberships where user_id = cible;
   delete from public.profiles where user_id = cible;
 

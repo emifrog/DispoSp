@@ -160,6 +160,12 @@ begin
     delete from public.memberships where organization_id = essai_id;
     delete from public.shift_types where organization_id = essai_id;
     delete from public.teams where organization_id = essai_id;
+    -- Les photographies du lot A partent avec le centre d'essai : ce sont des
+    -- données d'essai. Après tout le reste, parce que les effacements ci-dessus
+    -- prennent d'abord les photographies dues ; leurs détails suivent en cascade.
+    delete from private.publication_facts where organization_id = essai_id;
+    delete from private.closure_facts where organization_id = essai_id;
+    delete from private.shift_start_facts where organization_id = essai_id;
     delete from public.organizations where id = essai_id;
 
     alter table public.availability_entries enable trigger availability_write;

@@ -27,7 +27,10 @@ union all select 'qualifications attribuées', null, count(*) from public.user_q
 union all select 'invitations', null, count(*) from public.invitations where organization_id = (select id from centre)
 union all select 'notifications', null, count(*) from public.notifications where organization_id = (select id from centre)
 union all select 'appareils abonnés', null, count(*) from public.push_subscriptions where organization_id = (select id from centre)
-union all select 'lignes de journal d''audit', null, count(*) from public.audit_logs where organization_id = (select id from centre);
+union all select 'lignes de journal d''audit', null, count(*) from public.audit_logs where organization_id = (select id from centre)
+union all select 'photographies de publication', null, count(*) from private.publication_facts where organization_id = (select id from centre)
+union all select 'photographies de clôture', null, count(*) from private.closure_facts where organization_id = (select id from centre)
+union all select 'photographies de début de garde', null, count(*) from private.shift_start_facts where organization_id = (select id from centre);
 
 -- Et qui est rattaché, pour décider qui suit dans le nouveau centre. Les comptes
 -- d'authentification, eux, ne sont jamais supprimés par ces scripts : un compte
