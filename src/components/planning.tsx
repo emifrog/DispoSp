@@ -23,6 +23,7 @@ import { Button } from "./ui/button";
 import { Modal } from "./ui/dialog";
 import {
   availableAgents,
+  blockerText,
   campaignAgents,
   coverage,
   dateLabel,
@@ -40,8 +41,37 @@ import {
   draftAgents,
   workload,
   type Agent,
+  type MonthPreview,
+  type MonthShift,
   type Shift,
 } from "@/lib/domain";
+
+/**
+ * L'aperçu de la publication du mois (lot B), lu à l'ouverture de la fenêtre.
+ * La base classe les créneaux ; l'écran le dit, et garde l'empreinte de ce
+ * qu'il a montré avec l'identifiant de la demande qu'il enverra.
+ */
+type MonthDialog =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; preview: MonthPreview; requestId: string };
+
+async function readMonthPreview(campaignId: string): Promise<MonthDialog> {
+  try {
+    const response = await fetch(`/api/planning/mois?campagne=${encodeURIComponent(campaignId)}`, {
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as { message?: string } | null;
+      return { status: "error", message: body?.message ?? "L’aperçu du mois n’a pas pu être lu. Réessayez." };
+    }
+    // Un identifiant par aperçu : un double clic ou une reprise réseau envoient
+    // la même demande, que la base ne publie qu'une fois.
+    return { status: "ready", preview: (await response.json()) as MonthPreview, requestId: crypto.randomUUID() };
+  } catch {
+    return { status: "error", message: "La connexion a été interrompue. Réessayez." };
+  }
+}
 
 export function Planning() {
   const { state, campaignId, campaign, run } = useApp();
@@ -56,6 +86,8 @@ export function Planning() {
   const [gradeFilter, setGradeFilter] = useState("");
   const [needsOpen, setNeedsOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [monthOpen, setMonthOpen] = useState(false);
+  const [month, setMonth] = useState<MonthDialog>({ status: "loading" });
   const date = days.includes(selectedDate) ? selectedDate : days[0];
   const key = shiftKey(campaignId, date, shift);
   // null until a requirement is recorded: the panel then says so instead of
@@ -94,6 +126,21 @@ export function Planning() {
   const published = state.publications[key];
   const changed = published && JSON.stringify([...published.agents].sort()) !== JSON.stringify([...assignedIds].sort());
   const upToDate = Boolean(published) && !changed;
+  async function loadMonth() {
+    setMonth({ status: "loading" });
+    setMonth(await readMonthPreview(campaignId));
+  }
+  function openMonth() {
+    setMonthOpen(true);
+    void loadMonth();
+  }
+  async function publishMonth(preview: MonthPreview, requestId: string) {
+    const done = await run({ type: "publishMonth", campaignId, fingerprint: preview.fingerprint, requestId });
+    // Refusée — aperçu périmé, réseau coupé —, la fenêtre relit le mois : ce qui
+    // a pu partir y apparaît inchangé, et une nouvelle demande part du neuf.
+    if (done) setMonthOpen(false);
+    else await loadMonth();
+  }
   function openNeeds() {
     setTotal((need ?? suggestedRequirement).total);
     setQualifications({ ...(need ?? suggestedRequirement).qualifications });
@@ -203,6 +250,10 @@ export function Planning() {
           ]}
         />
         <span className="muted">{hours(campaign, shift)}</span>
+        <Button variant="secondary" className="month-publish" onClick={openMonth}>
+          <CalendarCheck2 size={16} />
+          Publier le mois
+        </Button>
       </div>
       {changed && (
         <div className="warning">
@@ -519,6 +570,101 @@ export function Planning() {
           Confirmer la publication
         </Button>
       </Modal>
+      <Modal
+        open={monthOpen}
+        onOpenChange={setMonthOpen}
+        title="Publier le mois"
+        description={`${campaign.name} · seuls les créneaux prêts sont publiés, en une fois.`}
+      >
+        {month.status === "loading" && <p className="muted">Lecture du mois…</p>}
+        {month.status === "error" && (
+          <>
+            <div className="warning">
+              <CircleAlert size={18} />
+              <span>{month.message}</span>
+            </div>
+            <Button variant="secondary" className="full-width" onClick={loadMonth}>
+              Réessayer
+            </Button>
+          </>
+        )}
+        {month.status === "ready" && (
+          <MonthPreviewBody
+            preview={month.preview}
+            onPick={picked => {
+              setDate(picked.date);
+              setShift(picked.shift);
+              setMonthOpen(false);
+            }}
+            onPublish={() => publishMonth(month.preview, month.requestId)}
+          />
+        )}
+      </Modal>
     </>
+  );
+}
+
+/**
+ * Ce que la fenêtre « Publier le mois » montre d'un aperçu : les comptes, chaque
+ * créneau bloqué avec ses raisons — il mène au créneau —, et le bouton qui dit
+ * exactement ce qu'il publiera.
+ */
+export function MonthPreviewBody({
+  preview,
+  onPick,
+  onPublish,
+}: {
+  preview: MonthPreview;
+  onPick: (shift: MonthShift) => void;
+  onPublish: () => Promise<void>;
+}) {
+  const { total, ready, blocked, unchanged } = preview.counts;
+  const stuck = preview.shifts.filter(s => s.state === "blocked");
+  return (
+    <div className="month-preview">
+      <p className="month-counts">
+        <strong>
+          {total} {plural(total, "créneau", "créneaux")}
+        </strong>{" "}
+        : {ready} {plural(ready, "prêt")} à publier, {blocked} {plural(blocked, "bloqué")}, {unchanged}{" "}
+        {plural(unchanged, "inchangé")}
+      </p>
+      {stuck.length > 0 && (
+        <>
+          <h3 className="month-title">
+            {plural(stuck.length, "Créneau bloqué", "Créneaux bloqués")} — ils gardent leur version publiée
+          </h3>
+          <ul className="month-blocked">
+            {stuck.map(s => (
+              <li key={s.id}>
+                <button type="button" onClick={() => onPick(s)}>
+                  <strong>
+                    {dateLabel(s.date, { weekday: "long", day: "numeric", month: "long" })} ·{" "}
+                    {s.shift === "DAY" ? "Jour" : "Nuit"}
+                  </strong>
+                  <span>{s.reasons.map(blockerText).join(" · ")}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {ready > 0 ? (
+        <p className="small muted">
+          Chaque agent dont les gardes changent reçoit un seul avis, avec ses ajouts et ses retraits.
+        </p>
+      ) : (
+        <p className="warning small">
+          Aucun créneau n’est prêt :{" "}
+          {blocked
+            ? "complétez les créneaux bloqués ci-dessus."
+            : "tout est déjà publié tel quel. Modifiez un brouillon pour republier."}
+        </p>
+      )}
+      <Button className="full-width" disabled={ready === 0} onClick={onPublish}>
+        <Send size={17} />
+        {ready > 0 ? `Publier ${plural(ready, "le créneau prêt", `les ${ready} créneaux prêts`)}` : "Rien à publier"}
+      </Button>
+    </div>
   );
 }

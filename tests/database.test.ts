@@ -6971,3 +6971,351 @@ describe("Migration 20261020150000 — gardes d’application", () => {
     await early.close();
   }, 90000);
 });
+
+// Lot B (20 octobre) : publier le mois. Un aperçu qui classe chaque créneau,
+// une publication des seuls créneaux prêts en une transaction, refusée sur un
+// aperçu périmé et jamais rejouée, et un seul avis par agent concerné.
+describe("Publication du mois", () => {
+  const org = "10000000-0000-0000-0000-0000000000f1";
+  const other = "10000000-0000-0000-0000-0000000000f2";
+  const team = "20000000-0000-0000-0000-0000000000f1";
+  const otherTeam = "20000000-0000-0000-0000-0000000000f2";
+  const chef = "30000000-0000-0000-0000-0000000000f0";
+  const a1 = "30000000-0000-0000-0000-0000000000f1";
+  const a2 = "30000000-0000-0000-0000-0000000000f2";
+  const a3 = "30000000-0000-0000-0000-0000000000f3";
+  const a4 = "30000000-0000-0000-0000-0000000000f4";
+  const outsider = "30000000-0000-0000-0000-0000000000f9";
+  const campaign = "40000000-0000-0000-0000-0000000000f1";
+  const schedule = "50000000-0000-0000-0000-0000000000f1";
+  const inc = "70000000-0000-0000-0000-0000000000f1";
+  // Huit créneaux, du 1er au 4 novembre 2026.
+  const slot = (n: number) => `60000000-0000-0000-0000-0000000000f${n}`;
+  const [day1, night1, day2, night2, day3, night3, day4, night4] = [1, 2, 3, 4, 5, 6, 7, 8].map(slot);
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+  type Preview = {
+    fingerprint: string;
+    counts: { total: number; ready: number; blocked: number; unchanged: number };
+    shifts: { id: string; date: string; shift: string; state: string; revision: number; reasons: { code: string }[] }[];
+  };
+  const preview = async (as = chef) => {
+    await be(as);
+    return (await live.query<{ p: Preview }>("select public.month_publication_preview($1) as p", [campaign])).rows[0].p;
+  };
+  const publish = async (fingerprint: string, request: string, as = chef) => {
+    await be(as);
+    return (
+      await live.query<{ r: { published: number; notices: number; replayed?: boolean } }>(
+        "select public.publish_month($1, $2, $3) as r",
+        [campaign, fingerprint, request],
+      )
+    ).rows[0].r;
+  };
+  const revisions = async () => {
+    await live.exec("reset role");
+    return Object.fromEntries(
+      (
+        await live.query<{ id: string; published_revision: number }>(
+          "select id, published_revision from public.schedule_shifts where schedule_id=$1",
+          [schedule],
+        )
+      ).rows.map(r => [r.id, r.published_revision]),
+    );
+  };
+  const notices = async () => {
+    await live.exec("reset role");
+    return (
+      await live.query<{ user_id: string; subject: string; body: string; event_key: string | null }>(
+        "select user_id, subject, body, event_key from public.notifications where kind='SCHEDULE_PUBLISHED' order by created_at, user_id",
+      )
+    ).rows;
+  };
+  const draft = async (shift: string, user: string) => {
+    await be(chef);
+    await live.query(
+      "insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,assigned_by) values ($1,$2,$3,$4)",
+      [org, shift, user, chef],
+    );
+  };
+
+  beforeAll(async () => {
+    live = await freshDatabase();
+    const agents = [a1, a2, a3, a4];
+    await live.exec(`
+      insert into auth.users(id) values ('${chef}'), ('${a1}'), ('${a2}'), ('${a3}'), ('${a4}'), ('${outsider}');
+      insert into public.profiles(user_id,display_name) values ('${chef}','Chef'), ('${a1}','Agent Un'),
+        ('${a2}','Agent Deux'), ('${a3}','Agent Trois'), ('${a4}','Agent Quatre'), ('${outsider}','Ailleurs');
+      insert into public.organizations(id,name) values ('${org}','Centre du mois'), ('${other}','Autre centre');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha'), ('${otherTeam}','${other}','Alpha');
+      insert into public.memberships values ('${org}','${chef}','${team}','GESTIONNAIRE',true),
+        ${agents.map(a => `('${org}','${a}','${team}','AGENT',true)`).join(", ")},
+        ('${other}','${outsider}','${otherTeam}','GESTIONNAIRE',true);
+      insert into public.qualifications(id,organization_id,name) values ('${inc}','${org}','INC1');
+      insert into public.user_qualifications(organization_id,user_id,qualification_id) values
+        ('${org}','${a1}','${inc}'), ('${org}','${a2}','${inc}');
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        values ('${campaign}','${org}','${team}','Novembre','2026-11-01','2026-11-30',now()-interval '10 days',now()+interval '1 day');
+      insert into public.campaign_participants(organization_id,campaign_id,user_id) values
+        ${agents.map(a => `('${org}','${campaign}','${a}')`).join(", ")};
+      insert into public.schedules(id,organization_id,campaign_id,team_id) values ('${schedule}','${org}','${campaign}','${team}');
+      insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code) values
+        ('${day1}','${org}','${schedule}','2026-11-01','DAY'), ('${night1}','${org}','${schedule}','2026-11-01','NIGHT'),
+        ('${day2}','${org}','${schedule}','2026-11-02','DAY'), ('${night2}','${org}','${schedule}','2026-11-02','NIGHT'),
+        ('${day3}','${org}','${schedule}','2026-11-03','DAY'), ('${night3}','${org}','${schedule}','2026-11-03','NIGHT'),
+        ('${day4}','${org}','${schedule}','2026-11-04','DAY'), ('${night4}','${org}','${schedule}','2026-11-04','NIGHT');
+      -- Pas de besoin le 2 au Jour.
+      insert into public.staffing_requirements(organization_id,campaign_id,date,shift_code,headcount) values
+        ('${org}','${campaign}','2026-11-01','DAY',2), ('${org}','${campaign}','2026-11-01','NIGHT',2),
+        ('${org}','${campaign}','2026-11-02','NIGHT',1), ('${org}','${campaign}','2026-11-03','DAY',1),
+        ('${org}','${campaign}','2026-11-03','NIGHT',2), ('${org}','${campaign}','2026-11-04','DAY',1),
+        ('${org}','${campaign}','2026-11-04','NIGHT',1);
+      set session_replication_role = replica;
+      insert into public.availability_entries(campaign_id,user_id,date,availability_type)
+        select '${campaign}', u, d::date, 'FULL_24H'
+          from unnest(array['${agents.join("','")}']::uuid[]) u, generate_series('2026-11-01'::date, '2026-11-04', '1 day') d;
+      update public.campaign_participants set validated_at = now() - interval '1 hour';
+      -- Déjà publiés en version 1 : le 2 à la Nuit (Quatre), le 3 au Jour
+      -- (Trois), le 3 à la Nuit (Un et Quatre).
+      insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,revision,status,assigned_by) values
+        ('${org}','${night2}','${a4}',1,'CONFIRMED','${chef}'), ('${org}','${day3}','${a3}',1,'CONFIRMED','${chef}'),
+        ('${org}','${night3}','${a1}',1,'CONFIRMED','${chef}'), ('${org}','${night3}','${a4}',1,'CONFIRMED','${chef}');
+      update public.schedule_shifts set published_revision=1, published_at=now()-interval '2 days'
+       where id in ('${night2}','${day3}','${night3}');
+      set session_replication_role = origin;`);
+    // Les brouillons : prêt, incomplet, vide, identique, modifié, incomplet, prêts.
+    for (const [shift, users] of [
+      [day1, [a1, a2]],
+      [night1, [a3]],
+      [night2, [a4]],
+      [day3, [a2]],
+      [night3, [a1]],
+      [day4, [a2]],
+      [night4, [a2]],
+    ] as const)
+      for (const user of users) await draft(shift, user);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("classe chaque créneau : prêt, bloqué avec ses raisons, ou inchangé", async () => {
+    const p = await preview();
+    expect(p.counts).toEqual({ total: 8, ready: 4, blocked: 3, unchanged: 1 });
+    const state = Object.fromEntries(p.shifts.map(s => [s.id, s.state]));
+    expect(state).toEqual({
+      [day1]: "ready",
+      [night1]: "blocked",
+      [day2]: "blocked",
+      [night2]: "unchanged",
+      [day3]: "ready",
+      [night3]: "blocked",
+      [day4]: "ready",
+      [night4]: "ready",
+    });
+    const reasons = Object.fromEntries(p.shifts.map(s => [s.id, s.reasons]));
+    expect(reasons[night1]).toEqual([{ code: "headcount", assigned: 1, required: 2 }]);
+    expect(reasons[day2]).toEqual([{ code: "requirement" }]);
+    expect(reasons[night3]).toEqual([{ code: "headcount", assigned: 1, required: 2 }]);
+    // L'ordre du calendrier, et rien des brouillons.
+    expect(p.shifts.map(s => `${s.date} ${s.shift}`)).toEqual([
+      "2026-11-01 DAY",
+      "2026-11-01 NIGHT",
+      "2026-11-02 DAY",
+      "2026-11-02 NIGHT",
+      "2026-11-03 DAY",
+      "2026-11-03 NIGHT",
+      "2026-11-04 DAY",
+      "2026-11-04 NIGHT",
+    ]);
+    expect(JSON.stringify(p)).not.toContain(a1);
+  });
+
+  it("publie les seuls créneaux prêts, en une fois, et garde la version publiée des autres", async () => {
+    const p = await preview();
+    expect(await publish(p.fingerprint, "90000000-0000-0000-0000-0000000000f1")).toEqual({ published: 4, notices: 3 });
+    expect(await revisions()).toEqual({
+      [day1]: 1,
+      [night1]: 0,
+      [day2]: 0,
+      [night2]: 1,
+      [day3]: 2,
+      [night3]: 1,
+      [day4]: 1,
+      [night4]: 1,
+    });
+    // Le 3 à la Nuit reste publié tel qu'il l'était : Un et Quatre.
+    await live.exec("reset role");
+    expect(
+      (
+        await live.query<{ user_id: string }>(
+          "select user_id from public.schedule_assignments where schedule_shift_id=$1 and revision=1 order by user_id",
+          [night3],
+        )
+      ).rows.map(r => r.user_id),
+    ).toEqual([a1, a4]);
+    expect(
+      (
+        await live.query<{ action: string; new_value: Record<string, unknown> }>(
+          "select action, new_value from public.audit_logs where entity='availability_campaign' and action='PUBLISH_MONTH'",
+        )
+      ).rows,
+    ).toEqual([{ action: "PUBLISH_MONTH", new_value: { name: "Novembre", published: 4, notices: 3 } }]);
+  });
+
+  it("prévient une fois chaque agent dont les gardes changent, avec dates et horaires, et lui seul", async () => {
+    const sent = await notices();
+    // Trois avis : Un et Deux gagnent des gardes, Trois perd la sienne. Pas
+    // d'avis par créneau, ni pour Quatre, dont rien n'a changé.
+    expect(sent.map(n => n.user_id).sort()).toEqual([a1, a2, a3]);
+    const of = (user: string) => sent.find(n => n.user_id === user)!;
+    expect(of(a2)).toMatchObject({
+      subject: "Planning de novembre 2026 publié",
+      body:
+        "Gardes ajoutées :\n" +
+        "– dimanche 1 novembre, de 8 h à 20 h\n" +
+        "– mardi 3 novembre, de 8 h à 20 h\n" +
+        "– mercredi 4 novembre, de 8 h à 8 h le lendemain (24 h)",
+    });
+    expect(of(a1).body).toBe("Gardes ajoutées :\n– dimanche 1 novembre, de 8 h à 20 h");
+    // Un retrait total reçoit son avis.
+    expect(of(a3)).toMatchObject({
+      subject: "Planning de novembre 2026 modifié",
+      body: "Gardes retirées :\n– mardi 3 novembre, de 8 h à 20 h",
+    });
+    expect(sent.some(n => n.user_id === a4)).toBe(false);
+    for (const n of sent) {
+      expect(n.event_key).toMatch(/^month-publication:/);
+      expect(n.body).not.toMatch(/Agent (Un|Deux|Trois|Quatre)/);
+    }
+  });
+
+  it("rejoue une demande déjà traitée sans rien republier ni renvoyer", async () => {
+    const before = { revisions: await revisions(), notices: (await notices()).length };
+    // Le double clic, la reprise réseau : la même demande, la même empreinte.
+    expect(await publish("ignorée", "90000000-0000-0000-0000-0000000000f1")).toEqual({
+      published: 4,
+      notices: 3,
+      replayed: true,
+    });
+    expect(await revisions()).toEqual(before.revisions);
+    expect((await notices()).length).toBe(before.notices);
+  });
+
+  it("refuse un aperçu périmé, sans rien publier", async () => {
+    const stale = await preview();
+    // Un second gestionnaire complète la Nuit du 1er entre l'aperçu et la confirmation.
+    await draft(night1, a1);
+    await expect(publish(stale.fingerprint, "90000000-0000-0000-0000-0000000000f2")).rejects.toThrow(
+      "Month preview is stale",
+    );
+    expect((await revisions())[night1]).toBe(0);
+    // L'aperçu relu la montre prête : elle se publie, et l'avis dit la nuit.
+    const fresh = await preview();
+    expect(fresh.counts.ready).toBe(1);
+    expect(await publish(fresh.fingerprint, "90000000-0000-0000-0000-0000000000f3")).toEqual({
+      published: 1,
+      notices: 2,
+    });
+    const last = (await notices()).filter(n => n.event_key?.includes("0000000000f3"));
+    expect(last.find(n => n.user_id === a1)?.body).toBe(
+      "Gardes ajoutées :\n– dimanche 1 novembre, de 20 h à 8 h le lendemain",
+    );
+  });
+
+  it("dit qu’aucun créneau n’est prêt, et ne publie rien", async () => {
+    const p = await preview();
+    expect(p.counts).toMatchObject({ ready: 0, blocked: 2 });
+    await expect(publish(p.fingerprint, "90000000-0000-0000-0000-0000000000f4")).rejects.toThrow(
+      "Nothing ready to publish",
+    );
+  });
+
+  it("annule toute l’opération si un créneau échoue en cours de route", async () => {
+    // Deux créneaux prêts ; le second casse au moment d'être publié.
+    await live.exec("reset role");
+    await live.query(
+      "insert into public.staffing_requirements(organization_id,campaign_id,date,shift_code,headcount) values ($1,$2,'2026-11-02','DAY',1)",
+      [org, campaign],
+    );
+    await draft(day2, a3);
+    await draft(night3, a2);
+    await live.exec(`
+      reset role;
+      create function public.casse_la_publication() returns trigger language plpgsql as $$
+        begin raise exception 'Panne au milieu du mois'; end $$;
+      create trigger casse_la_publication before update of published_revision on public.schedule_shifts
+        for each row when (new.id = '${night3}') execute function public.casse_la_publication();`);
+    const p = await preview();
+    expect(p.counts.ready).toBe(2);
+    const before = { revisions: await revisions(), notices: (await notices()).length };
+    await expect(publish(p.fingerprint, "90000000-0000-0000-0000-0000000000f5")).rejects.toThrow(
+      "Panne au milieu du mois",
+    );
+    expect(await revisions()).toEqual(before.revisions);
+    expect((await notices()).length).toBe(before.notices);
+    await live.exec(`
+      reset role;
+      drop trigger casse_la_publication on public.schedule_shifts;
+      drop function public.casse_la_publication();`);
+    // La même demande, une fois la panne passée, n'a rien laissé derrière elle.
+    // Trois avis : Trois et Deux gagnent une garde, Quatre perd la Nuit du 3.
+    expect(await publish(p.fingerprint, "90000000-0000-0000-0000-0000000000f5")).toEqual({
+      published: 2,
+      notices: 3,
+    });
+  });
+
+  it("ne s’ouvre ni à un agent ni au gestionnaire d’un autre centre", async () => {
+    for (const who of [a1, outsider]) {
+      await expect(preview(who)).rejects.toThrow("Not allowed to publish this schedule");
+      await expect(publish("x", "90000000-0000-0000-0000-0000000000f6", who)).rejects.toThrow(
+        "Not allowed to publish this schedule",
+      );
+    }
+    await live.exec("reset role");
+  });
+
+  it("partage avec la publication unitaire les mêmes règles et les mêmes refus", async () => {
+    // Le 3 à la Nuit, bloqué dans l'aperçu, refusé à l'unité avec le même motif.
+    await be(chef);
+    await live.query(
+      "delete from public.schedule_assignments where schedule_shift_id=$1 and revision=0 and user_id=$2",
+      [night3, a2],
+    );
+    const blocked = (await preview()).shifts.find(s => s.id === night3);
+    expect(blocked?.reasons).toEqual([{ code: "headcount", assigned: 1, required: 2 }]);
+    await be(chef);
+    await expect(live.query("select public.publish_shift($1)", [night3])).rejects.toThrow(
+      "Headcount not covered: 1 of 2",
+    );
+    await live.exec("reset role");
+  });
+});
+
+describe("Migration 20261020200000 — gardes d’application", () => {
+  const target = MIGRATIONS.indexOf("20261020200000_publication_du_mois.sql");
+  const migration = () =>
+    readFileSync(new URL(`../supabase/migrations/${MIGRATIONS[target]}`, import.meta.url), "utf8");
+  const upTo = async (count: number) => {
+    const db = new PGlite();
+    await db.exec(baseAuthSchema);
+    for (const m of MIGRATIONS.slice(0, count))
+      await db.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    return db;
+  };
+
+  it("refuse un second passage et un passage avant sa dépendance", async () => {
+    expect(target).toBeGreaterThan(0);
+    const applied = await upTo(target + 1);
+    await expect(applied.exec(migration())).rejects.toThrow("déjà été appliquée");
+    await applied.close();
+    const early = await upTo(target - 1);
+    await expect(early.exec(migration())).rejects.toThrow("20261020150000_photographies.sql");
+    await early.close();
+  }, 90000);
+});

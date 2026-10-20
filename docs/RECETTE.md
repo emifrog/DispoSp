@@ -243,6 +243,23 @@ Rien n'est perdu : la file garde le message et le renverra à la prochaine actio
 
 **Sinon** — Si accepter suffisait à retirer l'agent du planning publié, le créneau se retrouverait publié en déficit. La base refuse précisément cela.
 
+### 4.6 Publier le mois
+
+**Préparer** — La migration `20261020200000` appliquée. Dans le centre d'essai, un mois où certains créneaux sont complets, d'autres incomplets, un déjà publié sans changement, et un déjà publié dont vous retirez un agent du brouillon.
+
+**Faire** — Planning → **Publier le mois**.
+
+**Attendu**
+
+- L'aperçu annonce « N créneaux : … prêts à publier, … bloqués, … inchangés », et chaque créneau bloqué donne sa date, Jour ou Nuit, et son motif. En toucher un mène à ce créneau.
+- Le bouton dit « Publier les … créneaux prêts ». Après confirmation, seuls ceux-là passent en version publiée ; les bloqués gardent leur version d'avant.
+- Chaque agent concerné reçoit **un seul** message — dans Notifications, par email, et en push sur l'appareil activé —, qui liste ses gardes ajoutées et retirées avec dates et horaires. Celui que vous avez retiré du brouillon reçoit « Planning de … modifié ». Celui dont rien n'a changé ne reçoit rien.
+- L'Historique porte « Planning du mois publié — … créneaux publiés · … agents prévenus ».
+
+**À vérifier** — Ouvrez l'aperçu dans deux onglets. Modifiez un brouillon dans le premier, puis publiez depuis le second : la publication est refusée (« Le planning a changé depuis l'aperçu »), rien n'est publié, et l'aperçu se relit.
+
+**À vérifier aussi** — Un double clic sur le bouton de publication ne publie qu'une fois et n'envoie qu'un avis par agent.
+
 ---
 
 ## Partie 5 — Rappel et clôture
@@ -419,6 +436,7 @@ Prévoir où regarder quand quelque chose ne va pas : les logs de l'hébergeur, 
 | 4.3   |      |     |          |          |
 | 4.4   |      |     |          |          |
 | 4.5   |      |     |          |          |
+| 4.6   |      |     |          |          |
 | 5.1   |      |     |          |          |
 | 5.2   |      |     |          |          |
 | 5.3   |      |     |          |          |

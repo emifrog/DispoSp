@@ -119,6 +119,7 @@ Le schéma est découpé en migrations successives, à appliquer dans l'ordre et
 | `supabase/migrations/20261016200000_semaine_type.sql`                             | Revue d'ergonomie, C4 : `apply_week()` applique une semaine type — une valeur par jour de semaine — sur une période de la campagne, en une seule écriture, en épargnant au besoin les jours déjà renseignés. La saisie rapide l'appelle (onglet « Semaine type »)                                                                                                                                                                                                                                                                                                                                                   | Appliquée — confirmation du porteur du projet, 20 octobre 2026   |
 | `supabase/migrations/20261020090000_traitements_planifies.sql`                    | Lot A des évolutions opérationnelles : rappel de garde la veille et relances 48 h puis 24 h avant la clôture, créés en base par Supabase Cron (`private.generate_due_notifications()`) pour les centres qui les activent (`organizations.reminders_enabled`, `shift_reminder_hour` ; désactivés par défaut, réglage journalisé) ; une clé par événement (`notifications.event_key`, unique) ; un rappel devenu faux est écarté avant toute réservation d'envoi ; journal des passages et état lisible par l'encadrement (`public.scheduled_status()`). Le code en dépend : à appliquer **avant** de déployer        | Non appliquée                                                    |
 | `supabase/migrations/20261020150000_photographies.sql`                            | Lot A, seconde partie : les photographies que lira le bilan. À chaque publication d'un créneau, à la date de clôture d'une campagne et au début de chaque créneau, un fait sans identifiant (besoin, minima, effectifs, couverture) et des détails par personne (affectés et leurs qualifications, participants attendus). Prises dans la transaction de la publication, au passage planifié, et avant toute modification qui changerait ce qu'elles retiennent. Aucun code de l'application n'en dépend ; les scripts de retrait, de purge, de bascule et d'export la supposent : à appliquer après 20261020090000 | Non appliquée                                                    |
+| `supabase/migrations/20261020200000_publication_du_mois.sql`                      | Lot B : publier le mois. Une seule définition d'un créneau publiable (`private.shift_blockers()`), partagée par la publication unitaire — mêmes refus qu'avant — et par celle du mois ; un aperçu (`public.month_publication_preview()`) qui classe chaque créneau prêt, bloqué ou inchangé ; la publication des seuls créneaux prêts en une transaction (`public.publish_month()`), refusée sur un aperçu périmé, rejouée sans effet pour une même demande ; un avis par agent dont les gardes changent, et plus d'avis par créneau. Le code en dépend : à appliquer **avant** de déployer                         | Non appliquée                                                    |
 
 Les deux migrations du 18 septembre n’ajoutent que des fonctions : `public.create_campaign()` pour la première, `public.save_availability_template()` et `public.apply_availability_template()` pour la seconde. Elles ne modifient aucune donnée existante.
 
@@ -305,6 +306,32 @@ Le retrait d'un compte efface ses détails et garde les faits. La purge efface l
 Les scripts de retrait et de purge font de même avant d'effacer. Sans les tâches planifiées, les photographies sont donc prises plus tard, mais justes.
 
 L'historique commence à l'application de la migration (`private.history_start`) : rien n'est reconstitué pour le passé. Aucune session n'accède à ces tables ; le lot E les exposera par des fonctions qui contrôlent les droits. `inventaire-du-centre.sql` les compte, `exporter-les-donnees-d-un-compte.sql` les rend, et `basculer-vers-un-vrai-centre.sql` efface celles du centre d'essai.
+
+### Publier le mois
+
+Lot B, migration `20261020200000`. Dans le planning, **Publier le mois** ouvre un aperçu calculé par la base pour la campagne affichée :
+
+- **prêts** : nouveaux ou modifiés, et rien ne les empêche ;
+- **bloqués** : avec leur date, Jour ou Nuit, et chaque motif — effectif incomplet, qualification manquante, besoins non définis, désistement accepté, agent désactivé, disponibilité qui ne correspond plus. Toucher un créneau bloqué y mène ;
+- **inchangés** : déjà publiés tels quels.
+
+Le bouton dit exactement ce qu'il fera, par exemple « Publier les 48 créneaux prêts ».
+
+**Une seule définition d'un créneau publiable.** `private.shift_blockers()` rend les motifs, dans l'ordre où la publication les vérifie. La publication unitaire lève le premier, avec le même message qu'avant ; l'aperçu les montre tous. Les deux ne peuvent pas se contredire.
+
+**Une transaction, ou rien.** `public.publish_month()` :
+
+1. verrouille les créneaux du mois dans l'ordre de leur identifiant ;
+2. recalcule l'aperçu sous ce verrou, et refuse si son empreinte n'est plus celle que le gestionnaire a vue — l'écran relit alors l'aperçu ;
+3. publie chaque créneau prêt par le même chemin que la publication unitaire, photographies du lot A comprises.
+
+Une erreur sur un créneau annule toute l'opération. Un créneau bloqué garde sa version publiée : un brouillon incomplet n'efface rien.
+
+**Une demande, une publication.** L'écran tire un identifiant de demande à chaque aperçu. Un double clic ou une reprise réseau renvoient la même demande, et la base rend le premier résultat sans rien republier (`private.month_publications`).
+
+**Un avis par agent dont les gardes changent**, et aucun par créneau en plus. Il dit ses gardes ajoutées et retirées, avec dates et horaires — une garde de Jour et de Nuit le même jour devient « de 8 h à 8 h le lendemain (24 h) » —, jamais le nom d'un autre agent. Un agent retiré de toutes ses gardes est prévenu ; un agent sans changement ne reçoit rien ; un agent retiré après un désistement accepté non plus, comme pour la publication unitaire. Le push reste « Votre planning a été publié ou modifié. ». L'opération entre à l'historique, en plus de la ligne de chaque créneau.
+
+L'aperçu se lit par `GET /api/planning/mois?campagne=…`, sous la session du gestionnaire : une lecture, demandée à l'ouverture de la fenêtre. La publication passe, comme toute écriture, par l'action serveur.
 
 ### Configuration
 

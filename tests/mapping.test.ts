@@ -557,6 +557,15 @@ describe("Construction de l’état depuis la base", () => {
             old_value: { reminders_enabled: false, shift_reminder_hour: 18 },
             new_value: { reminders_enabled: true, shift_reminder_hour: 19 },
           },
+          {
+            id: 6,
+            occurred_at: "2026-09-20T13:00:00Z",
+            action: "PUBLISH_MONTH",
+            entity: "availability_campaign",
+            actor_id: "u1",
+            old_value: null,
+            new_value: { name: "Novembre", published: 48, notices: 1 },
+          },
         ],
       }),
       "Secours",
@@ -567,6 +576,7 @@ describe("Construction de l’état depuis la base", () => {
       "Disponibilité renseignée — 1 octobre · 24 h",
       "Horaires par défaut modifiés — 8 h – 20 h → 7 h – 19 h",
       "Rappels automatiques modifiés — activés · rappel de garde à 19 h",
+      "Planning du mois publié — Novembre · 48 créneaux publiés · 1 agent prévenu",
     ]);
     for (const event of state.audit) expect(`${event.action}${event.detail}`).not.toMatch(/[{}"]|_[a-z]/);
     // L’entité voyage avec la ligne : c’est sur elle que l’écran filtre.
@@ -576,6 +586,7 @@ describe("Construction de l’état depuis la base", () => {
       "availability_entry",
       "organization",
       "organization",
+      "availability_campaign",
     ]);
   });
 

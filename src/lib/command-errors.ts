@@ -41,6 +41,16 @@ const byMessage: [RegExp, (match: RegExpMatchArray) => string][] = [
   ],
   [/^Unknown shift/, () => "Ce créneau n’existe pas."],
   [/^Not allowed to publish this schedule/, () => "Vous n’avez pas le droit de publier ce planning."],
+  // La publication du mois (lot B).
+  [
+    /^Month preview is stale/,
+    () => "Le planning a changé depuis l’aperçu. Relisez l’aperçu à jour, puis publiez de nouveau.",
+  ],
+  [/^Nothing ready to publish/, () => "Aucun créneau n’est prêt à publier : l’aperçu dit ce qui les retient."],
+  [
+    /^Month publication request already used/,
+    () => "Cette demande de publication a déjà servi. Rouvrez l’aperçu pour en faire une nouvelle.",
+  ],
   [
     /^Every assignment needs a validated matching availability/,
     () => "Chaque agent affecté doit avoir une disponibilité validée correspondant à ce créneau.",

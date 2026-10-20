@@ -314,6 +314,7 @@ const auditLabels: Record<string, string> = {
   "availability_campaign/CREATE": "Campagne ouverte",
   "availability_campaign/LOCK": "Campagne verrouillée",
   "availability_campaign/UNLOCK": "Campagne déverrouillée",
+  "availability_campaign/PUBLISH_MONTH": "Planning du mois publié",
   "staffing_requirement/SET": "Besoins définis",
   "staffing_requirement/CLEAR": "Besoins supprimés",
   "schedule_assignment/ASSIGN": "Agent affecté au brouillon",
@@ -372,8 +373,13 @@ function auditDetail(entity: string, previous: Values, after: Values, nameById: 
     case "campaign_participant":
     case "schedule_assignment":
       return who(text(subject, "user_id"));
-    case "availability_campaign":
-      return text(subject, "name");
+    case "availability_campaign": {
+      // La publication du mois (20261020200000) compte ce qu'elle a fait.
+      const published = num(after, "published");
+      if (published === null) return text(subject, "name");
+      const notices = num(after, "notices") ?? 0;
+      return `${text(after, "name")} · ${published} ${plural(published, "créneau publié", "créneaux publiés")} · ${notices} ${plural(notices, "agent prévenu", "agents prévenus")}`;
+    }
     case "staffing_requirement": {
       const line = `${day(subject)} · ${slot(text(subject, "shift_code"))}`;
       const to = num(after, "headcount");

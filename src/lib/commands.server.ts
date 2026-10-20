@@ -33,6 +33,8 @@ export async function runCommand(session: AttachedSession, command: Command): Pr
       return writeAssignment(client, session, command);
     case "publish":
       return publishShift(client, command);
+    case "publishMonth":
+      return publishMonth(client, command);
     case "requirement":
       return writeRequirement(client, command);
     case "requirements":
@@ -266,6 +268,22 @@ async function publishShift(client: Client, command: Of<"publish">) {
   // which re-checks headcount, qualifications and eligibility in one transaction.
   const { error } = await client.rpc("publish_shift", { shift: shiftId });
   if (error) fail(error);
+}
+
+/**
+ * Le mois en une transaction (lot B). La base recalcule l'aperçu sous verrou et
+ * refuse s'il n'est plus celui que le gestionnaire a vu ; la même demande,
+ * reçue deux fois, rend le premier résultat sans rien republier.
+ */
+async function publishMonth(client: Client, command: Of<"publishMonth">): Promise<string> {
+  const { data, error } = await client.rpc("publish_month", {
+    campaign: command.campaignId,
+    fingerprint: command.fingerprint,
+    request: command.requestId,
+  });
+  if (error) fail(error);
+  const { published, notices } = data as { published: number; notices: number };
+  return `${published} ${plural(published, "créneau publié", "créneaux publiés")} · ${notices} ${plural(notices, "agent prévenu", "agents prévenus")}`;
 }
 
 async function writeRequirement(client: Client, command: Of<"requirement">) {

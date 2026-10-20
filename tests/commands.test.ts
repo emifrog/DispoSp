@@ -181,3 +181,40 @@ describe("Relance d’une campagne depuis le serveur", () => {
     );
   });
 });
+
+// Lot B : la publication du mois passe d'un seul appel, et dit ce qu'elle a fait.
+describe("Publication du mois depuis le serveur", () => {
+  const publishMonth = {
+    type: "publishMonth" as const,
+    campaignId: CAMPAGNE,
+    fingerprint: "0123456789abcdef0123456789abcdef",
+    requestId: "90000000-0000-0000-0000-000000000001",
+  };
+
+  it("confie l’aperçu vu et l’identifiant de la demande à la base, en un appel", async () => {
+    rpc.mockResolvedValue({ data: { published: 48, notices: 23 }, error: null });
+    expect(await runCommand(session, publishMonth)).toBe("48 créneaux publiés · 23 agents prévenus");
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("publish_month", {
+      campaign: CAMPAGNE,
+      fingerprint: publishMonth.fingerprint,
+      request: publishMonth.requestId,
+    });
+  });
+
+  it("accorde le libellé au singulier", async () => {
+    rpc.mockResolvedValue({ data: { published: 1, notices: 1 }, error: null });
+    expect(await runCommand(session, publishMonth)).toBe("1 créneau publié · 1 agent prévenu");
+  });
+
+  it.each([
+    [
+      "Month preview is stale",
+      "Le planning a changé depuis l’aperçu. Relisez l’aperçu à jour, puis publiez de nouveau.",
+    ],
+    ["Nothing ready to publish", "Aucun créneau n’est prêt à publier : l’aperçu dit ce qui les retient."],
+    ["Not allowed to publish this schedule", "Vous n’avez pas le droit de publier ce planning."],
+  ])("traduit le refus « %s »", async (message, french) => {
+    rpc.mockResolvedValue({ data: null, error: { message } });
+    await expect(runCommand(session, publishMonth)).rejects.toThrow(french);
+  });
+});

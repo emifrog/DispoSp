@@ -31,7 +31,9 @@ export function message(notice: Pending, appUrl: string): Message {
     `<img src="${escape(root)}/logo-disposp.png" alt="DispoSP" width="132" height="42" style="display:block;margin:0 0 18px;border:0">`,
     `<p style="margin:0 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#7186a2">${escape(kind)}</p>`,
     `<h1 style="margin:0 0 14px;font-size:18px;font-weight:600">${escape(notice.subject)}</h1>`,
-    body ? `<p style="margin:0 0 18px">${escape(body)}</p>` : "",
+    // Un récapitulatif du mois liste une garde par ligne : les sauts de ligne
+    // du texte deviennent ceux du message.
+    body ? `<p style="margin:0 0 18px">${escape(body).replace(/\n/g, "<br>")}</p>` : "",
     `<p style="margin:0 0 22px"><a href="${escape(link)}" style="color:#1668dc">${escape(call)}</a></p>`,
     `<p style="margin:0;font-size:12px;color:#7186a2">DispoSP — vous recevez ce message parce que vous êtes inscrit dans un centre.</p>`,
     `</div>`,

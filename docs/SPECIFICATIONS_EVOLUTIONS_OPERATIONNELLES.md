@@ -252,6 +252,28 @@ Le middleware protège actuellement les routes API. Ajouter uniquement l'excepti
 
 ## 6. Lot B — Publier le mois
 
+### État au 20 octobre 2026
+
+**Développé.**
+
+- Migration `20261020200000_publication_du_mois.sql`, **non appliquée** ; le code en dépend, à appliquer avant de déployer.
+- Bouton « Publier le mois » dans le planning, et sa fenêtre d'aperçu (`GET /api/planning/mois`).
+- Le README, section « Publier le mois », décrit le fonctionnement.
+
+| Critère                                                | Preuve                                                                                                                                                                 |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mois partiellement prêt                                | Seuls les créneaux prêts passent en version publiée ; un créneau publié dont le brouillon est incomplet garde sa version                                               |
+| Aucun contournement des contrôles                      | Une seule définition, `private.shift_blockers()`, appliquée par la publication unitaire et par celle du mois ; la suite existante passe sans changement, refus compris |
+| Aperçu périmé                                          | Empreinte recalculée sous verrou ; refus sans rien publier. Contre-épreuve : sans ce contrôle, le test échoue                                                          |
+| Un seul récapitulatif par agent, retrait total compris | Un avis par agent concerné, aucun pour un agent sans changement, aucun avis par créneau. Contre-épreuve : avec les avis par créneau, le test échoue                    |
+| Double clic, reprise réseau                            | Identifiant de demande ; la même demande rend son premier résultat. Contre-épreuve : sans lui, le test échoue                                                          |
+| Autre centre, agent                                    | Refus de l'aperçu comme de la publication                                                                                                                              |
+| Transaction                                            | Un échec sur un créneau en cours de route annule toute l'opération, avis compris                                                                                       |
+
+Vérifié par dix tests PostgreSQL, les tests de la commande, de la route et de l'email, et le rendu de la fenêtre dans Chromium (ordinateur et téléphone). **Pas encore** sur la pile Supabase locale ni en production.
+
+« Modifications » dans l'avis : les horaires d'une campagne ne changent plus après sa création ; un changement d'affectation se dit donc en ajouts et retraits.
+
 ### Parcours gestionnaire
 
 Dans le planning d'une campagne, proposer **« Publier le mois »**. Une prévisualisation distingue les créneaux prêts, les créneaux bloqués et ceux qui sont déjà publiés sans changement.

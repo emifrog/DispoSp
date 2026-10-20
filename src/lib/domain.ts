@@ -765,6 +765,15 @@ export const commandSchema = z.discriminatedUnion("type", [
   // Les rappels automatiques du centre (lot A) : activés ou non, et l’heure du
   // rappel de garde, la veille.
   z.object({ type: z.literal("reminders"), enabled: z.boolean(), hour: z.number().int().min(0).max(23) }),
+  // La publication du mois (lot B) : l'empreinte de l'aperçu que le gestionnaire
+  // a vu, et l'identifiant de sa demande — tiré une fois par aperçu, il fait
+  // d'un double clic ou d'une reprise réseau la même demande.
+  z.object({
+    type: z.literal("publishMonth"),
+    campaignId: id,
+    fingerprint: z.string().regex(/^[0-9a-f]{32}$/),
+    requestId: id,
+  }),
   // La saisie rapide, onglet « Semaine type » : une valeur par jour de semaine,
   // ou rien, sur une période. `keepFilled` épargne les jours déjà renseignés ;
   // `remember` garde la semaine comme disponibilité habituelle.
@@ -866,4 +875,47 @@ export const commandLabels: Record<Command["type"], string> = {
   applyTemplate: "Disponibilité habituelle appliquée",
   applyWeek: "Disponibilités modifiées",
   reminders: "Rappels automatiques enregistrés",
+  publishMonth: "Planning du mois publié",
 };
+
+/**
+ * L'aperçu de la publication du mois, tel que public.month_publication_preview()
+ * le rend (lot B). La base classe chaque créneau ; l'écran ne fait que le dire.
+ */
+export type MonthBlocker =
+  | { code: "availability" | "inactive" | "withdrawal"; agents: string }
+  | { code: "requirement" }
+  | { code: "headcount"; assigned: number; required: number }
+  | { code: "qualifications"; missing: string };
+export type MonthShift = {
+  id: string;
+  date: string;
+  shift: Shift;
+  revision: number;
+  state: "ready" | "blocked" | "unchanged";
+  reasons: MonthBlocker[];
+};
+export type MonthPreview = {
+  campaign: string;
+  fingerprint: string;
+  shifts: MonthShift[];
+  counts: { total: number; ready: number; blocked: number; unchanged: number };
+};
+
+/** Ce qui retient un créneau, en une phrase : les motifs de la publication unitaire. */
+export function blockerText(blocker: MonthBlocker): string {
+  switch (blocker.code) {
+    case "availability":
+      return `Disponibilité non validée ou modifiée : ${blocker.agents}`;
+    case "inactive":
+      return `Agent désactivé : ${blocker.agents}`;
+    case "withdrawal":
+      return `Désistement accepté, remplacement à faire : ${blocker.agents}`;
+    case "requirement":
+      return "Besoins non définis";
+    case "headcount":
+      return `Effectif incomplet : ${blocker.assigned} sur ${blocker.required}`;
+    case "qualifications":
+      return `Qualifications manquantes : ${blocker.missing}`;
+  }
+}
