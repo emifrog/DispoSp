@@ -38,6 +38,18 @@ describe("Garde de session", () => {
     },
   );
 
+  // Le flux d'un agenda abonné (lot D) : un logiciel d'agenda n'a pas de
+  // session, et le garde ne doit ni le renvoyer à la connexion ni attendre le
+  // service d'authentification. La route vérifie le jeton elle-même.
+  it("laisse passer le flux d’un agenda abonné, et lui seul", async () => {
+    const updateSession = await middlewareWith(withoutSupabase);
+    const response = await updateSession(ask(`/api/agenda/${"a".repeat(43)}.ics`));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+    // La gestion de l'adresse, elle, reste derrière la session.
+    await expect(updateSession(ask("/api/agenda"))).rejects.toThrow("Supabase");
+  });
+
   // L'autre moitié de la décision : un déploiement mal configuré doit s'arrêter,
   // pas servir des écrans vides. Seule la surface publique est épargnée.
   it("s’arrête sur un écran de travail sans configuration Supabase", async () => {

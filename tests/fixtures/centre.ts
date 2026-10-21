@@ -228,6 +228,7 @@ export function sampleState(now = new Date()): AppState {
     calls: [],
     callRecipients: [],
     callProposals: [],
+    calendarFeed: null,
     audit: [],
   };
   const campaign = state.campaigns[0];

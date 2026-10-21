@@ -51,6 +51,12 @@ const byMessage: [RegExp, (match: RegExpMatchArray) => string][] = [
     /^Month publication request already used/,
     () => "Cette demande de publication a déjà servi. Rouvrez l’aperçu pour en faire une nouvelle.",
   ],
+  // L'agenda abonné (lot D).
+  [
+    /^Not allowed to subscribe to a calendar/,
+    () => "Seuls les agents qui prennent des gardes peuvent s’abonner à leur agenda.",
+  ],
+  [/^Invalid calendar token/, () => "L’adresse d’abonnement n’a pas pu être créée. Réessayez."],
   // La règle de repos (décision du 21 octobre) et les appels du lot C.
   [/^Rest not respected: (.+)$/, m => `Repos insuffisant — après une garde, autant de repos qu’elle a duré : ${m[1]}.`],
   [/^Not allowed to call for this shift/, () => "Vous n’avez pas le droit de lancer un appel pour cette garde."],

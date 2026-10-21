@@ -129,18 +129,65 @@ function shiftEvent(
   ];
 }
 
-const calendar = (events: string[][]) =>
+const calendar = (events: string[][], headers: string[] = []) =>
   [
     ...[
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
       "PRODID:-//DispoSP//Planning//FR",
       "CALSCALE:GREGORIAN",
+      ...headers,
       ...events.flat(),
     ].map(fold),
     "END:VCALENDAR",
     "",
   ].join("\r\n");
+
+/** Échappe un texte pour une valeur iCalendar (RFC 5545 §3.3.11). */
+const icsText = (value: string) =>
+  value.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+
+/** Ce que la base rend pour un abonnement (public.calendar_feed_events()). */
+export type CalendarFeed = {
+  user_id: string;
+  centre: string;
+  events: {
+    campaign_id: string;
+    date: string;
+    shift: Shift;
+    day_start: number;
+    night_start: number;
+    revision: number;
+    published_at: string;
+  }[];
+};
+
+/**
+ * Le flux d'un agenda abonné (lot D) : les gardes publiées encore tenues, avec
+ * l'identifiant et la séquence de l'export ponctuel — une garde republiée garde
+ * son événement, et une garde retirée disparaît à la synchronisation suivante.
+ * Pas d'alarme : le rappel de garde est celui de DispoSP, pas celui de l'agenda.
+ */
+export function feedCalendar(feed: CalendarFeed) {
+  return calendar(
+    feed.events.map(e =>
+      shiftEvent(
+        { id: e.campaign_id, dayStart: e.day_start, nightStart: e.night_start },
+        e.date,
+        e.shift,
+        { revision: e.revision, publishedAt: e.published_at },
+        feed.user_id,
+      ),
+    ),
+    [
+      `X-WR-CALNAME:${icsText(`DispoSP — mes gardes (${feed.centre})`)}`,
+      "X-WR-TIMEZONE:Europe/Paris",
+      // Une indication : chaque logiciel d'agenda décide de son propre rythme.
+      "REFRESH-INTERVAL;VALUE=DURATION:PT1H",
+      "X-PUBLISHED-TTL:PT1H",
+    ],
+  );
+}
 
 /**
  * L'agenda d'une campagne. Une garde dont le désistement a été accepté n'y est

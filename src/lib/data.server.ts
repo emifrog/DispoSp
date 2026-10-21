@@ -80,6 +80,7 @@ export async function loadState(session: AttachedSession, asked?: string | null)
     catalogue,
     template,
     invitations,
+    calendarFeeds,
   ] = await Promise.all([
     supabase
       .from("organizations")
@@ -165,6 +166,8 @@ export async function loadState(session: AttachedSession, asked?: string | null)
           .order("id"),
       row => row.id,
     ),
+    // L'abonnement à l'agenda (lot D) : RLS ne rend que le sien, sans le condensat.
+    supabase.from("calendar_feeds").select("created_at, last_read_at").is("revoked_at", null),
   ]);
 
   const since = loadedSince();
@@ -330,6 +333,7 @@ export async function loadState(session: AttachedSession, asked?: string | null)
     notifications: rows<"notifications">("notifications", notifications),
     qualificationCatalogue: catalogue,
     template: rows<"template">("disponibilité habituelle", template),
+    calendarFeeds: rows<"calendarFeeds">("abonnement à l’agenda", calendarFeeds),
     invitations,
     participants,
     entries,

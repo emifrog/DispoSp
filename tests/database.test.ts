@@ -7807,3 +7807,155 @@ describe("Migration 20261021090000 — gardes d’application", () => {
     await early.close();
   }, 90000);
 });
+
+// Lot D (21 octobre) : l'agenda abonné. La base ne garde que le condensat du
+// jeton ; le flux ne rend que les gardes publiées encore tenues, et rien dès que
+// l'abonnement ou l'agent cesse d'y avoir droit.
+describe("Agenda abonné", () => {
+  const org = "10000000-0000-0000-0000-0000000000d1";
+  const team = "20000000-0000-0000-0000-0000000000d1";
+  const chef = "30000000-0000-0000-0000-0000000000d0";
+  const agent = "30000000-0000-0000-0000-0000000000d1";
+  const other = "30000000-0000-0000-0000-0000000000d2";
+  const campaign = "40000000-0000-0000-0000-0000000000d1";
+  const schedule = "50000000-0000-0000-0000-0000000000d1";
+  const slot = (day: number) => `60000000-0000-0000-0000-0000000002d${day}`;
+  const hash = (n: number) => String(n).repeat(64).slice(0, 64);
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+  const as = async <T>(id: string, sql: string, params: unknown[] = []) => {
+    await be(id);
+    try {
+      return (await live.query<T>(sql, params)).rows;
+    } finally {
+      await live.exec("reset role");
+    }
+  };
+  type Feed = { user_id: string; centre: string; events: { date: string; shift: string; revision: number }[] } | null;
+  const feed = async (h: string) => {
+    await live.exec("reset role");
+    await live.exec("set role service_role");
+    try {
+      return (await live.query<{ f: Feed }>("select public.calendar_feed_events($1) as f", [h])).rows[0].f;
+    } finally {
+      await live.exec("reset role");
+    }
+  };
+
+  beforeAll(async () => {
+    live = await freshDatabase();
+    await live.exec(`
+      insert into auth.users(id) values ('${chef}'), ('${agent}'), ('${other}');
+      insert into public.profiles(user_id,display_name) values ('${chef}','Chef'), ('${agent}','Agent'), ('${other}','Autre');
+      insert into public.organizations(id,name) values ('${org}','Centre agenda');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values ('${org}','${chef}','${team}','GESTIONNAIRE',true),
+        ('${org}','${agent}','${team}','AGENT',true), ('${org}','${other}','${team}','AGENT',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        select '${campaign}','${org}','${team}','Mois prochain', m, (m + interval '1 month - 1 day')::date,
+               now()-interval '10 days', now()+interval '1 day'
+          from (select date_trunc('month', (now() at time zone 'Europe/Paris')::date + interval '1 month')::date as m) t;
+      insert into public.schedules(id,organization_id,campaign_id,team_id) values ('${schedule}','${org}','${campaign}','${team}');
+      insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code)
+        select ('60000000-0000-0000-0000-0000000002d' || d)::uuid, '${org}', '${schedule}', c.starts_on + d, 'DAY'
+          from public.availability_campaigns c, generate_series(1, 4) d where c.id = '${campaign}';
+      set session_replication_role = replica;
+      -- Le 1 : publié pour l'agent. Le 2 : au brouillon seulement. Le 3 : publié,
+      -- puis désistement accepté. Le 4 : publié pour un autre.
+      insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,revision,status,assigned_by) values
+        ('${org}','${slot(1)}','${agent}',1,'CONFIRMED','${chef}'),
+        ('${org}','${slot(2)}','${agent}',0,'PROPOSED','${chef}'),
+        ('${org}','${slot(3)}','${agent}',1,'CONFIRMED','${chef}'),
+        ('${org}','${slot(4)}','${other}',1,'CONFIRMED','${chef}');
+      update public.schedule_shifts set published_revision=1, published_at=now()-interval '1 day'
+       where id in ('${slot(1)}','${slot(3)}','${slot(4)}');
+      insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id,state,decided_at,decided_by)
+        values ('${org}','${slot(3)}','${agent}','ACCEPTED',now(),'${chef}');
+      set session_replication_role = origin;`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("ouvre l’abonnement à l’agent seul, et ne rend jamais le condensat", async () => {
+    await as(agent, "select public.create_calendar_feed($1)", [hash(1)]);
+    expect(await as(agent, "select created_at is not null as ok, revoked_at from public.calendar_feeds")).toEqual([
+      { ok: true, revoked_at: null },
+    ]);
+    await expect(as(agent, "select token_hash from public.calendar_feeds")).rejects.toThrow();
+    await expect(as(chef, "select public.create_calendar_feed($1)", [hash(2)])).rejects.toThrow(
+      "Not allowed to subscribe to a calendar",
+    );
+    await expect(as(agent, "select public.create_calendar_feed($1)", ["pas-un-condensat"])).rejects.toThrow(
+      "Invalid calendar token",
+    );
+    // L'agenda d'un autre ne se lit pas.
+    expect(await as(other, "select count(*)::int as n from public.calendar_feeds")).toEqual([{ n: 0 }]);
+  });
+
+  it("rend les seules gardes publiées encore tenues, et date la lecture", async () => {
+    const f = await feed(hash(1));
+    expect(f?.user_id).toBe(agent);
+    expect(f?.centre).toBe("Centre agenda");
+    // Ni le brouillon du 2, ni le 3 relevé par un désistement, ni le 4 d'un autre.
+    expect(f?.events.map(e => [e.shift, e.revision])).toEqual([["DAY", 1]]);
+    expect(
+      await live.query<{ read: boolean }>("select last_read_at is not null as read from public.calendar_feeds"),
+    ).toMatchObject({ rows: [{ read: true }] });
+    expect(await feed(hash(9))).toBeNull();
+  });
+
+  it("révoque l’ancienne adresse quand l’agent en demande une nouvelle, et sur révocation", async () => {
+    await as(agent, "select public.create_calendar_feed($1)", [hash(3)]);
+    expect(await feed(hash(1))).toBeNull();
+    expect(await feed(hash(3))).not.toBeNull();
+    await as(agent, "select public.revoke_calendar_feed()");
+    expect(await feed(hash(3))).toBeNull();
+  });
+
+  it("coupe l’accès quand l’agent est désactivé ou passe à l’encadrement", async () => {
+    await as(agent, "select public.create_calendar_feed($1)", [hash(4)]);
+    // Le geste d'un administrateur, pas de l'agent : la session n'est plus la sienne.
+    await live.query("select set_config('request.jwt.claim.sub', '', false)");
+    await live.query("update public.memberships set active=false where user_id=$1", [agent]);
+    expect(await feed(hash(4))).toBeNull();
+    await live.query("update public.memberships set active=true where user_id=$1", [agent]);
+    expect(await feed(hash(4))).not.toBeNull();
+    await live.exec(`
+      set session_replication_role = replica;
+      update public.memberships set role='GESTIONNAIRE' where user_id='${agent}';
+      set session_replication_role = origin;`);
+    expect(await feed(hash(4))).toBeNull();
+  });
+
+  it("réserve la lecture du flux au serveur", async () => {
+    await expect(as(agent, "select public.calendar_feed_events($1)", [hash(4)])).rejects.toThrow();
+  });
+});
+
+describe("Migration 20261021150000 — gardes d’application", () => {
+  const target = MIGRATIONS.indexOf("20261021150000_agenda_abonne.sql");
+  const migration = () =>
+    readFileSync(new URL(`../supabase/migrations/${MIGRATIONS[target]}`, import.meta.url), "utf8");
+  const upTo = async (count: number) => {
+    const db = new PGlite();
+    await db.exec(baseAuthSchema);
+    for (const m of MIGRATIONS.slice(0, count))
+      await db.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    return db;
+  };
+
+  it("refuse un second passage et un passage avant sa dépendance", async () => {
+    expect(target).toBeGreaterThan(0);
+    const applied = await upTo(target + 1);
+    await expect(applied.exec(migration())).rejects.toThrow("déjà été appliquée");
+    await applied.close();
+    const early = await upTo(target - 1);
+    await expect(early.exec(migration())).rejects.toThrow("20261021090000_appels_remplacement.sql");
+    await early.close();
+  }, 90000);
+});

@@ -117,6 +117,11 @@ begin
   get diagnostics n = row_count;
   raise notice 'Notifications de plus de % : % effacée(s).', duree_notifications, n;
 
+  -- Les abonnements à l'agenda révoqués (lot D) : des dates, gardées comme le journal.
+  delete from public.calendar_feeds where revoked_at < now() - duree_journal;
+  get diagnostics n = row_count;
+  raise notice 'Abonnements à l''agenda révoqués depuis plus de % : % effacé(s).', duree_journal, n;
+
   delete from public.audit_logs where occurred_at < now() - duree_journal;
   get diagnostics n = row_count;
   raise notice 'Lignes de journal de plus de % : % effacée(s).', duree_journal, n;

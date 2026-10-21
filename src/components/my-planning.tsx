@@ -7,6 +7,7 @@ import { PageTitle, Panel, SegmentedTabs } from "./common";
 import { Button } from "./ui/button";
 import { Modal } from "./ui/dialog";
 import { download, upcomingCalendar } from "@/lib/exports";
+import { CalendarSubscription } from "./calendar-subscription";
 import {
   dateLabel,
   hours,
@@ -250,6 +251,9 @@ export function PersonalPlanning() {
           <Download size={18} />
         </button>
       </div>
+
+      {/* L'export ponctuel reste ; l'abonnement suit les changements (lot D). */}
+      <CalendarSubscription />
     </>
   );
 }

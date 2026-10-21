@@ -316,7 +316,7 @@ Un agent dont toutes les gardes ont été retirées doit aussi recevoir un avis.
 
 **Développé**, avec les deux décisions du 21 octobre : repos égal à la durée de la garde, déclaration exceptionnelle retenue.
 
-- Migration `20261021090000_appels_remplacement.sql`, **non appliquée** ; le code en dépend, à appliquer avant de déployer.
+- Migration `20261021090000_appels_remplacement.sql`, appliquée (confirmation du porteur du projet, 21 octobre).
 - Page « Appels » de l'agent, panneau « Appel en cours » et « Chercher du renfort » au planning, « Accepter et chercher un remplaçant » aux désistements.
 - Le README, section « Repos et appels à remplacement », décrit le fonctionnement.
 
@@ -424,6 +424,28 @@ Protéger par contraintes l'unicité d'un appel actif par créneau et d'une prop
 - La clôture annule les envois devenus inutiles et conserve les données nécessaires au bilan.
 
 ## 8. Lot D — Agenda personnel abonné
+
+### État au 21 octobre 2026
+
+**Développé.**
+
+- Migration `20261021150000_agenda_abonne.sql`, **non appliquée** ; le code en dépend, à appliquer avant de déployer.
+- Panneau « M'abonner à mon agenda » dans Mon planning ; l'export ponctuel reste.
+- Routes `POST`/`DELETE /api/agenda` (l'adresse de l'agent) et `GET /api/agenda/<jeton>.ics` (le flux).
+- Le README, section « Agenda abonné », décrit le fonctionnement.
+
+**Les suppressions, définies ainsi** : une garde retirée sort du flux. Un abonnement se relit en entier, et Apple comme Google retirent alors l'événement ; aucun événement « annulé » n'est gardé, l'iTIP ne concernant que les invitations. À confirmer par la recette sur de vrais agendas (étape 8.4).
+
+| Critère                                     | Preuve                                                                                                                                                      |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Lien valide sans session ; invalide muet    | Le middleware laisse passer la seule forme `/api/agenda/<43 caractères>.ics` ; un jeton mal formé, inconnu, révoqué ou d'un agent écarté reçoit le même 404 |
+| Aucun paramètre pour choisir un autre agent | L'identité vient du condensat du jeton, rien d'autre ; la base ne garde pas le jeton                                                                        |
+| Ajout, changement, retrait sans doublon     | Identifiant stable par garde, révision pour séquence ; une garde retirée sort du flux                                                                       |
+| Brouillons et propositions absents          | Le flux ne lit que les versions publiées encore tenues. Contre-épreuve : sans l'exclusion des désistements, le test échoue                                  |
+| Accès coupé à la désactivation              | Vérifié à chaque lecture. Contre-épreuve : sans ce contrôle, le test échoue                                                                                 |
+| Recette sur Apple Calendrier et Google      | **À faire** : étape 8.4 de la recette, avec observation des délais                                                                                          |
+
+Vérifié par six tests PostgreSQL, les tests des routes, du middleware et du contenu iCalendar, et le rendu du panneau dans Chromium. **Pas encore** sur de vrais agendas.
 
 ### Parcours
 

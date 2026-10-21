@@ -289,6 +289,8 @@ export type Raw = {
     };
   }[];
   callRecipients: { call_id: string; user_id: string; circle: string }[];
+  // L'abonnement actif à l'agenda (lot D), le sien seulement.
+  calendarFeeds: { created_at: string; last_read_at: string | null }[];
   callProposals: {
     id: string;
     call_id: string;
@@ -573,6 +575,9 @@ export function buildState(raw: Raw, fallbackOrganizationName: string, window?: 
     calls: [],
     callRecipients: [],
     callProposals: [],
+    calendarFeed: raw.calendarFeeds[0]
+      ? { createdAt: raw.calendarFeeds[0].created_at, lastReadAt: raw.calendarFeeds[0].last_read_at }
+      : null,
     audit: [],
   };
 

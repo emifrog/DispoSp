@@ -61,6 +61,13 @@ select jsonb_pretty(jsonb_build_object(
   'envois_d_invitation', (
     select coalesce(jsonb_agg(s.sent_at order by s.sent_at), '[]')
       from private.invitation_sends s where s.email = (select lower(email) from compte)),
+  -- L'agenda abonné du lot D : les dates de ses abonnements, jamais l'adresse —
+  -- la base n'en garde que le condensat.
+  'abonnements_agenda', (
+    select coalesce(jsonb_agg(jsonb_build_object(
+      'cree_le', f.created_at, 'revoque_le', f.revoked_at, 'derniere_lecture', f.last_read_at)
+      order by f.created_at), '[]')
+      from public.calendar_feeds f where f.user_id = (select id from compte)),
   -- Les appels du lot C : ses propositions, et sa déclaration s'il en a fait une.
   'propositions', (
     select coalesce(jsonb_agg(jsonb_build_object(

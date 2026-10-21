@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import type { User } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
-import { configured, credentials, HOME_PATH, publicPaths, SIGN_IN_PATH } from "./config";
+import { calendarFeedPath, configured, credentials, HOME_PATH, publicPaths, SIGN_IN_PATH } from "./config";
 import { authOutage, outageCause } from "./outage";
 
 // Refreshing the session is the middleware's job: Server Components cannot write
@@ -17,6 +17,11 @@ export async function updateSession(request: NextRequest) {
   // Le garde reste entier quand la configuration est là : un compte connecté
   // qui revient sur /connexion est toujours renvoyé chez lui.
   if (!configured() && publicPaths.includes(path)) return NextResponse.next({ request });
+  // Le flux d'un agenda abonné n'a ni cookie ni session à renouveler : le
+  // logiciel d'agenda porte un jeton, que la route vérifie. Il ne doit pas non
+  // plus dépendre du service de connexion — une panne d'Auth vidait sinon
+  // l'agenda des agents.
+  if (calendarFeedPath.test(path)) return NextResponse.next({ request });
 
   let response = NextResponse.next({ request });
   // Les en-têtes que Supabase demande avec un cookie de session : ils

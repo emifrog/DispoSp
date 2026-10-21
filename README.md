@@ -120,7 +120,8 @@ Le schéma est découpé en migrations successives, à appliquer dans l'ordre et
 | `supabase/migrations/20261020090000_traitements_planifies.sql`                    | Lot A des évolutions opérationnelles : rappel de garde la veille et relances 48 h puis 24 h avant la clôture, créés en base par Supabase Cron (`private.generate_due_notifications()`) pour les centres qui les activent (`organizations.reminders_enabled`, `shift_reminder_hour` ; désactivés par défaut, réglage journalisé) ; une clé par événement (`notifications.event_key`, unique) ; un rappel devenu faux est écarté avant toute réservation d'envoi ; journal des passages et état lisible par l'encadrement (`public.scheduled_status()`). Le code en dépend : à appliquer **avant** de déployer                                                                        | Appliquée — confirmation du porteur du projet, 21 octobre 2026   |
 | `supabase/migrations/20261020150000_photographies.sql`                            | Lot A, seconde partie : les photographies que lira le bilan. À chaque publication d'un créneau, à la date de clôture d'une campagne et au début de chaque créneau, un fait sans identifiant (besoin, minima, effectifs, couverture) et des détails par personne (affectés et leurs qualifications, participants attendus). Prises dans la transaction de la publication, au passage planifié, et avant toute modification qui changerait ce qu'elles retiennent. Aucun code de l'application n'en dépend ; les scripts de retrait, de purge, de bascule et d'export la supposent : à appliquer après 20261020090000                                                                 | Appliquée — confirmation du porteur du projet, 21 octobre 2026   |
 | `supabase/migrations/20261020200000_publication_du_mois.sql`                      | Lot B : publier le mois. Une seule définition d'un créneau publiable (`private.shift_blockers()`), partagée par la publication unitaire — mêmes refus qu'avant — et par celle du mois ; un aperçu (`public.month_publication_preview()`) qui classe chaque créneau prêt, bloqué ou inchangé ; la publication des seuls créneaux prêts en une transaction (`public.publish_month()`), refusée sur un aperçu périmé, rejouée sans effet pour une même demande ; un avis par agent dont les gardes changent, et plus d'avis par créneau. Le code en dépend : à appliquer **avant** de déployer                                                                                         | Appliquée — confirmation du porteur du projet, 21 octobre 2026   |
-| `supabase/migrations/20261021090000_appels_remplacement.sql`                      | Lot C : la règle de repos du centre (autant de repos que la garde a duré, décision du 21 octobre), dans la définition partagée d'un créneau publiable — publication unitaire, du mois et candidature ; les appels à remplacement et à renfort (`public.shift_calls`, destinataires, propositions), ouverts depuis un désistement ou un créneau insuffisant, élargis sur geste du gestionnaire ; la déclaration exceptionnelle d'un agent sans disponibilité validée, preuve acceptée à la publication ; la fermeture de l'appel par la publication qui couvre le besoin, son annulation, son expiration au début de la garde. Le code en dépend : à appliquer **avant** de déployer | Non appliquée                                                    |
+| `supabase/migrations/20261021090000_appels_remplacement.sql`                      | Lot C : la règle de repos du centre (autant de repos que la garde a duré, décision du 21 octobre), dans la définition partagée d'un créneau publiable — publication unitaire, du mois et candidature ; les appels à remplacement et à renfort (`public.shift_calls`, destinataires, propositions), ouverts depuis un désistement ou un créneau insuffisant, élargis sur geste du gestionnaire ; la déclaration exceptionnelle d'un agent sans disponibilité validée, preuve acceptée à la publication ; la fermeture de l'appel par la publication qui couvre le besoin, son annulation, son expiration au début de la garde. Le code en dépend : à appliquer **avant** de déployer | Appliquée — confirmation du porteur du projet, 21 octobre 2026   |
+| `supabase/migrations/20261021150000_agenda_abonne.sql`                            | Lot D : l'agenda personnel abonné. Un abonnement par agent à la fois (`public.calendar_feeds`), révocable ; la base ne garde que le condensat SHA-256 du jeton. Le flux (`public.calendar_feed_events()`, réservé au serveur) rend les gardes publiées encore tenues, de trois mois en arrière à douze en avant, et rien dès que l'abonnement est révoqué ou que l'agent n'est plus membre actif qui prend des gardes. Le code en dépend : à appliquer **avant** de déployer                                                                                                                                                                                                        | Non appliquée                                                    |
 
 Les deux migrations du 18 septembre n’ajoutent que des fonctions : `public.create_campaign()` pour la première, `public.save_availability_template()` et `public.apply_availability_template()` pour la seconde. Elles ne modifient aucune donnée existante.
 
@@ -364,6 +365,33 @@ La déclaration est une preuve gardée : horaires acceptés, date, version du te
 **Toute publication qui couvre la garde ferme l'appel**, qu'elle vienne de l'appel ou du planning. Les retenus sont confirmés ; les autres candidats apprennent que la recherche est terminée, sans plus de détail ; les sollicitations encore en file ne partent plus. Annulé ou expiré, l'appel ne compte pas comme un remplacement.
 
 **La preuve d'une déclaration** vaut pour une republication inchangée, même l'appel fermé. Elle cesse quand l'agent sort du planning : une réaffectation future exigera une nouvelle déclaration.
+
+### Agenda abonné
+
+Lot D, migration `20261021150000`. Dans **Mon planning**, l'agent crée une adresse privée et l'ajoute une fois à son logiciel d'agenda. L'export ponctuel reste.
+
+- **Apple Calendrier** : le lien `webcal:` ouvre l'abonnement directement.
+- **Google Agenda** : sur ordinateur, Autres agendas, « À partir de l'URL ».
+- **Outlook** : « S'abonner à partir du web ».
+
+**Le contenu.** Le flux contient les gardes publiées encore tenues de l'agent, sur trois mois en arrière et douze en avant (valeurs de départ du §2). Il n'y a ni brouillon, ni proposition, ni garde dont un désistement accepté l'a relevé.
+
+Chaque garde garde l'identifiant de l'export ponctuel, et la révision publiée lui sert de séquence : une republication modifie l'événement au lieu d'en créer un second. Les horaires sont en UTC, calculés sur ceux de la campagne et le fuseau du centre.
+
+**Une garde retirée disparaît du flux.** Un abonnement se relit en entier à chaque synchronisation, et Apple comme Google retirent alors l'événement d'eux-mêmes ; aucun événement « annulé » n'est gardé. Il n'y a pas d'alarme : le rappel de garde est celui de DispoSP.
+
+**Le rythme est celui du logiciel d'agenda** : le flux suggère une heure (`REFRESH-INTERVAL`), Google relit souvent moins vite. L'écran le dit, et rappelle que les modifications urgentes arrivent par les notifications de DispoSP.
+
+**La sécurité.**
+
+- **Le jeton** : 32 octets tirés par le serveur (`POST /api/agenda`), rendus une seule fois. La base n'en garde que le condensat SHA-256 : personne, pas même l'encadrement, ne peut relire l'adresse.
+- **Le flux** (`GET /api/agenda/<jeton>.ics`) se lit sans cookie. Le middleware ne laisse passer que cette forme exacte, sans appeler le service de connexion.
+- **La route** réduit le jeton à son condensat avant toute requête, et ne le journalise jamais.
+- **La base vérifie à chaque lecture** que l'abonnement est actif et que l'agent est toujours membre actif qui prend des gardes : une désactivation, un passage à l'encadrement ou une révocation coupent l'accès. Un jeton inconnu, révoqué ou d'un agent écarté reçoit le même 404.
+- **La réponse** porte `Cache-Control: private, no-store`.
+- **Une nouvelle adresse révoque l'ancienne.** « Révoquer » coupe tout.
+
+À savoir : l'hébergeur journalise les adresses demandées ; le jeton y figure, comme dans toute adresse d'abonnement. L'accès à ces journaux doit rester restreint.
 
 ### Configuration
 

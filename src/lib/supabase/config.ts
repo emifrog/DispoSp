@@ -53,3 +53,11 @@ export const publicPaths = [
   // l'ensemble de /api.
   "/api/traitements",
 ];
+
+/**
+ * Le flux d'un agenda abonné (lot D) : un logiciel d'agenda le lit sans cookie,
+ * avec le jeton de l'agent dans l'adresse. Cette forme exacte seulement — un
+ * jeton de 43 caractères base64url —, ni `/api/agenda` où l'agent gère son
+ * lien, ni rien d'autre sous `/api`. La route vérifie le jeton elle-même.
+ */
+export const calendarFeedPath = /^\/api\/agenda\/[A-Za-z0-9_-]{43}\.ics$/;

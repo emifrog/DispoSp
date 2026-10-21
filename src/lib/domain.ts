@@ -220,6 +220,9 @@ export const stateSchema = z.object({
       }),
     )
     .default([]),
+  /** L'abonnement actif de l'agent à son agenda (lot D) : quand il a été créé, et
+      quand son logiciel d'agenda l'a lu pour la dernière fois. Jamais l'adresse. */
+  calendarFeed: z.object({ createdAt: z.string(), lastReadAt: z.string().nullable() }).nullable().default(null),
   callRecipients: z
     .array(z.object({ callId: z.string(), userId: z.string(), circle: z.enum(["AVAILABLE", "WIDENED"]) }))
     .default([]),

@@ -28,6 +28,7 @@ union all select 'invitations', null, count(*) from public.invitations where org
 union all select 'notifications', null, count(*) from public.notifications where organization_id = (select id from centre)
 union all select 'appareils abonnés', null, count(*) from public.push_subscriptions where organization_id = (select id from centre)
 union all select 'lignes de journal d''audit', null, count(*) from public.audit_logs where organization_id = (select id from centre)
+union all select 'abonnements à l''agenda actifs', null, count(*) from public.calendar_feeds where organization_id = (select id from centre) and revoked_at is null
 union all select 'appels à remplacement ou à renfort', null, count(*) from public.shift_calls where organization_id = (select id from centre)
 union all select 'propositions d''agents', null, count(*) from public.call_proposals where organization_id = (select id from centre)
 union all select 'photographies de publication', null, count(*) from private.publication_facts where organization_id = (select id from centre)

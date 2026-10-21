@@ -2939,6 +2939,45 @@ fieldset.field legend {
   }
 }
 
+/* --- Agenda abonné (lot D) ---------------------------------------------------- */
+
+.calendar-subscription {
+  display: grid;
+  gap: 12px;
+  padding: 0 22px 22px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.calendar-url {
+  display: flex;
+  gap: 8px;
+}
+/* L'adresse est longue : elle se lit entière à la sélection, sans élargir la page. */
+.calendar-url input {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+.calendar-steps {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+.calendar-steps a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--blue);
+  font-weight: 600;
+}
+.calendar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* --- Appels (lot C) ---------------------------------------------------------- */
 
 .call-list {
@@ -3355,6 +3394,8 @@ fieldset.field legend {
 }
 .planning-exports {
   margin-top: 22px;
+  /* L'abonnement à l'agenda (lot D) suit la carte d'export. */
+  margin-bottom: 18px;
 }
 .planning-exports .shortcut {
   width: 100%;

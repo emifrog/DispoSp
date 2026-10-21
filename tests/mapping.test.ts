@@ -222,6 +222,7 @@ function raw(overrides: Partial<Raw> = {}): Raw {
         need: { required: 1, kept: 0, missing_headcount: 1, missing_qualifications: [] },
       },
     ],
+    calendarFeeds: [],
     callRecipients: [
       { call_id: "call-1", user_id: "u2", circle: "AVAILABLE" },
       { call_id: "call-orphelin", user_id: "u2", circle: "WIDENED" },

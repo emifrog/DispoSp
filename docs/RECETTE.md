@@ -398,6 +398,24 @@ Ces vérifications ne sont pas du confort. Elles portent sur des données person
 
 **Sinon** — La notification existe quand même dans **Notifications**, et l'email est parti. C'est le filet : la bulle est un rappel, jamais le canal officiel. Vérifiez alors l'étape 0.6 — migrations passées, trois variables présentes, construction refaite après un changement de clé publique.
 
+### 8.4 S'abonner à son agenda
+
+Un test HTTP ne suffit pas : cette étape se fait avec de vrais agendas, et prend du temps — Google relit un abonnement à son rythme, parfois plusieurs heures après.
+
+**Préparer** — La migration `20261021150000` appliquée. Un agent d'essai avec au moins deux gardes publiées à venir.
+
+**Faire** — **Mon planning → M'abonner à mon agenda → Créer mon adresse d'abonnement**. Ajouter l'adresse à **Apple Calendrier** (lien « ouvrir dans Calendrier ») et à **Google Agenda** (Autres agendas, « À partir de l'URL »).
+
+**Attendu** — Les deux gardes apparaissent, aux bonnes heures, la nuit jusqu'au lendemain matin. Aucun brouillon, aucune proposition à un appel. Le panneau affiche « Dernière lecture par votre agenda » après la première synchronisation.
+
+**À vérifier, en notant les délais observés dans le journal**
+
+- Ajoutez une garde à l'agent et publiez : elle apparaît, sans doublon.
+- Retirez-le d'une garde et republiez : elle disparaît des deux agendas.
+- Un désistement accepté sur une garde la retire aussi.
+
+**À vérifier aussi** — **Nouvelle adresse** : l'ancienne cesse de fonctionner ; l'abonnement existant ne reçoit plus rien et doit être remplacé. **Révoquer** : l'adresse rend « Agenda introuvable », sans rien révéler. Un agent désactivé n'a plus de flux.
+
 ---
 
 ## Partie 9 — L'exploitation
@@ -470,6 +488,7 @@ Prévoir où regarder quand quelque chose ne va pas : les logs de l'hébergeur, 
 | 6     |      |     |          |          |
 | 7     |      |     |          |          |
 | 8     |      |     |          |          |
+| 8.4   |      |     |          |          |
 | 9.1   |      |     |          |          |
 | 9.2   |      |     |          |          |
 | 9.3   |      |     |          |          |
