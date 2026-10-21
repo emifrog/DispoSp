@@ -225,6 +225,9 @@ export function sampleState(now = new Date()): AppState {
     assignments: {},
     publications: {},
     withdrawals: [],
+    calls: [],
+    callRecipients: [],
+    callProposals: [],
     audit: [],
   };
   const campaign = state.campaigns[0];

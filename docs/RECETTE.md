@@ -260,6 +260,31 @@ Rien n'est perdu : la file garde le message et le renverra à la prochaine actio
 
 **À vérifier aussi** — Un double clic sur le bouton de publication ne publie qu'une fois et n'envoie qu'un avis par agent.
 
+### 4.7 La règle de repos
+
+**Préparer** — La migration `20261021090000` appliquée. Un agent d'essai publié sur une Nuit.
+
+**Faire** — L'affecter au Jour du lendemain, puis publier ce Jour.
+
+**Attendu** — Refus : « Repos insuffisant — après une garde, autant de repos qu'elle a duré : … (garde du …, Nuit) ». Sur la Nuit suivante (12 h après), la publication passe. Un Jour et une Nuit du même jour (24 h) passent ; une garde le lendemain de ce 24 h est refusée, le surlendemain passe.
+
+**À vérifier** — Dans **Publier le mois**, deux brouillons incompatibles du même agent apparaissent bloqués avec le même motif, et la publication des autres créneaux réussit.
+
+### 4.8 Un appel à remplacement
+
+**Faire** — Avec un agent d'essai, se désister d'une garde publiée à venir. Côté encadrement, **Désistements → Accepter et chercher un remplaçant**.
+
+**Attendu**
+
+- L'aperçu donne le besoin restant et le nombre d'agents sollicités ; le lancer accepte le désistement, et l'agent en est prévenu.
+- Les agents d'essai dont la disponibilité validée couvre la garde reçoivent « Garde à pourvoir » (application, email avec date et horaires, push). Le message ne nomme ni l'agent remplacé ni son motif.
+- Un agent sollicité ouvre **Appels** et touche **Je me propose** : sa proposition est « en attente de confirmation du gestionnaire », et rien n'apparaît dans son planning.
+- Au planning, sur la garde, le panneau **Appel en cours** liste la proposition. **Retenir** l'inscrit au brouillon ; **Confirmer et publier** publie la garde, l'appel se ferme, l'agent retenu est prévenu, et un autre candidat reçoit « Recherche terminée ».
+
+**À vérifier** — **Élargir** l'appel : un agent sans disponibilité validée reçoit l'appel ; il ne peut se proposer qu'après avoir coché la déclaration. Retenu et publié, sa campagne et sa réponse restent inchangées.
+
+**À vérifier aussi** — Un agent qui retire sa proposition après avoir été retenu disparaît du brouillon. Un appel non pourvu au début de la garde passe à « Expiré » au passage planifié suivant.
+
 ---
 
 ## Partie 5 — Rappel et clôture
@@ -437,6 +462,8 @@ Prévoir où regarder quand quelque chose ne va pas : les logs de l'hébergeur, 
 | 4.4   |      |     |          |          |
 | 4.5   |      |     |          |          |
 | 4.6   |      |     |          |          |
+| 4.7   |      |     |          |          |
+| 4.8   |      |     |          |          |
 | 5.1   |      |     |          |          |
 | 5.2   |      |     |          |          |
 | 5.3   |      |     |          |          |

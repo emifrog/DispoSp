@@ -42,6 +42,8 @@ export function pushPayload(id: string, kind: string) {
     WITHDRAWAL_DECIDED: "Une réponse à votre désistement est disponible.",
     // Ni date ni horaires sur l’écran verrouillé : le détail est dans l’application.
     SHIFT_REMINDER: "Rappel : une garde vous attend.",
+    CALL_OPENED: "Une garde est à pourvoir.",
+    CALL_CLOSED: "Une recherche de remplaçant est terminée.",
   };
   // Aucun nom, motif de désistement ou détail de garde sur l'écran verrouillé.
   return {

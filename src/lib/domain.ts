@@ -195,6 +195,46 @@ export const stateSchema = z.object({
       }),
     )
     .default([]),
+  /** Les appels à remplacement ou à renfort (lot C). Un agent ne voit que ceux
+      qui le sollicitent, et ses propositions : ce sont les policies qui filtrent. */
+  calls: z
+    .array(
+      z.object({
+        id: z.string(),
+        campaignId: z.string(),
+        shiftId: z.string(),
+        date: isoDate,
+        shift: z.enum(["DAY", "NIGHT"]),
+        origin: z.enum(["WITHDRAWAL", "REINFORCEMENT"]),
+        state: z.enum(["OPEN", "RESOLVED", "CANCELLED", "EXPIRED"]),
+        openedAt: z.string(),
+        expiresAt: z.string(),
+        widenedAt: z.string().nullable(),
+        closedAt: z.string().nullable(),
+        need: z.object({
+          required: z.number(),
+          kept: z.number(),
+          missingHeadcount: z.number(),
+          missingQualifications: z.array(z.object({ qualification: z.string(), missing: z.number() })),
+        }),
+      }),
+    )
+    .default([]),
+  callRecipients: z
+    .array(z.object({ callId: z.string(), userId: z.string(), circle: z.enum(["AVAILABLE", "WIDENED"]) }))
+    .default([]),
+  callProposals: z
+    .array(
+      z.object({
+        id: z.string(),
+        callId: z.string(),
+        userId: z.string(),
+        state: z.enum(["PENDING", "SELECTED", "CONFIRMED", "WITHDRAWN", "DECLINED", "RELEASED"]),
+        proposedAt: z.string(),
+        declared: z.boolean(),
+      }),
+    )
+    .default([]),
   campaigns: z.array(
     z.object({
       id: z.string(),
@@ -774,6 +814,21 @@ export const commandSchema = z.discriminatedUnion("type", [
     fingerprint: z.string().regex(/^[0-9a-f]{32}$/),
     requestId: id,
   }),
+  // Les appels à remplacement et à renfort (lot C). La base contrôle droits,
+  // éligibilité, repos et concurrence ; l'écran ne fait que demander.
+  z.object({
+    type: z.literal("openCall"),
+    campaignId: id,
+    date: isoDate,
+    shift: shiftSchema,
+    withdrawalId: id.optional(),
+  }),
+  z.object({ type: z.literal("widenCall"), callId: id }),
+  z.object({ type: z.literal("cancelCall"), callId: id }),
+  z.object({ type: z.literal("proposeForCall"), callId: id, declare: z.boolean() }),
+  z.object({ type: z.literal("withdrawProposal"), callId: id }),
+  z.object({ type: z.literal("selectProposal"), proposalId: id }),
+  z.object({ type: z.literal("confirmCall"), callId: id }),
   // La saisie rapide, onglet « Semaine type » : une valeur par jour de semaine,
   // ou rien, sur une période. `keepFilled` épargne les jours déjà renseignés ;
   // `remember` garde la semaine comme disponibilité habituelle.
@@ -830,6 +885,8 @@ export const notificationLabels: Record<string, string> = {
   WITHDRAWAL_REQUESTED: "Désistement signalé",
   WITHDRAWAL_DECIDED: "Réponse à votre désistement",
   SHIFT_REMINDER: "Rappel de garde",
+  CALL_OPENED: "Garde à pourvoir",
+  CALL_CLOSED: "Recherche terminée",
 };
 /**
  * Ce que chaque message invite à faire, et l'écran où cela se fait.
@@ -850,6 +907,8 @@ export const notificationTargets: Record<string, { label: string; path: string }
   WITHDRAWAL_REQUESTED: { label: "Examiner le désistement", path: "/demandes" },
   WITHDRAWAL_DECIDED: { label: "Consulter mon planning", path: "/mon-planning" },
   SHIFT_REMINDER: { label: "Consulter mon planning", path: "/mon-planning" },
+  CALL_OPENED: { label: "Voir l’appel", path: "/appels" },
+  CALL_CLOSED: { label: "Voir mes appels", path: "/appels" },
 };
 export const commandLabels: Record<Command["type"], string> = {
   availability: "Disponibilités modifiées",
@@ -876,14 +935,40 @@ export const commandLabels: Record<Command["type"], string> = {
   applyWeek: "Disponibilités modifiées",
   reminders: "Rappels automatiques enregistrés",
   publishMonth: "Planning du mois publié",
+  openCall: "Appel lancé",
+  widenCall: "Appel élargi",
+  cancelCall: "Appel annulé",
+  proposeForCall: "Proposition envoyée — en attente de confirmation du gestionnaire",
+  withdrawProposal: "Proposition retirée",
+  selectProposal: "Agent retenu dans le brouillon",
+  confirmCall: "Garde publiée, appel fermé",
 };
+
+/**
+ * La déclaration exceptionnelle d'un appel élargi (lot C, décision du 21
+ * octobre). La version part avec la proposition : la base refuse toute autre que
+ * celle de `private.declaration_terms()`, et le texte affiché ne change pas sans
+ * elle.
+ */
+export const DECLARATION_TERMS = "declaration-2026-10-21";
+export const declarationText = (date: string, from: number, to: number) =>
+  `Je confirme être disponible le ${dateLabel(date, { weekday: "long", day: "numeric", month: "long" })}, de ${from} h à ${to} h${to <= from ? " le lendemain" : ""}, pour cette garde. Mon affectation reste soumise à confirmation du gestionnaire.`;
+
+/** Ce qui manque à une garde en appel, en quelques mots : « 1 place · 1 COD2 ». */
+export function callNeedText(need: AppState["calls"][number]["need"]): string {
+  const parts = [
+    ...(need.missingHeadcount > 0 ? [`${need.missingHeadcount} ${plural(need.missingHeadcount, "place")}`] : []),
+    ...need.missingQualifications.map(q => `${q.missing} ${q.qualification}`),
+  ];
+  return parts.join(" · ") || "Besoin couvert";
+}
 
 /**
  * L'aperçu de la publication du mois, tel que public.month_publication_preview()
  * le rend (lot B). La base classe chaque créneau ; l'écran ne fait que le dire.
  */
 export type MonthBlocker =
-  | { code: "availability" | "inactive" | "withdrawal"; agents: string }
+  | { code: "availability" | "inactive" | "withdrawal" | "rest"; agents: string }
   | { code: "requirement" }
   | { code: "headcount"; assigned: number; required: number }
   | { code: "qualifications"; missing: string };
@@ -911,6 +996,8 @@ export function blockerText(blocker: MonthBlocker): string {
       return `Agent désactivé : ${blocker.agents}`;
     case "withdrawal":
       return `Désistement accepté, remplacement à faire : ${blocker.agents}`;
+    case "rest":
+      return `Repos insuffisant : ${blocker.agents}`;
     case "requirement":
       return "Besoins non définis";
     case "headcount":

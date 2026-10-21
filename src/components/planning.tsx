@@ -18,6 +18,7 @@ import {
   Users,
 } from "lucide-react";
 import { useApp } from "./provider";
+import { CallLauncher, CallPanel } from "./calls";
 import { PageTitle, Panel, Avatar, SegmentedTabs, gradeAndFonction } from "./common";
 import { Button } from "./ui/button";
 import { Modal } from "./ui/dialog";
@@ -126,6 +127,10 @@ export function Planning() {
   const published = state.publications[key];
   const changed = published && JSON.stringify([...published.agents].sort()) !== JSON.stringify([...assignedIds].sort());
   const upToDate = Boolean(published) && !changed;
+  // L'appel à remplacement ou à renfort en cours sur cette garde (lot C).
+  const openCall = state.calls.find(
+    c => c.campaignId === campaignId && c.date === date && c.shift === shift && c.state === "OPEN",
+  );
   async function loadMonth() {
     setMonth({ status: "loading" });
     setMonth(await readMonthPreview(campaignId));
@@ -455,9 +460,15 @@ export function Planning() {
               Déjà publié tel quel en version {published.revision} : modifiez les affectations pour republier.
             </p>
           )}
+          {/* Le vivier ne suffit pas : l'appel sollicite ceux dont la disponibilité
+              validée couvre la garde, et le gestionnaire peut l'élargir. */}
+          {need && !result.covered && !openCall && (
+            <CallLauncher campaignId={campaignId} date={date} shift={shift} label="Chercher du renfort" />
+          )}
           <p className="save-caption">Le brouillon est enregistré à chaque modification.</p>
         </Panel>
       </div>
+      {openCall && <CallPanel call={openCall} publishable={result.covered} />}
       <Panel
         title="Répartition des gardes"
         subtitle="Charge par agent dans le brouillon du mois."

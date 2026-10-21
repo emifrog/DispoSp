@@ -5,6 +5,7 @@ import { useApp } from "./provider";
 import { AdministrationOnly, Avatar, PageTitle, Panel } from "./common";
 import { Button } from "./ui/button";
 import { useConfirmation } from "./ui/confirm";
+import { CallLauncher } from "./calls";
 import { dateLabel, hours, localDate, plural, relieves, shiftKey, type AppState } from "@/lib/domain";
 import { CAMPAIGN_PARAM } from "@/lib/campaign-param";
 
@@ -44,7 +45,7 @@ export function Withdrawals() {
     <>
       <PageTitle
         title="Désistements"
-        description="Les agents qui ne peuvent plus tenir une garde publiée. Accepter ou refuser leur répond ; le remplacement se fait au planning."
+        description="Les agents qui ne peuvent plus tenir une garde publiée. Accepter ou refuser leur répond ; « Accepter et chercher un remplaçant » lance aussi un appel aux agents disponibles."
       />
 
       <Panel
@@ -108,6 +109,14 @@ function Row({
   const reassignedIn = withdrawal.state === "ACCEPTED" && !stillOn ? holding : undefined;
   const [confirm, confirmation] = useConfirmation();
   const who = agent?.name ?? "L’agent";
+  // Un appel déjà ouvert sur cette garde : on le suit au planning, on n'en lance pas un second.
+  const calling = state.calls.some(
+    c =>
+      c.campaignId === withdrawal.campaignId &&
+      c.date === withdrawal.date &&
+      c.shift === withdrawal.shift &&
+      c.state === "OPEN",
+  );
   const slot = `à la garde ${withdrawal.shift === "DAY" ? "de jour" : "de nuit"} du ${dateLabel(withdrawal.date, { weekday: "long", day: "numeric", month: "long" })}`;
 
   return (
@@ -142,6 +151,15 @@ function Row({
               Ouvrir la garde
               <ArrowRight size={14} />
             </Link>
+            {!calling && (
+              <CallLauncher
+                campaignId={withdrawal.campaignId}
+                date={withdrawal.date}
+                shift={withdrawal.shift}
+                label="Chercher un remplaçant"
+                size="sm"
+              />
+            )}
           </p>
         )}
         {reassignedIn && (
@@ -188,6 +206,16 @@ function Row({
             <X size={15} />
             Refuser
           </Button>
+          {!calling && (
+            <CallLauncher
+              campaignId={withdrawal.campaignId}
+              date={withdrawal.date}
+              shift={withdrawal.shift}
+              withdrawalId={withdrawal.id}
+              label="Accepter et chercher un remplaçant"
+              size="sm"
+            />
+          )}
           {confirmation}
         </span>
       ) : (

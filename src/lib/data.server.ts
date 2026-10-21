@@ -233,7 +233,7 @@ export async function loadState(session: AttachedSession, asked?: string | null)
   // adresse — d'où le filtre sur le créneau joint (`!inner`), qui ne garde que
   // les lignes dont le créneau appartient à l'un de ces plannings.
   const scheduleIds = (schedules as { id: string }[]).map(s => s.id);
-  const [shifts, assignments, withdrawals] = await Promise.all([
+  const [shifts, assignments, withdrawals, calls, callRecipients, callProposals] = await Promise.all([
     paged<"shifts">(
       "créneaux",
       count =>
@@ -278,6 +278,45 @@ export async function loadState(session: AttachedSession, asked?: string | null)
           .order("id"),
       row => row.id,
     ),
+    // Les appels du lot C, sous RLS comme les désistements : l'agent n'obtient
+    // que ceux qui le sollicitent, et ses propositions.
+    paged<"calls">(
+      "appels",
+      count =>
+        supabase
+          .from("shift_calls")
+          .select(
+            "id, campaign_id, schedule_shift_id, date, shift_code, origin, state, opened_at, expires_at, widened_at, closed_at, need",
+            count,
+          )
+          .eq("organization_id", organizationId)
+          .in("campaign_id", campaignIds)
+          .order("opened_at", { ascending: false })
+          .order("id"),
+      row => row.id,
+    ),
+    paged<"callRecipients">(
+      "destinataires des appels",
+      count =>
+        supabase
+          .from("call_recipients")
+          .select("call_id, user_id, circle", count)
+          .eq("organization_id", organizationId)
+          .order("call_id")
+          .order("user_id"),
+      row => `${row.call_id}/${row.user_id}`,
+    ),
+    paged<"callProposals">(
+      "propositions",
+      count =>
+        supabase
+          .from("call_proposals")
+          .select("id, call_id, user_id, state, proposed_at, declared", count)
+          .eq("organization_id", organizationId)
+          .order("proposed_at")
+          .order("id"),
+      row => row.id,
+    ),
   ]);
 
   const raw: Raw = {
@@ -299,6 +338,9 @@ export async function loadState(session: AttachedSession, asked?: string | null)
     shifts,
     assignments,
     withdrawals,
+    calls,
+    callRecipients,
+    callProposals,
     audit: rows<"audit">("journal d’audit", audit),
   };
   return buildState(raw, session.membership.organizationName, { since, loaded: campaignIds });

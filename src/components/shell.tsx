@@ -63,6 +63,9 @@ const agentNav = [
   { href: "/accueil", label: "Accueil", icon: Home },
   { href: "/mes-disponibilites", label: "Disponibilités", icon: CalendarDays },
   { href: "/mon-planning", label: "Mon planning", icon: CalendarCheck2 },
+  // Les appels du lot C : une garde à pourvoir n'attend pas, ils prennent la
+  // quatrième place de la barre du bas ; le profil passe au menu.
+  { href: "/appels", label: "Appels", icon: Megaphone },
   { href: "/profil", label: "Mon profil", icon: UserRound },
   { href: "/notifications", label: "Notifications", icon: Bell },
 ];
@@ -101,10 +104,20 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
   // Un désistement en attente bloque quelqu'un : il se compte sur l'entrée du
   // menu et dans la barre du bas, pas seulement sur son écran.
   const pendingWithdrawals = state.withdrawals.filter(w => w.state === "PENDING").length;
+  // Les appels ouverts qui sollicitent l'agent et où il ne s'est pas proposé.
+  const openCalls = state.callRecipients.filter(
+    r =>
+      r.userId === actor.id &&
+      state.calls.some(c => c.id === r.callId && c.state === "OPEN") &&
+      !state.callProposals.some(
+        p => p.callId === r.callId && p.userId === actor.id && ["PENDING", "SELECTED", "CONFIRMED"].includes(p.state),
+      ),
+  ).length;
+  const counts: Record<string, number> = { "/demandes": pendingWithdrawals, "/appels": openCalls };
   const badge = (href: string) =>
-    href === "/demandes" && pendingWithdrawals > 0 ? (
+    counts[href] > 0 ? (
       <span className="nav-badge">
-        {pendingWithdrawals}
+        {counts[href]}
         <span className="sr-only"> en attente</span>
       </span>
     ) : null;

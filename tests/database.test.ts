@@ -6176,6 +6176,7 @@ describe("Traitements planifiés — rappels de garde", () => {
     expect(runs.rows[0].ok).toBe(true);
     expect(Object.keys(runs.rows[0].summary).sort()).toEqual([
       "annulations",
+      "appels_expires",
       "photographies",
       "rappels_de_garde",
       "relances",
@@ -7242,8 +7243,10 @@ describe("Publication du mois", () => {
       "insert into public.staffing_requirements(organization_id,campaign_id,date,shift_code,headcount) values ($1,$2,'2026-11-02','DAY',1)",
       [org, campaign],
     );
-    await draft(day2, a3);
-    await draft(night3, a2);
+    // Des affectations qui respectent le repos (décision du 21 octobre) : Deux
+    // le 2 au Jour après son Jour du 1er, Trois le 3 à la Nuit après sa Nuit du 1er.
+    await draft(day2, a2);
+    await draft(night3, a3);
     await live.exec(`
       reset role;
       create function public.casse_la_publication() returns trigger language plpgsql as $$
@@ -7285,7 +7288,7 @@ describe("Publication du mois", () => {
     await be(chef);
     await live.query(
       "delete from public.schedule_assignments where schedule_shift_id=$1 and revision=0 and user_id=$2",
-      [night3, a2],
+      [night3, a3],
     );
     const blocked = (await preview()).shifts.find(s => s.id === night3);
     expect(blocked?.reasons).toEqual([{ code: "headcount", assigned: 1, required: 2 }]);
@@ -7316,6 +7319,491 @@ describe("Migration 20261020200000 — gardes d’application", () => {
     await applied.close();
     const early = await upTo(target - 1);
     await expect(early.exec(migration())).rejects.toThrow("20261020150000_photographies.sql");
+    await early.close();
+  }, 90000);
+});
+
+// Lot C (21 octobre) : la règle de repos du centre, puis les appels à
+// remplacement et à renfort. Les gardes sont prises le mois prochain : un appel
+// exige une garde à venir, et des dates fixes vieilliraient.
+describe("Règle de repos — autant de repos que la garde a duré", () => {
+  const org = "10000000-0000-0000-0000-0000000000c1";
+  const team = "20000000-0000-0000-0000-0000000000c1";
+  const chef = "30000000-0000-0000-0000-0000000000c0";
+  const nuit = "30000000-0000-0000-0000-0000000000c1";
+  const vingtQuatre = "30000000-0000-0000-0000-0000000000c2";
+  const campaign = "40000000-0000-0000-0000-0000000000c1";
+  const schedule = "50000000-0000-0000-0000-0000000000c1";
+  // Six jours, Jour et Nuit : slot(jour, "D"|"N").
+  const slot = (day: number, code: "D" | "N") => `60000000-0000-0000-0000-0000000000${code === "D" ? "d" : "e"}${day}`;
+  let live: PGlite;
+  const violation = async (member: string, shift: string, extra: string[] = []) =>
+    (
+      await live.query<{ v: string | null }>("select private.rest_violation($1, $2, $3::uuid[]) as v", [
+        member,
+        shift,
+        extra,
+      ])
+    ).rows[0].v;
+  const published = async (shift: string, user: string) => {
+    await live.exec(`
+      set session_replication_role = replica;
+      insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,revision,status,assigned_by)
+        values ('${org}','${shift}','${user}',1,'CONFIRMED','${chef}');
+      update public.schedule_shifts set published_revision=1, published_at=now() where id='${shift}';
+      set session_replication_role = origin;`);
+  };
+
+  beforeAll(async () => {
+    live = await freshDatabase();
+    await live.exec(`
+      insert into auth.users(id) values ('${chef}'), ('${nuit}'), ('${vingtQuatre}');
+      insert into public.profiles(user_id,display_name) values ('${chef}','Chef'), ('${nuit}','Agent Nuit'),
+        ('${vingtQuatre}','Agent Vingt-Quatre');
+      insert into public.organizations(id,name) values ('${org}','Centre repos');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values ('${org}','${chef}','${team}','GESTIONNAIRE',true),
+        ('${org}','${nuit}','${team}','AGENT',true), ('${org}','${vingtQuatre}','${team}','AGENT',true);
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        select '${campaign}','${org}','${team}','Mois prochain', m, (m + interval '1 month - 1 day')::date,
+               now()-interval '10 days', now()+interval '1 day'
+          from (select date_trunc('month', (now() at time zone 'Europe/Paris')::date + interval '1 month')::date as m) t;
+      insert into public.schedules(id,organization_id,campaign_id,team_id) values ('${schedule}','${org}','${campaign}','${team}');
+      insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code)
+        select ('60000000-0000-0000-0000-0000000000' || case when code = 'DAY' then 'd' else 'e' end || d)::uuid,
+               '${org}', '${schedule}', c.starts_on + d, code
+          from public.availability_campaigns c, generate_series(1, 6) d, unnest(array['DAY','NIGHT']) code
+         where c.id = '${campaign}';`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("refuse le Jour qui suit une Nuit, et accepte le Jour d’après", async () => {
+    await published(slot(1, "N"), nuit);
+    // La Nuit finit à 8 h : le Jour qui commence à 8 h n'a aucun repos.
+    expect(await violation(nuit, slot(2, "D"))).toMatch(/^garde du \d\d\/\d\d, Nuit$/);
+    // La Nuit du lendemain commence 12 h après : 12 h de repos, le compte y est.
+    expect(await violation(nuit, slot(2, "N"))).toBeNull();
+    // Une garde contiguë qui la précède : le Jour de la même date, qui ferait un 24 h.
+    expect(await violation(nuit, slot(1, "D"))).toBeNull();
+  });
+
+  it("tient le Jour et la Nuit d’une même date pour 24 h, et exige 24 h de repos ensuite", async () => {
+    await published(slot(3, "D"), vingtQuatre);
+    await published(slot(3, "N"), vingtQuatre);
+    // Le 24 h finit le lendemain à 8 h : 24 h de repos, jusqu'au surlendemain 8 h.
+    expect(await violation(vingtQuatre, slot(4, "D"))).toMatch(/24 h$/);
+    expect(await violation(vingtQuatre, slot(4, "N"))).toMatch(/24 h$/);
+    expect(await violation(vingtQuatre, slot(5, "D"))).toBeNull();
+  });
+
+  it("refuse la publication unitaire en nommant l’agent et la garde en cause", async () => {
+    await live.exec(`
+      insert into public.staffing_requirements(organization_id,campaign_id,date,shift_code,headcount)
+        select '${org}', '${campaign}', date, 'DAY', 1 from public.schedule_shifts where id = '${slot(2, "D")}';
+      set session_replication_role = replica;
+      insert into public.availability_entries(campaign_id,user_id,date,availability_type)
+        select '${campaign}', '${nuit}', date, 'FULL_24H' from public.schedule_shifts where id = '${slot(2, "D")}';
+      insert into public.campaign_participants(organization_id,campaign_id,user_id,validated_at)
+        values ('${org}','${campaign}','${nuit}',now());
+      insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,revision,status,assigned_by)
+        values ('${org}','${slot(2, "D")}','${nuit}',0,'PROPOSED','${chef}');
+      set session_replication_role = origin;
+      select set_config('request.jwt.claim.sub', '${chef}', false);
+      set role authenticated;`);
+    await expect(live.query("select public.publish_shift($1)", [slot(2, "D")])).rejects.toThrow(
+      /^Rest not respected: Agent Nuit \(garde du \d\d\/\d\d, Nuit\)$/,
+    );
+    await live.exec("reset role");
+  });
+
+  it("juge le mois avec les brouillons qu’il publie ensemble", async () => {
+    // Deux brouillons du mois incompatibles se bloquent ; un brouillon qu'on ne
+    // publie pas ne compte pas.
+    await live.exec(`
+      set session_replication_role = replica;
+      insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,revision,status,assigned_by)
+        values ('${org}','${slot(5, "N")}','${nuit}',0,'PROPOSED','${chef}'),
+               ('${org}','${slot(6, "D")}','${nuit}',0,'PROPOSED','${chef}');
+      set session_replication_role = origin;`);
+    expect(await violation(nuit, slot(6, "D"))).toBeNull();
+    expect(await violation(nuit, slot(6, "D"), [slot(5, "N"), slot(6, "D")])).toMatch(
+      /^brouillon du \d\d\/\d\d, Nuit$/,
+    );
+  });
+});
+
+describe("Appels à remplacement et à renfort", () => {
+  const org = "10000000-0000-0000-0000-0000000000c5";
+  const other = "10000000-0000-0000-0000-0000000000c6";
+  const team = "20000000-0000-0000-0000-0000000000c5";
+  const bravo = "20000000-0000-0000-0000-0000000000c6";
+  const otherTeam = "20000000-0000-0000-0000-0000000000c7";
+  const chef = "30000000-0000-0000-0000-0000000000a0";
+  const [a1, a2, a3, a4, a5, a6] = [1, 2, 3, 4, 5, 6].map(n => `30000000-0000-0000-0000-0000000000a${n}`);
+  const b1 = "30000000-0000-0000-0000-0000000000b1";
+  const outsider = "30000000-0000-0000-0000-0000000000b9";
+  const campaign = "40000000-0000-0000-0000-0000000000c5";
+  const schedule = "50000000-0000-0000-0000-0000000000c5";
+  const inc = "70000000-0000-0000-0000-0000000000c1";
+  const cod = "70000000-0000-0000-0000-0000000000c2";
+  const slot = (day: number, code: "D" | "N") => `60000000-0000-0000-0000-0000000001${code === "D" ? "d" : "e"}${day}`;
+  const TERMS = "declaration-2026-10-21";
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+  const as = async <T>(id: string, sql: string, params: unknown[] = []) => {
+    await be(id);
+    try {
+      return (await live.query<T>(sql, params)).rows;
+    } finally {
+      await live.exec("reset role");
+    }
+  };
+  const rows = async <T>(sql: string, params: unknown[] = []) => {
+    await live.exec("reset role");
+    return (await live.query<T>(sql, params)).rows;
+  };
+  const one = async <T>(id: string, sql: string, params: unknown[] = []) => (await as<T>(id, sql, params))[0];
+  const openCall = async (shift: string, withdrawal: string | null = null) =>
+    (await one<{ id: string }>(chef, "select public.open_call($1, $2) as id", [shift, withdrawal])).id;
+  const propose = (who: string, call: string, declared = false, terms: string | null = null) =>
+    as(who, "select public.propose_for_call($1, $2, $3)", [call, declared, terms]);
+  const proposalOf = async (call: string, user: string) =>
+    (
+      await rows<{ id: string; state: string; declared: boolean }>(
+        "select id, state, declared from public.call_proposals where call_id=$1 and user_id=$2 order by proposed_at desc limit 1",
+        [call, user],
+      )
+    )[0];
+  const draftOf = async (shift: string) =>
+    (
+      await rows<{ user_id: string }>(
+        "select user_id from public.schedule_assignments where schedule_shift_id=$1 and revision=0 order by user_id",
+        [shift],
+      )
+    ).map(r => r.user_id);
+  const notices = async (kind: string, user: string) =>
+    rows<{ subject: string; body: string; email_status: string }>(
+      "select subject, body, email_status from public.notifications where kind=$1 and user_id=$2 order by created_at",
+      [kind, user],
+    );
+
+  beforeAll(async () => {
+    live = await freshDatabase();
+    const alpha = [a1, a2, a3, a4, a5, a6];
+    await live.exec(`
+      insert into auth.users(id) values ('${chef}'), ${alpha.map(a => `('${a}')`).join(", ")}, ('${b1}'), ('${outsider}');
+      insert into public.profiles(user_id,display_name) values ('${chef}','Chef'),
+        ${alpha.map((a, i) => `('${a}','Agent ${["Un", "Deux", "Trois", "Quatre", "Cinq", "Six"][i]}')`).join(", ")},
+        ('${b1}','Agent Bravo'), ('${outsider}','Ailleurs');
+      insert into public.organizations(id,name) values ('${org}','Centre appels'), ('${other}','Autre centre');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha'), ('${bravo}','${org}','Bravo'),
+        ('${otherTeam}','${other}','Alpha');
+      insert into public.memberships values ('${org}','${chef}','${team}','GESTIONNAIRE',true),
+        ${alpha.map(a => `('${org}','${a}','${team}','AGENT',true)`).join(", ")},
+        ('${org}','${b1}','${bravo}','AGENT',true), ('${other}','${outsider}','${otherTeam}','GESTIONNAIRE',true);
+      insert into public.qualifications(id,organization_id,name) values ('${inc}','${org}','INC1'), ('${cod}','${org}','COD2');
+      insert into public.user_qualifications(organization_id,user_id,qualification_id) values
+        ('${org}','${a1}','${inc}'), ('${org}','${a2}','${inc}'), ('${org}','${a3}','${inc}'), ('${org}','${a4}','${cod}');
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        select '${campaign}','${org}','${team}','Mois prochain', m, (m + interval '1 month - 1 day')::date,
+               now()-interval '10 days', now()+interval '1 day'
+          from (select date_trunc('month', (now() at time zone 'Europe/Paris')::date + interval '1 month')::date as m) t;
+      insert into public.campaign_participants(organization_id,campaign_id,user_id)
+        select '${org}', '${campaign}', u from unnest(array['${alpha.join("','")}']::uuid[]) u;
+      insert into public.schedules(id,organization_id,campaign_id,team_id) values ('${schedule}','${org}','${campaign}','${team}');
+      insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code)
+        select ('60000000-0000-0000-0000-0000000001' || case when code = 'DAY' then 'd' else 'e' end || d)::uuid,
+               '${org}', '${schedule}', c.starts_on + d, code
+          from public.availability_campaigns c, generate_series(1, 6) d, unnest(array['DAY','NIGHT']) code
+         where c.id = '${campaign}';
+      insert into public.staffing_requirements(organization_id,campaign_id,date,shift_code,headcount)
+        select '${org}', '${campaign}', s.date, s.shift_code, 2 from public.schedule_shifts s where s.schedule_id = '${schedule}';
+      -- Un, Deux, Trois et Quatre ont validé une disponibilité 24 h sur les six
+      -- jours ; Cinq et Six n'ont rien validé.
+      set session_replication_role = replica;
+      insert into public.availability_entries(campaign_id,user_id,date,availability_type)
+        select '${campaign}', u, s.date, 'FULL_24H'
+          from unnest(array['${a1}','${a2}','${a3}','${a4}']::uuid[]) u,
+               (select distinct date from public.schedule_shifts where schedule_id = '${schedule}') s;
+      update public.campaign_participants set validated_at = now() - interval '1 hour'
+       where user_id in ('${a1}','${a2}','${a3}','${a4}');
+      -- Publié : Un et Deux le 2 au Jour.
+      insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,revision,status,assigned_by) values
+        ('${org}','${slot(2, "D")}','${a1}',0,'PROPOSED','${chef}'), ('${org}','${slot(2, "D")}','${a2}',0,'PROPOSED','${chef}'),
+        ('${org}','${slot(2, "D")}','${a1}',1,'CONFIRMED','${chef}'), ('${org}','${slot(2, "D")}','${a2}',1,'CONFIRMED','${chef}');
+      update public.schedule_shifts set published_revision=1, published_at=now()-interval '1 day' where id='${slot(2, "D")}';
+      set session_replication_role = origin;`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  let call: string;
+
+  it("accepte le désistement et ouvre l’appel, en une fois, vers les seuls disponibles de l’équipe", async () => {
+    const [withdrawal] = await as<{ id: string }>(
+      a1,
+      "insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id,reason) values ($1,$2,$3,'Motif privé') returning id",
+      [org, slot(2, "D"), a1],
+    );
+    const preview = await one<{ p: Record<string, unknown> }>(chef, "select public.call_preview($1, $2) as p", [
+      slot(2, "D"),
+      withdrawal.id,
+    ]);
+    expect(preview.p).toMatchObject({
+      need: { required: 2, kept: 1, missing_headcount: 1, missing_qualifications: [] },
+      available: 2,
+      widened: 2,
+      open: false,
+    });
+    call = await openCall(slot(2, "D"), withdrawal.id);
+    expect(await rows("select state from public.shift_withdrawals where id=$1", [withdrawal.id])).toEqual([
+      { state: "ACCEPTED" },
+    ]);
+    // Un sort du brouillon ; la version publiée garde son nom.
+    expect(await draftOf(slot(2, "D"))).toEqual([a2]);
+    expect(
+      (
+        await rows<{ user_id: string; circle: string }>(
+          "select user_id, circle from public.call_recipients where call_id=$1 order by user_id",
+          [call],
+        )
+      ).map(r => `${r.user_id}:${r.circle}`),
+    ).toEqual([`${a3}:AVAILABLE`, `${a4}:AVAILABLE`]);
+    const [sollicitation] = await notices("CALL_OPENED", a3);
+    expect(sollicitation.subject).toMatch(/^Garde à pourvoir — /);
+    expect(sollicitation.body).toMatch(/de 8 h à 20 h/);
+    expect(sollicitation.body).not.toMatch(/Agent Un|Motif privé/);
+    expect(await notices("CALL_OPENED", a1)).toEqual([]);
+    await expect(openCall(slot(2, "D"))).rejects.toThrow("A call is already open for this shift");
+  });
+
+  it("enregistre la proposition sans rien affecter, et la refuse à qui n’est pas sollicité", async () => {
+    await propose(a3, call);
+    expect(await proposalOf(call, a3)).toMatchObject({ state: "PENDING", declared: false });
+    expect(await draftOf(slot(2, "D"))).toEqual([a2]);
+    await expect(propose(a3, call)).rejects.toThrow("You have already offered for this call");
+    for (const who of [a5, b1, a1]) await expect(propose(who, call)).rejects.toThrow("Not eligible for this call");
+  });
+
+  it("élargit l’appel sur geste du gestionnaire, et n’accepte alors qu’une déclaration explicite", async () => {
+    expect((await one<{ n: number }>(chef, "select public.widen_call($1) as n", [call])).n).toBe(2);
+    expect(await notices("CALL_OPENED", a5)).toHaveLength(1);
+    await expect(propose(a5, call)).rejects.toThrow("A declaration of availability is required");
+    await expect(propose(a5, call, true, "conditions-anciennes")).rejects.toThrow("The declaration terms have changed");
+    await propose(a5, call, true, TERMS);
+    expect(await proposalOf(call, a5)).toMatchObject({ state: "PENDING", declared: true });
+    // La déclaration ne touche ni à la campagne ni à sa réponse.
+    expect(
+      await rows("select validated_at from public.campaign_participants where campaign_id=$1 and user_id=$2", [
+        campaign,
+        a5,
+      ]),
+    ).toEqual([{ validated_at: null }]);
+    expect(await rows("select count(*)::int as n from public.availability_entries where user_id=$1", [a5])).toEqual([
+      { n: 0 },
+    ]);
+  });
+
+  it("retient au brouillon sous contrôle, et refuse le surnombre", async () => {
+    await as(chef, "select public.select_proposal($1)", [(await proposalOf(call, a3)).id]);
+    expect(await draftOf(slot(2, "D"))).toEqual([a2, a3]);
+    expect(await proposalOf(call, a3)).toMatchObject({ state: "SELECTED" });
+    await expect(as(chef, "select public.select_proposal($1)", [(await proposalOf(call, a5)).id])).rejects.toThrow(
+      "The need of this shift is already covered",
+    );
+  });
+
+  it("confirme et publie : l’appel se ferme, les autres sont prévenus, les envois inutiles annulés", async () => {
+    expect((await one<{ r: number }>(chef, "select public.confirm_call($1) as r", [call])).r).toBe(2);
+    expect(await rows("select state, resolved_revision from public.shift_calls where id=$1", [call])).toEqual([
+      { state: "RESOLVED", resolved_revision: 2 },
+    ]);
+    expect(await proposalOf(call, a3)).toMatchObject({ state: "CONFIRMED" });
+    expect(await proposalOf(call, a5)).toMatchObject({ state: "DECLINED" });
+    const [closed] = await notices("CALL_CLOSED", a5);
+    expect(closed.body).toMatch(/n'a pas été retenue/);
+    expect(closed.body).not.toMatch(/Agent/);
+    // Quatre ne s'était pas proposé : sa sollicitation encore en file ne part plus.
+    expect((await notices("CALL_OPENED", a4))[0].email_status).toBe("skipped");
+    await expect(as(chef, "select public.confirm_call($1)", [call])).rejects.toThrow("This call is closed");
+    // Fermé, l'appel reste lisible de ceux qu'il a sollicités, et refuse toute proposition.
+    expect(await as(a4, "select state from public.shift_calls where id=$1", [call])).toEqual([{ state: "RESOLVED" }]);
+    await expect(propose(a4, call)).rejects.toThrow("This call is closed");
+  });
+
+  it("publie sur déclaration un agent sans disponibilité, et garde la preuve à la republication", async () => {
+    // Renfort le 3 à la Nuit : personne au brouillon, deux places.
+    const reinforcement = await openCall(slot(3, "N"));
+    expect(await rows("select origin, need from public.shift_calls where id=$1", [reinforcement])).toEqual([
+      {
+        origin: "REINFORCEMENT",
+        need: { required: 2, kept: 0, missing_headcount: 2, missing_qualifications: [] },
+      },
+    ]);
+    await as(chef, "select public.widen_call($1)", [reinforcement]);
+    await propose(a4, reinforcement);
+    await propose(a6, reinforcement, true, TERMS);
+    for (const who of [a4, a6])
+      await as(chef, "select public.select_proposal($1)", [(await proposalOf(reinforcement, who)).id]);
+    expect(await one<{ r: number }>(chef, "select public.confirm_call($1) as r", [reinforcement])).toEqual({ r: 1 });
+    expect(await proposalOf(reinforcement, a6)).toMatchObject({ state: "CONFIRMED", declared: true });
+    // Republier tel quel, l'appel fermé : la preuve vaut toujours.
+    expect(await one<{ r: number }>(chef, "select public.publish_shift($1) as r", [slot(3, "N")])).toEqual({ r: 2 });
+    // Retiré du planning, puis réaffecté : la preuve a cessé de valoir.
+    await as(chef, "delete from public.schedule_assignments where schedule_shift_id=$1 and user_id=$2 and revision=0", [
+      slot(3, "N"),
+      a6,
+    ]);
+    expect(await proposalOf(reinforcement, a6)).toMatchObject({ state: "RELEASED" });
+    await as(
+      chef,
+      "insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,assigned_by) values ($1,$2,$3,$4)",
+      [org, slot(3, "N"), a6, chef],
+    );
+    await expect(as(chef, "select public.publish_shift($1)", [slot(3, "N")])).rejects.toThrow(
+      "Every assignment needs a validated matching availability",
+    );
+  });
+
+  it("retire du brouillon une proposition retirée, et ne la laisse servir à rien", async () => {
+    const reinforcement = await openCall(slot(4, "D"));
+    await as(chef, "select public.widen_call($1)", [reinforcement]);
+    await propose(a5, reinforcement, true, TERMS);
+    await as(chef, "select public.select_proposal($1)", [(await proposalOf(reinforcement, a5)).id]);
+    expect(await draftOf(slot(4, "D"))).toEqual([a5]);
+    await as(a5, "select public.withdraw_proposal($1)", [reinforcement]);
+    expect(await proposalOf(reinforcement, a5)).toMatchObject({ state: "WITHDRAWN" });
+    expect(await draftOf(slot(4, "D"))).toEqual([]);
+    // Réaffecté à la main : sa déclaration retirée ne vaut plus.
+    await as(
+      chef,
+      "insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,assigned_by) values ($1,$2,$3,$4)",
+      [org, slot(4, "D"), a5, chef],
+    );
+    expect(
+      (await rows<{ b: { code: string }[] }>("select private.shift_blockers($1) as b", [slot(4, "D")]))[0].b[0],
+    ).toMatchObject({
+      code: "availability",
+    });
+    await as(chef, "select public.cancel_call($1)", [reinforcement]);
+  });
+
+  it("laisse deux candidats se compléter, et ne sollicite que les utiles", async () => {
+    // Le 5 au Jour : deux places, une INC1 et une COD2. Personne ne les a seul.
+    await live.exec(`
+      insert into public.staffing_requirement_qualifications(organization_id,requirement_id,qualification_id,minimum)
+        select '${org}', r.id, q, 1 from public.staffing_requirements r, unnest(array['${inc}','${cod}']::uuid[]) q
+         where r.campaign_id = '${campaign}' and r.date = (select date from public.schedule_shifts where id='${slot(5, "D")}')
+           and r.shift_code = 'DAY';`);
+    const reinforcement = await openCall(slot(5, "D"));
+    await propose(a1, reinforcement);
+    await propose(a4, reinforcement);
+    for (const who of [a1, a4])
+      await as(chef, "select public.select_proposal($1)", [(await proposalOf(reinforcement, who)).id]);
+    expect(await one<{ r: number }>(chef, "select public.confirm_call($1) as r", [reinforcement])).toEqual({ r: 1 });
+    // Une place reste, sans qualification manquante : tout agent est utile. Mais
+    // si seule une qualification manque, seuls ses détenteurs sont sollicités.
+    await as(chef, "delete from public.schedule_assignments where schedule_shift_id=$1 and user_id=$2 and revision=0", [
+      slot(5, "D"),
+      a4,
+    ]);
+    await as(
+      chef,
+      "insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,assigned_by) values ($1,$2,$3,$4)",
+      [org, slot(5, "D"), a2, chef],
+    );
+    const preview = await one<{ p: { need: Record<string, unknown>; available: number } }>(
+      chef,
+      "select public.call_preview($1) as p",
+      [slot(5, "D")],
+    );
+    expect(preview.p.need).toMatchObject({ missing_headcount: 0, missing_qualifications: [{ qualification: "COD2" }] });
+    // Quatre, seul détenteur de la COD2, avec une disponibilité validée.
+    expect(preview.p.available).toBe(1);
+  });
+
+  it("voit le changement de disponibilité avant de retenir", async () => {
+    const reinforcement = await openCall(slot(6, "D"));
+    await propose(a3, reinforcement);
+    await live.exec(`
+      set session_replication_role = replica;
+      update public.availability_entries set availability_type = 'NIGHT'
+       where user_id = '${a3}' and date = (select date from public.schedule_shifts where id = '${slot(6, "D")}');
+      set session_replication_role = origin;`);
+    await expect(
+      as(chef, "select public.select_proposal($1)", [(await proposalOf(reinforcement, a3)).id]),
+    ).rejects.toThrow("This agent is no longer eligible for this shift");
+    await as(chef, "select public.cancel_call($1)", [reinforcement]);
+    expect(await rows("select state from public.shift_calls where id=$1", [reinforcement])).toEqual([
+      { state: "CANCELLED" },
+    ]);
+    expect(await proposalOf(reinforcement, a3)).toMatchObject({ state: "DECLINED" });
+  });
+
+  it("expire au début de la garde, sans compter comme un remplacement", async () => {
+    const reinforcement = await openCall(slot(6, "N"));
+    await propose(a4, reinforcement);
+    const [{ starts }] = await rows<{ starts: string }>(
+      "select (expires_at + interval '1 minute')::text as starts from public.shift_calls where id=$1",
+      [reinforcement],
+    );
+    expect(
+      (await rows<{ r: { appels_expires: number } }>("select private.generate_due_notifications($1) as r", [starts]))[0]
+        .r.appels_expires,
+    ).toBe(1);
+    expect(await rows("select state, resolved_revision from public.shift_calls where id=$1", [reinforcement])).toEqual([
+      { state: "EXPIRED", resolved_revision: null },
+    ]);
+    expect(await notices("CALL_CLOSED", a4)).toHaveLength(1);
+  });
+
+  it("réserve chaque geste à l’encadrement du centre, et chaque proposition à son agent", async () => {
+    for (const who of [a2, outsider]) {
+      await expect(as(who, "select public.call_preview($1)", [slot(4, "N")])).rejects.toThrow(
+        "Not allowed to call for this shift",
+      );
+      await expect(as(who, "select public.open_call($1)", [slot(4, "N")])).rejects.toThrow(
+        "Not allowed to call for this shift",
+      );
+    }
+    for (const fn of ["widen_call", "cancel_call", "confirm_call"])
+      await expect(as(a2, `select public.${fn}($1)`, [call])).rejects.toThrow();
+    // Chacun ne lit que ses propositions ; l'appel, s'il l'a sollicité.
+    expect(await as(a3, "select distinct user_id from public.call_proposals")).toEqual([{ user_id: a3 }]);
+    expect(await as(b1, "select count(*)::int as n from public.shift_calls")).toEqual([{ n: 0 }]);
+    // Aucune écriture directe.
+    await expect(
+      as(a3, "insert into public.call_proposals(call_id,organization_id,user_id) values ($1,$2,$3)", [call, org, a3]),
+    ).rejects.toThrow();
+  });
+});
+
+describe("Migration 20261021090000 — gardes d’application", () => {
+  const target = MIGRATIONS.indexOf("20261021090000_appels_remplacement.sql");
+  const migration = () =>
+    readFileSync(new URL(`../supabase/migrations/${MIGRATIONS[target]}`, import.meta.url), "utf8");
+  const upTo = async (count: number) => {
+    const db = new PGlite();
+    await db.exec(baseAuthSchema);
+    for (const m of MIGRATIONS.slice(0, count))
+      await db.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    return db;
+  };
+
+  it("refuse un second passage et un passage avant sa dépendance", async () => {
+    expect(target).toBeGreaterThan(0);
+    const applied = await upTo(target + 1);
+    await expect(applied.exec(migration())).rejects.toThrow("déjà été appliquée");
+    await applied.close();
+    const early = await upTo(target - 1);
+    await expect(early.exec(migration())).rejects.toThrow("20261020200000_publication_du_mois.sql");
     await early.close();
   }, 90000);
 });

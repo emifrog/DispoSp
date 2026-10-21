@@ -34,6 +34,8 @@ Le succès devra être évalué en recette puis en utilisation : diminution des 
 - **Décision du 20 octobre — la clôture qui fait foi est la date de clôture de la campagne** (`closes_at`). Elle est fixée à la création et irréversible : après elle, la base refuse toute saisie et toute validation. Le verrouillage (« Verrouiller la saisie ») reste une pause réversible, sans photographie.
 - **Décision du 20 octobre — les emails donnent la date et les horaires** des gardes concernées (rappel, récapitulatif, appel à remplacement), jamais le nom d’un autre agent ni le motif d’un désistement. Le push reste discret sur l’écran verrouillé.
 - **Décision du 20 octobre — pas de second projet Supabase.** Le développement et les essais automatiques se font sur la pile Supabase locale, avec des données fictives. La vérification hébergée se fait en production, progressivement : migrations appliquées, fonctions désactivées par défaut, puis activées centre par centre. Le préalable 0 est adapté en conséquence.
+- **Décision du 21 octobre — le repos est égal à la durée de la garde.** Après une garde de 12 h, l'agent a 12 h de repos avant la suivante ; après une garde de 24 h (le Jour et la Nuit d'une même date), 24 h. La base le refuse à la candidature et à chaque publication, unitaire ou mensuelle, comme un chevauchement d'horaires. Une Nuit suivie du Jour du lendemain est donc refusée ; le 24 h reste possible.
+- **Décision du 21 octobre — la déclaration exceptionnelle est retenue** (§7) : après élargissement explicite d'un appel par le gestionnaire, un agent sans disponibilité validée peut se proposer en confirmant sa disponibilité pour cette garde.
 
 ### Arbitrages recommandés après relecture du 17 octobre
 
@@ -165,7 +167,7 @@ La restauration d'une sauvegarde (recette, étape 9.1) se fait sur la pile local
 
 **Développé (A1) :** traitement planifié, rappels de garde, relances avant clôture, reprises d'envoi, réglage et suivi dans Paramètres.
 
-- Migration `20261020090000_traitements_planifies.sql`, **non appliquée**.
+- Migration `20261020090000_traitements_planifies.sql`, appliquée (confirmation du porteur du projet, 21 octobre).
 - Route `POST /api/traitements`.
 - Scripts `supabase/provisioning/activer-les-traitements-planifies.sql` et `desactiver-les-traitements-planifies.sql`.
 - Le README, section « Rappels automatiques et traitements planifiés », décrit le fonctionnement et la mise en service.
@@ -185,7 +187,7 @@ Les horaires d'une campagne ne changent plus après sa création : le texte d'un
 
 **Développé (A2), le même jour :** les photographies du contrat ci-dessus — publication, clôture, début de créneau — et l'adaptation du retrait d'un compte, de la purge, de la bascule du centre d'essai, de l'export et de l'inventaire.
 
-- Migration `20261020150000_photographies.sql`, **non appliquée**, à appliquer après `20261020090000`.
+- Migration `20261020150000_photographies.sql`, appliquée (confirmation du porteur du projet, 21 octobre).
 - Vérifié par onze tests PostgreSQL et la suite des scripts de provisionnement.
 - Trois contre-épreuves échouent comme attendu : sans les déclencheurs « avant modification », avec les qualifications du jour au lieu de celles de la publication, et sans la prise des photographies dues dans le retrait d'un compte.
 - Pas encore appliquée sur la pile Supabase locale.
@@ -256,7 +258,7 @@ Le middleware protège actuellement les routes API. Ajouter uniquement l'excepti
 
 **Développé.**
 
-- Migration `20261020200000_publication_du_mois.sql`, **non appliquée** ; le code en dépend, à appliquer avant de déployer.
+- Migration `20261020200000_publication_du_mois.sql`, appliquée (confirmation du porteur du projet, 21 octobre).
 - Bouton « Publier le mois » dans le planning, et sa fenêtre d'aperçu (`GET /api/planning/mois`).
 - Le README, section « Publier le mois », décrit le fonctionnement.
 
@@ -309,6 +311,32 @@ Un agent dont toutes les gardes ont été retirées doit aussi recevoir un avis.
 - Un agent ou un gestionnaire d'un autre centre ne peut pas déclencher l'opération.
 
 ## 7. Lot C — Remplacement et renfort
+
+### État au 21 octobre 2026
+
+**Développé**, avec les deux décisions du 21 octobre : repos égal à la durée de la garde, déclaration exceptionnelle retenue.
+
+- Migration `20261021090000_appels_remplacement.sql`, **non appliquée** ; le code en dépend, à appliquer avant de déployer.
+- Page « Appels » de l'agent, panneau « Appel en cours » et « Chercher du renfort » au planning, « Accepter et chercher un remplaçant » aux désistements.
+- Le README, section « Repos et appels à remplacement », décrit le fonctionnement.
+
+| Critère                                                     | Preuve                                                                                                                                              |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Candidat non éligible refusé par appel direct               | Toutes les écritures passent par des fonctions qui recontrôlent ; aucune session n'écrit dans les tables d'appel                                    |
+| Agent sans disponibilité publié sur déclaration             | Test de bout en bout en base ; campagne et réponse validée inchangées                                                                               |
+| Déclaration retirée, d'une autre garde, ou horaires changés | La preuve exige une proposition retenue ou publiée, sur un appel de ce créneau, aux horaires du créneau. Contre-épreuve : sans elle, le test échoue |
+| Republication inchangée, puis retrait effectif              | La preuve vaut appel fermé ; elle cesse quand l'agent sort du planning. Contre-épreuve : sans cette fin, le test échoue                             |
+| Chevauchement et repos ; nuit traversant minuit ; contigus  | Règle de repos testée séparément : Nuit puis Jour, 24 h puis 24 h de repos, brouillons du mois. Contre-épreuve : sans la règle, les tests échouent  |
+| Proposition hors planning et agenda                         | Une proposition n'écrit aucune affectation                                                                                                          |
+| Candidats complémentaires                                   | Deux candidats, une qualification chacun, couvrent un besoin qu'aucun ne couvre seul                                                                |
+| Changement de disponibilité avant confirmation              | Retenir est refusé quand la disponibilité ne couvre plus la garde                                                                                   |
+| Confirmations simultanées                                   | Verrou du créneau puis de l'appel ; le besoin couvert interdit de retenir davantage. Contre-épreuve : sans ce refus, le test échoue                 |
+| Appel fermé consultable                                     | Lisible de ceux qu'il a sollicités, avec son état ; plus aucune proposition acceptée                                                                |
+| Envois devenus inutiles annulés                             | Les sollicitations encore en file passent à « skipped » à la fermeture. Contre-épreuve : sans ce recontrôle, le test échoue                         |
+
+Vérifié par seize tests PostgreSQL, les tests de la commande, de la route et de la transformation, et le rendu des trois écrans dans Chromium (ordinateur et téléphone). **Pas encore** sur la pile Supabase locale ni en production.
+
+Restent hors de cette première version, comme le prévoit le §7 : l'élargissement à d'autres équipes ou centres, et un retour volontaire de l'agent désisté sur sa propre garde. Les engagements extérieurs non enregistrés ne peuvent pas être contrôlés.
 
 ### Déclenchement
 

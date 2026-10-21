@@ -268,6 +268,35 @@ export type Raw = {
     published_revision: number;
     published_at: string | null;
   }[];
+  // Les appels du lot C (20261021090000), lus sous RLS.
+  calls: {
+    id: string;
+    campaign_id: string;
+    schedule_shift_id: string;
+    date: string;
+    shift_code: string;
+    origin: string;
+    state: string;
+    opened_at: string;
+    expires_at: string;
+    widened_at: string | null;
+    closed_at: string | null;
+    need: {
+      required: number;
+      kept: number;
+      missing_headcount: number;
+      missing_qualifications: { qualification: string; missing: number }[];
+    };
+  }[];
+  callRecipients: { call_id: string; user_id: string; circle: string }[];
+  callProposals: {
+    id: string;
+    call_id: string;
+    user_id: string;
+    state: string;
+    proposed_at: string;
+    declared: boolean;
+  }[];
   assignments: {
     schedule_shift_id: string;
     user_id: string;
@@ -315,6 +344,10 @@ const auditLabels: Record<string, string> = {
   "availability_campaign/LOCK": "Campagne verrouillée",
   "availability_campaign/UNLOCK": "Campagne déverrouillée",
   "availability_campaign/PUBLISH_MONTH": "Planning du mois publié",
+  "shift_call/OPEN": "Appel lancé",
+  "shift_call/RESOLVED": "Appel pourvu",
+  "shift_call/CANCELLED": "Appel annulé",
+  "shift_call/EXPIRED": "Appel expiré",
   "staffing_requirement/SET": "Besoins définis",
   "staffing_requirement/CLEAR": "Besoins supprimés",
   "schedule_assignment/ASSIGN": "Agent affecté au brouillon",
@@ -388,6 +421,14 @@ function auditDetail(entity: string, previous: Values, after: Values, nameById: 
       return from !== null && from !== to
         ? `${line} · ${from} → ${to} ${plural(to, "agent")}`
         : `${line} · ${to} ${plural(to, "agent")}`;
+    }
+    case "shift_call": {
+      // Les appels du lot C : la garde, et à l'ouverture le nombre de sollicités.
+      const line = `${day(subject)} · ${slot(text(subject, "shift_code"))}`;
+      const recipients = num(after, "recipients");
+      return recipients === null
+        ? line
+        : `${line} · ${recipients} ${plural(recipients, "agent sollicité", "agents sollicités")}`;
     }
     case "schedule_shift": {
       const headcount = num(after, "headcount") ?? 0;
@@ -529,6 +570,9 @@ export function buildState(raw: Raw, fallbackOrganizationName: string, window?: 
     assignments: {},
     publications: {},
     withdrawals: [],
+    calls: [],
+    callRecipients: [],
+    callProposals: [],
     audit: [],
   };
 
@@ -643,6 +687,52 @@ export function buildState(raw: Raw, fallbackOrganizationName: string, window?: 
       },
     ];
   });
+
+  // Un appel ne vaut que pour une campagne chargée ; ses destinataires et ses
+  // propositions, que pour un appel connu.
+  const loadedCampaigns = new Set(state.campaigns.map(c => c.id));
+  state.calls = raw.calls
+    .filter(row => loadedCampaigns.has(row.campaign_id))
+    .map(row => ({
+      id: row.id,
+      campaignId: row.campaign_id,
+      shiftId: row.schedule_shift_id,
+      date: row.date,
+      shift: row.shift_code === "NIGHT" ? ("NIGHT" as const) : ("DAY" as const),
+      origin: row.origin === "WITHDRAWAL" ? ("WITHDRAWAL" as const) : ("REINFORCEMENT" as const),
+      state: row.state as AppState["calls"][number]["state"],
+      openedAt: row.opened_at,
+      expiresAt: row.expires_at,
+      widenedAt: row.widened_at,
+      closedAt: row.closed_at,
+      need: {
+        required: row.need.required,
+        kept: row.need.kept,
+        missingHeadcount: row.need.missing_headcount,
+        missingQualifications: row.need.missing_qualifications.map(q => ({
+          qualification: q.qualification,
+          missing: q.missing,
+        })),
+      },
+    }));
+  const knownCalls = new Set(state.calls.map(c => c.id));
+  state.callRecipients = raw.callRecipients
+    .filter(row => knownCalls.has(row.call_id))
+    .map(row => ({
+      callId: row.call_id,
+      userId: row.user_id,
+      circle: row.circle === "WIDENED" ? ("WIDENED" as const) : ("AVAILABLE" as const),
+    }));
+  state.callProposals = raw.callProposals
+    .filter(row => knownCalls.has(row.call_id))
+    .map(row => ({
+      id: row.id,
+      callId: row.call_id,
+      userId: row.user_id,
+      state: row.state as AppState["callProposals"][number]["state"],
+      proposedAt: row.proposed_at,
+      declared: row.declared,
+    }));
 
   state.audit = raw.audit.map(row => {
     const before = values(row.old_value);

@@ -185,6 +185,65 @@ function raw(overrides: Partial<Raw> = {}): Raw {
         decided_at: null,
       },
     ],
+    // Un appel du lot C sur la campagne chargée, et un autre dont la campagne
+    // ne l'est pas : il ne doit rien laisser derrière lui.
+    calls: [
+      {
+        id: "call-1",
+        campaign_id: CAMPAIGN,
+        schedule_shift_id: SHIFT_DAY,
+        date: "2026-10-01",
+        shift_code: "DAY",
+        origin: "WITHDRAWAL",
+        state: "OPEN",
+        opened_at: "2026-09-28T08:00:00Z",
+        expires_at: "2026-10-01T05:00:00Z",
+        widened_at: null,
+        closed_at: null,
+        need: {
+          required: 2,
+          kept: 1,
+          missing_headcount: 1,
+          missing_qualifications: [{ qualification: "COD2", missing: 1 }],
+        },
+      },
+      {
+        id: "call-orphelin",
+        campaign_id: "c-inconnue",
+        schedule_shift_id: "s-orphelin",
+        date: "2026-10-02",
+        shift_code: "NIGHT",
+        origin: "REINFORCEMENT",
+        state: "OPEN",
+        opened_at: "2026-09-28T09:00:00Z",
+        expires_at: "2026-10-02T18:00:00Z",
+        widened_at: null,
+        closed_at: null,
+        need: { required: 1, kept: 0, missing_headcount: 1, missing_qualifications: [] },
+      },
+    ],
+    callRecipients: [
+      { call_id: "call-1", user_id: "u2", circle: "AVAILABLE" },
+      { call_id: "call-orphelin", user_id: "u2", circle: "WIDENED" },
+    ],
+    callProposals: [
+      {
+        id: "p1",
+        call_id: "call-1",
+        user_id: "u2",
+        state: "PENDING",
+        proposed_at: "2026-09-28T10:00:00Z",
+        declared: false,
+      },
+      {
+        id: "p2",
+        call_id: "call-orphelin",
+        user_id: "u2",
+        state: "PENDING",
+        proposed_at: "2026-09-28T10:00:00Z",
+        declared: true,
+      },
+    ],
     audit: [
       {
         id: 7,
@@ -588,6 +647,33 @@ describe("Construction de l’état depuis la base", () => {
       "organization",
       "availability_campaign",
     ]);
+  });
+
+  it("rend les appels de la campagne chargée, leurs destinataires et leurs propositions, et eux seuls", () => {
+    const state = buildState(raw(), "Secours");
+    expect(state.calls).toEqual([
+      {
+        id: "call-1",
+        campaignId: CAMPAIGN,
+        shiftId: SHIFT_DAY,
+        date: "2026-10-01",
+        shift: "DAY",
+        origin: "WITHDRAWAL",
+        state: "OPEN",
+        openedAt: "2026-09-28T08:00:00Z",
+        expiresAt: "2026-10-01T05:00:00Z",
+        widenedAt: null,
+        closedAt: null,
+        need: {
+          required: 2,
+          kept: 1,
+          missingHeadcount: 1,
+          missingQualifications: [{ qualification: "COD2", missing: 1 }],
+        },
+      },
+    ]);
+    expect(state.callRecipients).toEqual([{ callId: "call-1", userId: "u2", circle: "AVAILABLE" }]);
+    expect(state.callProposals.map(p => p.id)).toEqual(["p1"]);
   });
 
   it("retombe sur le nom de la session si l’organisation n’est pas lisible", () => {

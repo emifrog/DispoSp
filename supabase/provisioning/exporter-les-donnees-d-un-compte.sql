@@ -61,6 +61,15 @@ select jsonb_pretty(jsonb_build_object(
   'envois_d_invitation', (
     select coalesce(jsonb_agg(s.sent_at order by s.sent_at), '[]')
       from private.invitation_sends s where s.email = (select lower(email) from compte)),
+  -- Les appels du lot C : ses propositions, et sa déclaration s'il en a fait une.
+  'propositions', (
+    select coalesce(jsonb_agg(jsonb_build_object(
+      'date', c.date, 'creneau', c.shift_code, 'etat', p.state, 'proposee_le', p.proposed_at,
+      'declaration', p.declared, 'horaires_declares',
+      case when p.declared then jsonb_build_object('du', p.declared_starts_at, 'au', p.declared_ends_at) end,
+      'retiree_le', p.withdrawn_at) order by p.proposed_at), '[]')
+      from public.call_proposals p join public.shift_calls c on c.id = p.call_id
+     where p.user_id = (select id from compte)),
   -- Les photographies du lot A : ce qu'elles ont retenu de la personne.
   'photographies_publication', (
     select coalesce(jsonb_agg(jsonb_build_object(

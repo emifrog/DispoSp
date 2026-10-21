@@ -218,3 +218,55 @@ describe("Publication du mois depuis le serveur", () => {
     await expect(runCommand(session, publishMonth)).rejects.toThrow(french);
   });
 });
+
+// Lot C : chaque geste d'un appel est un appel à la base, qui contrôle tout.
+describe("Appels à remplacement et à renfort depuis le serveur", () => {
+  const APPEL = "80000000-0000-0000-0000-000000000001";
+  const PROPOSITION = "90000000-0000-0000-0000-000000000009";
+
+  it.each([
+    [{ type: "cancelCall" as const, callId: APPEL }, "cancel_call", { target: APPEL }],
+    [{ type: "withdrawProposal" as const, callId: APPEL }, "withdraw_proposal", { target: APPEL }],
+    [{ type: "selectProposal" as const, proposalId: PROPOSITION }, "select_proposal", { proposal: PROPOSITION }],
+    [{ type: "confirmCall" as const, callId: APPEL }, "confirm_call", { target: APPEL }],
+  ])("%o appelle %s", async (command, fn, args) => {
+    rpc.mockResolvedValue({ data: null, error: null });
+    await runCommand(session, command);
+    expect(rpc).toHaveBeenCalledExactlyOnceWith(fn, args);
+  });
+
+  it("joint la version de la déclaration seulement quand l’agent déclare", async () => {
+    rpc.mockResolvedValue({ data: "p", error: null });
+    await runCommand(session, { type: "proposeForCall", callId: APPEL, declare: true });
+    expect(rpc).toHaveBeenLastCalledWith("propose_for_call", {
+      target: APPEL,
+      declare_availability: true,
+      terms: "declaration-2026-10-21",
+    });
+    await runCommand(session, { type: "proposeForCall", callId: APPEL, declare: false });
+    expect(rpc).toHaveBeenLastCalledWith("propose_for_call", {
+      target: APPEL,
+      declare_availability: false,
+      terms: null,
+    });
+  });
+
+  it("dit combien d’agents l’élargissement sollicite de plus", async () => {
+    rpc.mockResolvedValue({ data: 3, error: null });
+    expect(await runCommand(session, { type: "widenCall", callId: APPEL })).toBe(
+      "Appel élargi · 3 agents sollicités de plus",
+    );
+  });
+
+  it.each([
+    [
+      "Rest not respected: Léa (garde du 03/11, Nuit)",
+      "Repos insuffisant — après une garde, autant de repos qu’elle a duré : Léa (garde du 03/11, Nuit).",
+    ],
+    ["The need of this shift is already covered", "Le besoin de cette garde est déjà couvert."],
+    ["This call is closed", "Cet appel est clos."],
+  ])("traduit le refus « %s »", async (message, french) => {
+    rpc.mockResolvedValue({ data: null, error: { message } });
+    await expect(runCommand(session, { type: "confirmCall", callId: APPEL })).rejects.toThrow(french);
+  });
+});

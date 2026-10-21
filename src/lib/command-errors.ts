@@ -51,6 +51,33 @@ const byMessage: [RegExp, (match: RegExpMatchArray) => string][] = [
     /^Month publication request already used/,
     () => "Cette demande de publication a déjà servi. Rouvrez l’aperçu pour en faire une nouvelle.",
   ],
+  // La règle de repos (décision du 21 octobre) et les appels du lot C.
+  [/^Rest not respected: (.+)$/, m => `Repos insuffisant — après une garde, autant de repos qu’elle a duré : ${m[1]}.`],
+  [/^Not allowed to call for this shift/, () => "Vous n’avez pas le droit de lancer un appel pour cette garde."],
+  [/^A call is already open for this shift/, () => "Un appel est déjà ouvert pour cette garde."],
+  [/^This shift has already started/, () => "Cette garde a déjà commencé : il est trop tard pour lancer un appel."],
+  [/^Unknown withdrawal/, () => "Ce désistement est introuvable."],
+  [/^This withdrawal has already been decided/, () => "Ce désistement a déjà été tranché."],
+  [/^Nothing to fill on this shift/, () => "Rien ne manque à cette garde : il n’y a pas d’appel à lancer."],
+  [/^Unknown call/, () => "Cet appel n’existe pas, ou ne vous est pas accessible."],
+  [/^This call is closed/, () => "Cet appel est clos."],
+  [/^Not eligible for this call/, () => "Vous ne pouvez pas vous proposer pour cette garde."],
+  [/^You have already offered for this call/, () => "Vous vous êtes déjà proposé pour cette garde."],
+  [/^A declaration of availability is required/, () => "Confirmez votre disponibilité pour vous proposer."],
+  [/^The declaration terms have changed/, () => "Le texte de la déclaration a changé : rechargez l’écran."],
+  [/^No offer to withdraw/, () => "Vous n’avez pas de proposition à retirer."],
+  [
+    /^This offer has been published/,
+    () => "Votre proposition a été publiée : pour ne plus assurer la garde, signalez un désistement.",
+  ],
+  [/^Unknown offer/, () => "Cette proposition est introuvable."],
+  [/^This offer is no longer pending/, () => "Cette proposition n’est plus en attente."],
+  [/^The need of this shift is already covered/, () => "Le besoin de cette garde est déjà couvert."],
+  [
+    /^This agent is no longer eligible for this shift/,
+    () =>
+      "Cet agent ne peut plus être retenu : sa disponibilité, ses qualifications ou son repos ont changé depuis sa proposition.",
+  ],
   [
     /^Every assignment needs a validated matching availability/,
     () => "Chaque agent affecté doit avoir une disponibilité validée correspondant à ce créneau.",

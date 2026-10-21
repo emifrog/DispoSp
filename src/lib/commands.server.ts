@@ -1,6 +1,6 @@
 import "server-only";
 import { frenchMessage, type DatabaseFailure } from "./command-errors";
-import { plural, type Command, type Shift } from "./domain";
+import { DECLARATION_TERMS, plural, type Command, type Shift } from "./domain";
 import type { AttachedSession } from "./session";
 import { createActionClient } from "./supabase/server";
 import { canInvite, createAdminClient } from "./supabase/admin.server";
@@ -35,6 +35,24 @@ export async function runCommand(session: AttachedSession, command: Command): Pr
       return publishShift(client, command);
     case "publishMonth":
       return publishMonth(client, command);
+    case "openCall":
+      return openCall(client, command);
+    case "widenCall":
+      return widenCall(client, command);
+    case "cancelCall":
+      return callRpc(client, "cancel_call", { target: command.callId });
+    case "proposeForCall":
+      return callRpc(client, "propose_for_call", {
+        target: command.callId,
+        declare_availability: command.declare,
+        terms: command.declare ? DECLARATION_TERMS : null,
+      });
+    case "withdrawProposal":
+      return callRpc(client, "withdraw_proposal", { target: command.callId });
+    case "selectProposal":
+      return callRpc(client, "select_proposal", { proposal: command.proposalId });
+    case "confirmCall":
+      return callRpc(client, "confirm_call", { target: command.callId });
     case "requirement":
       return writeRequirement(client, command);
     case "requirements":
@@ -268,6 +286,29 @@ async function publishShift(client: Client, command: Of<"publish">) {
   // which re-checks headcount, qualifications and eligibility in one transaction.
   const { error } = await client.rpc("publish_shift", { shift: shiftId });
   if (error) fail(error);
+}
+
+/**
+ * Les appels à remplacement et à renfort (lot C). Chaque geste est une fonction
+ * de la base, qui contrôle droits, éligibilité, repos et concurrence sous ses
+ * propres verrous : rien n'est revérifié ici, rien ne pourrait l'être mieux.
+ */
+async function callRpc(client: Client, fn: string, args: Record<string, unknown>) {
+  const { error } = await client.rpc(fn, args);
+  if (error) fail(error);
+}
+
+async function openCall(client: Client, command: Of<"openCall">) {
+  const shiftId = await shiftIdFor(client, command.campaignId, command.date, command.shift);
+  await callRpc(client, "open_call", { shift: shiftId, withdrawal: command.withdrawalId ?? null });
+  return command.withdrawalId ? "Désistement accepté, appel lancé" : "Appel lancé";
+}
+
+async function widenCall(client: Client, command: Of<"widenCall">): Promise<string> {
+  const { data, error } = await client.rpc("widen_call", { target: command.callId });
+  if (error) fail(error);
+  const added = Number(data ?? 0);
+  return `Appel élargi · ${added} ${plural(added, "agent sollicité", "agents sollicités")} de plus`;
 }
 
 /**
