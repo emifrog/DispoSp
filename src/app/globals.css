@@ -1785,6 +1785,10 @@ label {
 .planning-toolbar {
   display: flex;
   align-items: center;
+  /* Dès que la largeur l'exige, pas seulement sous 760 px : entre 760 et
+     810 px, la barre latérale encore visible, « Publier le mois » sortait du
+     panneau de 39 px sans faire déborder la page. */
+  flex-wrap: wrap;
   gap: 17px;
   margin-bottom: 24px;
   background: white;
@@ -2889,7 +2893,8 @@ fieldset.field legend {
   padding: 9px 12px;
   border-radius: 7px;
   background: #fff6ec;
-  color: #a4651f;
+  /* 4,85:1 sur ce fond ; #a4651f faisait 4,4, sous le seuil des petits textes. */
+  color: #9b5f1d;
   font-size: 11px;
 }
 .withdrawal-todo a {
@@ -4060,7 +4065,6 @@ fieldset.field legend {
     bottom: calc(62px + max(13px, env(safe-area-inset-bottom)));
   }
   .planning-toolbar {
-    flex-wrap: wrap;
     padding: 12px;
     gap: 10px;
   }

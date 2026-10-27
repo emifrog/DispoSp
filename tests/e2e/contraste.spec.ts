@@ -55,6 +55,7 @@ const MARKUP = `
     <span id="pilule-verte" class="pill pill-green">Validée</span>
     <button id="danger" type="button" class="button button-danger">Refuser</button>
     <div id="succes" class="success-note">Ce créneau peut être publié.</div>
+    <p id="a-faire" class="withdrawal-todo">Toujours au planning publié — le remplacement reste à faire. <a id="a-faire-lien" href="#">Ouvrir la garde</a></p>
     <div class="agent-card">
       <div class="agent-info">
         <strong>Camille Martin</strong>
@@ -104,6 +105,9 @@ test.describe("Contraste des états (C9)", () => {
       ["#pilule-verte", "pastille verte"],
       ["#danger", "bouton de refus"],
       ["#succes", "note de succès"],
+      // A13 du second audit du 27 octobre : ce bandeau faisait 4,4:1.
+      ["#a-faire", "bandeau « toujours au planning publié »"],
+      ["#a-faire-lien", "lien du bandeau"],
       ["#cause", "cause d’une affectation invalide"],
       ["#chef", "qualification Chef"],
       ["#conducteur", "qualification Conducteur PL"],

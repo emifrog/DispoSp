@@ -1,3 +1,16 @@
 # Native resolver used by the ESLint import rules; it needs its install script.
 allowBuilds:
   unrs-resolver: true
+
+# Résolutions forcées (pnpm 12 ne lit plus « pnpm.overrides » de package.json).
+#
+# - source-map-js : PostCSS (via Next, Tailwind et Vite) demandait ^1.0.2 et
+#   résolvait 1.2.1, visée par GHSA-68fv-2mgg-jv7q ; 1.2.2 la corrige, même
+#   version mineure.
+# - uuid : ExcelJS demande ^8.3.2, visée par GHSA-w5hq-g745-h8pq (débordement
+#   quand un tampon est fourni, ce qu'ExcelJS ne fait pas). 11.1.1 la corrige et
+#   garde l'entrée CommonJS qu'ExcelJS charge ; les versions 12 et suivantes ne
+#   l'ont plus. Seul ExcelJS en dépend.
+overrides:
+  source-map-js: ^1.2.2
+  exceljs>uuid: ^11.1.1

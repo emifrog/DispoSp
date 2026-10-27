@@ -178,6 +178,39 @@ test.describe("Adaptation des écrans de travail", () => {
   });
 
   /*
+   * La barre d'outils du planning entre 760 et 1 024 px.
+   *
+   * Un portable étroit, une tablette en paysage : la barre latérale reste
+   * visible, et il reste moins de place qu'on ne croit. À 768 px, « Publier le
+   * mois » sortait du panneau de 39 px sans que la page déborde — le panneau
+   * masquait le dépassement, et la mesure du document ne voyait rien. La barre
+   * ne revenait à la ligne que sous 760 px ; elle le fait désormais dès que sa
+   * largeur l'exige. On mesure la barre elle-même, et chacun de ses enfants.
+   */
+  test("la barre d’outils du planning tient dans son panneau à toute largeur", async ({ page }) => {
+    await signIn(page);
+    for (const width of [760, 768, 800, 820, 1024, 1440]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/planning");
+      const toolbar = page.locator(".planning-toolbar");
+      // Un compte qui n'encadre pas n'a pas cet écran : rien à mesurer.
+      if (!(await toolbar.count())) return;
+      await expect(toolbar.locator(".month-publish")).toBeVisible();
+      const spill = await toolbar.evaluate(el => {
+        const box = el.getBoundingClientRect();
+        return {
+          scroll: el.scrollWidth - el.clientWidth,
+          beyond: [...el.children]
+            .map(child => Math.round(child.getBoundingClientRect().right - box.right))
+            .filter(d => d > 1),
+        };
+      });
+      expect(spill.scroll, `barre à ${width} px`).toBeLessThanOrEqual(1);
+      expect(spill.beyond, `enfants hors de la barre à ${width} px`).toEqual([]);
+    }
+  });
+
+  /*
    * Le débordement à l'intérieur d'une boîte de dialogue.
    *
    * La page ne déborde pas — la fenêtre modale est bornée et masque ce qui la
