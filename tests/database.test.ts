@@ -1,4 +1,6 @@
 import { PGlite } from "@electric-sql/pglite";
+import { addMonths, endOfMonth, format, setDate, startOfMonth } from "date-fns";
+import { fromZonedTime, toZonedTime } from "date-fns-tz";
 import { readFileSync } from "node:fs";
 import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it } from "vitest";
 import { baseAuthSchema, freshDatabase, MIGRATIONS, provisioningScript } from "./fixtures/schema";
@@ -6588,6 +6590,18 @@ describe("Photographies — publication, clôture et début de créneau", () => 
         [at],
       )
     )[0].r;
+  // Le mois prochain, à Paris, comme les blocs Repos et Appels : ces créneaux
+  // doivent rester à venir. Publier un créneau déjà commencé le photographie
+  // sur-le-champ (take_due_snapshots, au fil de la modification), et le passage
+  // attendu plus bas n'aurait plus rien à prendre.
+  const paris = "Europe/Paris";
+  const month = startOfMonth(addMonths(toZonedTime(new Date(), paris), 1));
+  const date = (day: number) => format(setDate(month, day), "yyyy-MM-dd");
+  const at = (day: number, time: string) => fromZonedTime(`${date(day)}T${time}`, paris);
+  const d1 = date(1);
+  const d2 = date(2);
+  const d3 = date(3);
+  const last = format(endOfMonth(month), "yyyy-MM-dd");
 
   beforeAll(async () => {
     live = await freshDatabase();
@@ -6609,25 +6623,25 @@ describe("Photographies — publication, clôture et début de créneau", () => 
       insert into public.user_qualifications(organization_id,user_id,qualification_id) values
         ('${org}','${alice}','${inc}'), ('${org}','${bob}','${inc}'), ('${org}','${bob}','${cod}');
       insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
-        values ('${campaign}','${org}','${team}','Novembre','2026-11-01','2026-11-30',now()-interval '10 days',now()+interval '1 day');
+        values ('${campaign}','${org}','${team}','Mois prochain','${d1}','${last}',now()-interval '10 days',now()+interval '1 day');
       insert into public.campaign_participants(organization_id,campaign_id,user_id) values
         ('${org}','${campaign}','${alice}'), ('${org}','${campaign}','${bob}'), ('${org}','${campaign}','${carl}');
       insert into public.schedules(id,organization_id,campaign_id,team_id) values ('${schedule}','${org}','${campaign}','${team}');
       insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code) values
-        ('${day1}','${org}','${schedule}','2026-11-01','DAY'), ('${night1}','${org}','${schedule}','2026-11-01','NIGHT'),
-        ('${day2}','${org}','${schedule}','2026-11-02','DAY');
+        ('${day1}','${org}','${schedule}','${d1}','DAY'), ('${night1}','${org}','${schedule}','${d1}','NIGHT'),
+        ('${day2}','${org}','${schedule}','${d2}','DAY');
       insert into public.staffing_requirements(organization_id,campaign_id,date,shift_code,headcount) values
-        ('${org}','${campaign}','2026-11-01','DAY',2), ('${org}','${campaign}','2026-11-01','NIGHT',1);
+        ('${org}','${campaign}','${d1}','DAY',2), ('${org}','${campaign}','${d1}','NIGHT',1);
       insert into public.staffing_requirement_qualifications(organization_id,requirement_id,qualification_id,minimum)
         select '${org}', r.id, q.id, 1 from public.staffing_requirements r, public.qualifications q
          where r.campaign_id='${campaign}' and r.shift_code='DAY';
       set session_replication_role = replica;
       insert into public.availability_entries(campaign_id,user_id,date,availability_type) values
-        ('${campaign}','${alice}','2026-11-01','FULL_24H'), ('${campaign}','${bob}','2026-11-01','FULL_24H');
+        ('${campaign}','${alice}','${d1}','FULL_24H'), ('${campaign}','${bob}','${d1}','FULL_24H');
       update public.campaign_participants set validated_at = now() - interval '1 hour' where user_id in ('${alice}','${bob}');
       set session_replication_role = origin;
       -- L'historique a commencé avant ces campagnes.
-      update private.history_start set started_at = '2026-01-01';`);
+      update private.history_start set started_at = now() - interval '1 year';`);
   }, 30000);
   afterAll(async () => {
     await live.close();
@@ -6661,9 +6675,9 @@ describe("Photographies — publication, clôture et début de créneau", () => 
           { qualification_id: cod, qualification: "COD2", count: 1 },
           { qualification_id: inc, qualification: "INC1", count: 2 },
         ],
-        // 8 h et 20 h à Paris, à l'heure d'hiver.
-        starts_at: new Date("2026-11-01T07:00:00Z"),
-        ends_at: new Date("2026-11-01T19:00:00Z"),
+        // 8 h et 20 h à Paris, à l'heure du moment.
+        starts_at: at(1, "08:00"),
+        ends_at: at(1, "20:00"),
       },
     ]);
     expect(
@@ -6743,10 +6757,10 @@ describe("Photographies — publication, clôture et début de créneau", () => 
       [org, alice, cod],
     );
     // L'historique commence à midi le 1er : le Jour de 8 h lui est antérieur.
-    await live.query("update private.history_start set started_at = '2026-11-01 12:00:00+01'");
-    expect((await generate("2026-11-02 08:30:00+01")).photographies.debuts).toBe(2);
-    await live.query("update private.history_start set started_at = '2026-01-01'");
-    expect((await generate("2026-11-02 08:30:00+01")).photographies.debuts).toBe(1);
+    await live.query("update private.history_start set started_at = $1", [at(1, "12:00").toISOString()]);
+    expect((await generate(at(2, "08:30").toISOString())).photographies.debuts).toBe(2);
+    await live.query("update private.history_start set started_at = now() - interval '1 year'");
+    expect((await generate(at(2, "08:30").toISOString())).photographies.debuts).toBe(1);
     const fact = async (shift: string) =>
       (
         await rows(
@@ -6782,24 +6796,24 @@ describe("Photographies — publication, clôture et début de créneau", () => 
   });
 
   it("compte les qualifications de la publication, pas celles d’aujourd’hui", async () => {
-    // Le Jour du 2 novembre, publié avec Carl, revenu, sans COD2 ; il l'obtient
+    // Le Jour du 3, publié avec Carl, revenu, sans COD2 ; il l'obtient
     // ensuite. Au début du créneau, la COD2 exigée n'est pas couverte.
     await live.exec(`
       set session_replication_role = replica;
       update public.memberships set active=true where user_id='${carl}';
       insert into public.staffing_requirements(organization_id,campaign_id,date,shift_code,headcount)
-        values ('${org}','${campaign}','2026-11-03','DAY',1);
+        values ('${org}','${campaign}','${d3}','DAY',1);
       insert into public.staffing_requirement_qualifications(organization_id,requirement_id,qualification_id,minimum)
-        select '${org}', id, '${cod}', 1 from public.staffing_requirements where date='2026-11-03';
+        select '${org}', id, '${cod}', 1 from public.staffing_requirements where date='${d3}';
       insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code)
-        values ('60000000-0000-0000-0000-0000000000e5','${org}','${schedule}','2026-11-03','DAY');
+        values ('60000000-0000-0000-0000-0000000000e5','${org}','${schedule}','${d3}','DAY');
       insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,revision,status,assigned_by)
         values ('${org}','60000000-0000-0000-0000-0000000000e5','${carl}',1,'CONFIRMED','${chef}');
       set session_replication_role = origin;
       update public.schedule_shifts set published_revision=1, published_at=now()
        where id='60000000-0000-0000-0000-0000000000e5';
       insert into public.user_qualifications(organization_id,user_id,qualification_id) values ('${org}','${carl}','${cod}');`);
-    await generate("2026-11-03 08:30:00+01");
+    await generate(at(3, "08:30").toISOString());
     expect(
       await rows(
         "select effective_count, minima_covered, covered from private.shift_start_facts where schedule_shift_id=$1",
@@ -6881,7 +6895,7 @@ describe("Photographies — publication, clôture et début de créneau", () => 
     expect(data.photographies_publication.map((p: { version: number }) => p.version)).toEqual([1, 2]);
     expect(data.photographies_publication[0]).toMatchObject({ role: "AGENT", qualifications: ["INC1"] });
     expect(data.photographies_cloture).toEqual([
-      expect.objectContaining({ campagne: "Novembre", attendu: true, role: "AGENT" }),
+      expect.objectContaining({ campagne: "Mois prochain", attendu: true, role: "AGENT" }),
     ]);
     // L'inventaire du centre compte aussi les photographies.
     const inventory = await rows<{ objet: string }>(provisioningScript("inventaire-du-centre.sql").split(";")[0]);
