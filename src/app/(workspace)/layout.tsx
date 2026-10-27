@@ -36,7 +36,9 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
   // juste : il doit pouvoir voir que le mois existe. Mais les lui proposer dans
   // le sélecteur le menait sur un calendrier où la base refuse toute écriture,
   // sans qu'aucun écran ne sache lui dire pourquoi. On ne lui montre donc que
-  // celles auxquelles il est convié ; qui encadre les voit toutes.
+  // celles auxquelles il est convié, et celles des appels qui le sollicitent —
+  // sans elles, l'écran Appels n'aurait ni accès ni horaires ; qui encadre les
+  // voit toutes.
   const state = { ...loaded, campaigns: visibleCampaigns(loaded, attached.userId, actor.role === "MANAGER") };
   // Every screen is built around a selected campaign; the provider would have
   // none to select. Guard here so no screen has to handle the empty case.

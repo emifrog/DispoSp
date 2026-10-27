@@ -49,6 +49,7 @@ export const MIGRATIONS = [
   "20261021090000_appels_remplacement.sql",
   "20261021150000_agenda_abonne.sql",
   "20261027090000_verrou_repos.sql",
+  "20261027170000_appels_desistes_fermeture.sql",
 ];
 
 /**

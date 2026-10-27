@@ -39,6 +39,7 @@ import {
   conduites,
   isConduite,
   withdrawnFrom,
+  declaredFor,
   draftAgents,
   workload,
   type Agent,
@@ -122,6 +123,7 @@ export function Planning() {
   );
   const result = coverage(state, campaignId, date, shift, "planned");
   const withdrawn = withdrawnFrom(state, campaignId, date, shift);
+  const declared = declaredFor(state, campaignId, date, shift);
   const deactivated = result.invalid.filter(a => inactive.has(a.id));
   const unavailable = result.invalid.filter(a => !inactive.has(a.id) && !withdrawn.has(a.id));
   const published = state.publications[key];
@@ -178,6 +180,9 @@ export function Planning() {
             {gradeAndFonction(agent)} · {agent.team.replace("Équipe ", "")}
           </small>
           {reason && <small className="text-red">{reason}</small>}
+          {retained && !reason && declared.has(agent.id) && (
+            <small className="muted">Disponible sur déclaration, à l’appel</small>
+          )}
           {!retained && acceptedHere(agent) && (
             <small className="text-orange">Désistement accepté sur cette garde</small>
           )}

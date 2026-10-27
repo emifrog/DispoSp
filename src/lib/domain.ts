@@ -585,9 +585,19 @@ export function campaignAgents(state: AppState, campaignId: string) {
   const invited = new Set(campaign.participants);
   return state.agents.filter(a => invited.has(a.id) && takesShifts(a.role));
 }
-/** Les campagnes qu'un agent peut ouvrir. Qui encadre les voit toutes. */
-export const visibleCampaigns = (state: AppState, userId: string, manages: boolean) =>
-  manages ? state.campaigns : state.campaigns.filter(c => c.participants.includes(userId));
+/**
+ * Les campagnes qu'un agent peut ouvrir : celles où il est convié, et celles
+ * des appels qui le sollicitent. Un appel recrute sur l'équipe, pas sur la
+ * participation : l'agent arrivé après la clôture n'est convié à rien, et sans
+ * sa campagne l'écran Appels n'avait ni accès ni horaires à lui donner — la
+ * déclaration disait « de 0 h à 0 h ». Qui encadre les voit toutes.
+ */
+export const visibleCampaigns = (state: AppState, userId: string, manages: boolean) => {
+  if (manages) return state.campaigns;
+  const mine = new Set(state.callRecipients.filter(r => r.userId === userId).map(r => r.callId));
+  const called = new Set(state.calls.filter(c => mine.has(c.id)).map(c => c.campaignId));
+  return state.campaigns.filter(c => c.participants.includes(userId) || called.has(c.id));
+};
 
 /**
  * Les agents du **brouillon** qu'un désistement accepté écarte encore de cette
@@ -600,6 +610,23 @@ export const withdrawnFrom = (state: AppState, campaignId: string, date: string,
       .filter(w => w.blocking && w.campaignId === campaignId && w.date === date && w.shift === shift)
       .map(w => w.userId),
   );
+
+/**
+ * Les agents qu'une déclaration exceptionnelle retenue rend disponibles sur
+ * cette garde : une proposition `declared`, retenue ou confirmée, sur un appel
+ * de ce créneau. La base l'accepte comme preuve à la publication, après avoir
+ * vérifié que les horaires déclarés sont ceux de la garde.
+ */
+export const declaredFor = (state: AppState, campaignId: string, date: string, shift: Shift) => {
+  const calls = new Set(
+    state.calls.filter(c => c.campaignId === campaignId && c.date === date && c.shift === shift).map(c => c.id),
+  );
+  return new Set(
+    state.callProposals
+      .filter(p => p.declared && calls.has(p.callId) && (p.state === "SELECTED" || p.state === "CONFIRMED"))
+      .map(p => p.userId),
+  );
+};
 
 export function availableAgents(state: AppState, campaignId: string, date: string, shift: Shift) {
   return campaignAgents(state, campaignId).filter(
@@ -647,6 +674,11 @@ export function coverage(
   // accordé. La base refuse les deux ; l'écran doit le dire avant le clic,
   // sinon la couverture annonce « couvert » jusqu'au refus.
   const withdrawn = mode === "potential" ? new Set<string>() : withdrawnFrom(state, campaignId, date, shift);
+  // Une déclaration exceptionnelle retenue vaut disponibilité : c'est le
+  // critère de private.shift_blockers(), qui recontrôle à la publication que
+  // les horaires déclarés sont ceux de la garde. Sans elle, le remplaçant venu
+  // d'un appel élargi restait « plus disponible » et la garde jamais couverte.
+  const declared = mode === "potential" ? new Set<string>() : declaredFor(state, campaignId, date, shift);
   const invalid =
     mode === "potential"
       ? []
@@ -654,8 +686,9 @@ export function coverage(
           a =>
             inactive.has(a.id) ||
             withdrawn.has(a.id) ||
-            !isValidated(state, campaignId, a.id) ||
-            !isAvailable(state.entries[entryKey(campaignId, a.id, date)]?.type, shift),
+            (!declared.has(a.id) &&
+              (!isValidated(state, campaignId, a.id) ||
+                !isAvailable(state.entries[entryKey(campaignId, a.id, date)]?.type, shift))),
         );
   return {
     actual: agents.length,
@@ -964,6 +997,38 @@ export function callNeedText(need: AppState["calls"][number]["need"]): string {
     ...need.missingQualifications.map(q => `${q.missing} ${q.qualification}`),
   ];
   return parts.join(" · ") || "Besoin couvert";
+}
+
+/**
+ * Un appel encore ouvert : OPEN, et le début de la garde pas atteint. La base
+ * refuse déjà toute proposition passée l'échéance, mais ne passe l'appel à
+ * EXPIRED que par le passage planifié ; d'ici là, l'écran dit comme elle.
+ */
+export const callOpen = (call: Pick<AppState["calls"][number], "state" | "expiresAt">, now = new Date()) =>
+  call.state === "OPEN" && new Date(call.expiresAt).getTime() > now.getTime();
+
+/**
+ * Pourquoi « Lancer l'appel » n'a pas de sens quand la base ne calcule aucun
+ * manque : pour elle, le brouillon est complet — elle compte chaque affecté
+ * sans regarder sa disponibilité —, alors que l'écran tient la garde pour non
+ * couverte à cause de ces mêmes affectés. Nomme ceux à retirer d'abord.
+ */
+export function callLaunchHint(
+  state: AppState,
+  campaignId: string,
+  date: string,
+  shift: Shift,
+  need: { missingHeadcount: number; missingQualifications: unknown[] } | null | undefined,
+): string | null {
+  if (!need || need.missingHeadcount > 0 || need.missingQualifications.length > 0) return null;
+  const inactive = new Set(state.inactiveAgents.map(a => a.id));
+  const withdrawn = withdrawnFrom(state, campaignId, date, shift);
+  const names = coverage(state, campaignId, date, shift, "planned")
+    .invalid.filter(a => !inactive.has(a.id) && !withdrawn.has(a.id))
+    .map(a => a.name);
+  return names.length
+    ? `Rien ne manque à cette garde pour la base : le brouillon est complet, mais il retient ${names.join(", ")}, sans disponibilité validée. Retirez-${names.length > 1 ? "les" : "le"} d'abord du brouillon, puis relancez l'appel.`
+    : "Rien ne manque à cette garde pour la base : le brouillon est complet. Retirez d'abord du brouillon l'agent qui bloque la publication, puis relancez l'appel.";
 }
 
 /**

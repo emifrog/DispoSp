@@ -7,7 +7,9 @@ import { Button } from "./ui/button";
 import { Modal } from "./ui/dialog";
 import { useConfirmation } from "./ui/confirm";
 import {
+  callLaunchHint,
   callNeedText,
+  callOpen,
   dateLabel,
   declarationText,
   hours,
@@ -67,8 +69,10 @@ export function Calls() {
       return call ? [{ call, circle: r.circle }] : [];
     })
     .sort((a, b) => a.call.date.localeCompare(b.call.date) || a.call.shift.localeCompare(b.call.shift));
-  const open = mine.filter(m => m.call.state === "OPEN");
-  const closed = mine.filter(m => m.call.state !== "OPEN").reverse();
+  // Ouvert pour l'écran comme pour la base : la garde n'a pas commencé. Un
+  // appel que le passage planifié n'a pas encore clos s'affiche déjà expiré.
+  const open = mine.filter(m => callOpen(m.call));
+  const closed = mine.filter(m => !callOpen(m.call)).reverse();
   return (
     <>
       <PageTitle
@@ -102,7 +106,7 @@ export function Calls() {
                     <strong>{slotLabel(call)}</strong>
                     {proposal && <small>Votre proposition : {proposalStates[proposal.state].toLowerCase()}</small>}
                   </div>
-                  <span className="pill pill-gray">{callStates[call.state]}</span>
+                  <span className="pill pill-gray">{callStates[call.state === "OPEN" ? "EXPIRED" : call.state]}</span>
                 </article>
               );
             })}
@@ -219,7 +223,7 @@ export function CallLauncher({
   label: string;
   size?: "sm";
 }) {
-  const { run } = useApp();
+  const { state, run } = useApp();
   const [open, setOpen] = useState(false);
   const [read, setRead] = useState<{ preview?: Preview; error?: string } | null>(null);
   async function show() {
@@ -229,6 +233,14 @@ export function CallLauncher({
   }
   const preview = read?.preview;
   const need = preview?.need;
+  // Rien à pourvoir pour la base, alors que l'écran tient la garde pour non
+  // couverte : lancer l'appel serait refusé (« Rien ne manque à cette garde »).
+  const hint =
+    need &&
+    callLaunchHint(state, campaignId, date, shift, {
+      missingHeadcount: need.missing_headcount,
+      missingQualifications: need.missing_qualifications,
+    });
   return (
     <>
       <Button size={size} variant="secondary" onClick={show}>
@@ -277,6 +289,7 @@ export function CallLauncher({
                     qualification qui manque.
                   </p>
                 )}
+                {hint && <p className="warning small">{hint}</p>}
                 {withdrawalId && (
                   <p className="small muted">
                     Le désistement sera accepté et l’agent prévenu ; il sort du brouillon, et reste au planning publié
@@ -287,7 +300,7 @@ export function CallLauncher({
             )}
             <Button
               className="full-width"
-              disabled={!need || preview.open}
+              disabled={!need || preview.open || Boolean(hint)}
               onClick={async () => {
                 if (await run({ type: "openCall", campaignId, date, shift, withdrawalId })) setOpen(false);
               }}
@@ -315,6 +328,9 @@ export function CallLauncher({
 export function CallPanel({ call, publishable }: { call: Call; publishable: boolean }) {
   const { state, run } = useApp();
   const [confirm, confirmation] = useConfirmation();
+  // La garde a commencé : la base refuse déjà de retenir, d'élargir et de
+  // publier ; seule l'annulation reste, en attendant le passage planifié.
+  const expired = !callOpen(call);
   const recipients = state.callRecipients.filter(r => r.callId === call.id);
   const widened = recipients.filter(r => r.circle === "WIDENED").length;
   const missing = new Set(call.need.missingQualifications.map(q => q.qualification));
@@ -326,9 +342,13 @@ export function CallPanel({ call, publishable }: { call: Call; publishable: bool
       title="Appel en cours"
       subtitle={`Lancé le ${stampLabel(call.openedAt)} · besoin : ${callNeedText(call.need)} · ${recipients.length} ${plural(recipients.length, "agent sollicité", "agents sollicités")}${widened ? `, dont ${widened} après élargissement` : ""}.`}
       action={
-        <span className="pill pill-orange">
-          {proposals.filter(active).length} {plural(proposals.filter(active).length, "proposition")}
-        </span>
+        expired ? (
+          <span className="pill pill-gray">Expiré</span>
+        ) : (
+          <span className="pill pill-orange">
+            {proposals.filter(active).length} {plural(proposals.filter(active).length, "proposition")}
+          </span>
+        )
       }
     >
       {!proposals.length ? (
@@ -361,7 +381,7 @@ export function CallPanel({ call, publishable }: { call: Call; publishable: bool
                   )}
                   <span className={`pill ${proposalPills[p.state]}`}>{proposalStates[p.state].split(" — ")[0]}</span>
                 </div>
-                {p.state === "PENDING" && (
+                {p.state === "PENDING" && !expired && (
                   <Button
                     size="icon"
                     variant="secondary"
@@ -379,7 +399,7 @@ export function CallPanel({ call, publishable }: { call: Call; publishable: bool
       <div className="call-manager-actions">
         <Button
           className="full-width"
-          disabled={!publishable}
+          disabled={!publishable || expired}
           onClick={() =>
             confirm({
               title: "Confirmer et publier ?",
@@ -393,12 +413,18 @@ export function CallPanel({ call, publishable }: { call: Call; publishable: bool
           <Send size={16} />
           Confirmer et publier
         </Button>
-        {!publishable && (
+        {expired ? (
           <p className="small muted">
-            Retenez assez d’agents pour couvrir le besoin : la garde ne peut pas être publiée incomplète.
+            La garde a commencé : l’appel a expiré, et le passage planifié le ferme. Vous pouvez aussi l’annuler.
           </p>
+        ) : (
+          !publishable && (
+            <p className="small muted">
+              Retenez assez d’agents pour couvrir le besoin : la garde ne peut pas être publiée incomplète.
+            </p>
+          )
         )}
-        {!call.widenedAt && (
+        {!call.widenedAt && !expired && (
           <Button
             variant="secondary"
             className="full-width"

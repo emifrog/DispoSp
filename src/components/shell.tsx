@@ -27,7 +27,7 @@ import { Brand, BrandMark } from "./brand";
 import { useApp } from "./provider";
 import { InstallButton, SignOutForm } from "./pwa";
 import { Button } from "./ui/button";
-import { defaultCampaign, monthLabel } from "@/lib/domain";
+import { callOpen, defaultCampaign, monthLabel } from "@/lib/domain";
 import { roleLabels, type AttachedSession } from "@/lib/session";
 // Comme pour l'agent, la barre du bas sur téléphone ne garde que les quatre
 // premiers : les désistements y sont, parce qu'un agent attend la réponse ; les
@@ -108,7 +108,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
   const openCalls = state.callRecipients.filter(
     r =>
       r.userId === actor.id &&
-      state.calls.some(c => c.id === r.callId && c.state === "OPEN") &&
+      state.calls.some(c => c.id === r.callId && callOpen(c)) &&
       !state.callProposals.some(
         p => p.callId === r.callId && p.userId === actor.id && ["PENDING", "SELECTED", "CONFIRMED"].includes(p.state),
       ),

@@ -7890,6 +7890,212 @@ describe("Migration 20261021090000 — gardes d’application", () => {
   }, 90000);
 });
 
+// Correctifs du 27 octobre (analyse C9 et C10 ; audit de déploiement A06 et A05),
+// migration 20261027170000 : un désistement accepté écarte de l'appel, quel que
+// soit son chemin ; un appel qui ne se résout pas rend leur place au brouillon.
+describe("Appels — désistés et fermeture", () => {
+  const org = "10000000-0000-0000-0000-0000000000d5";
+  const team = "20000000-0000-0000-0000-0000000000d5";
+  const chef = "30000000-0000-0000-0000-0000000000d0";
+  const [a1, a2, a3, a4, a5] = [1, 2, 3, 4, 5].map(n => `30000000-0000-0000-0000-0000000000d${n}`);
+  const campaign = "40000000-0000-0000-0000-0000000000d5";
+  const schedule = "50000000-0000-0000-0000-0000000000d5";
+  const slot = (day: number, code: "D" | "N") => `60000000-0000-0000-0000-0000000002${code === "D" ? "d" : "e"}${day}`;
+  let live: PGlite;
+  const be = async (id: string) => {
+    await live.exec("reset role");
+    await live.query("select set_config('request.jwt.claim.sub', $1, false)", [id]);
+    await live.exec("set role authenticated");
+  };
+  const as = async <T>(id: string, sql: string, params: unknown[] = []) => {
+    await be(id);
+    try {
+      return (await live.query<T>(sql, params)).rows;
+    } finally {
+      await live.exec("reset role");
+    }
+  };
+  const rows = async <T>(sql: string, params: unknown[] = []) => {
+    await live.exec("reset role");
+    return (await live.query<T>(sql, params)).rows;
+  };
+  const one = async <T>(id: string, sql: string, params: unknown[] = []) => (await as<T>(id, sql, params))[0];
+  const openCall = async (shift: string, withdrawal: string | null = null) =>
+    (await one<{ id: string }>(chef, "select public.open_call($1, $2) as id", [shift, withdrawal])).id;
+  const propose = (who: string, call: string) => as(who, "select public.propose_for_call($1, false, null)", [call]);
+  const select = (call: string, who: string) =>
+    as(chef, "select public.select_proposal((select id from public.call_proposals where call_id=$1 and user_id=$2))", [
+      call,
+      who,
+    ]);
+  const withdraw = (who: string, shift: string) =>
+    one<{ id: string }>(
+      who,
+      "insert into public.shift_withdrawals(organization_id,schedule_shift_id,user_id,reason) values ($1,$2,$3,'Motif privé') returning id",
+      [org, shift, who],
+    );
+  const recipients = async (call: string) =>
+    (
+      await rows<{ user_id: string }>("select user_id from public.call_recipients where call_id=$1 order by user_id", [
+        call,
+      ])
+    ).map(r => r.user_id);
+  const draftOf = async (shift: string) =>
+    (
+      await rows<{ user_id: string }>(
+        "select user_id from public.schedule_assignments where schedule_shift_id=$1 and revision=0 order by user_id",
+        [shift],
+      )
+    ).map(r => r.user_id);
+  const proposals = (call: string) =>
+    rows<{ user_id: string; state: string }>(
+      "select user_id, state from public.call_proposals where call_id=$1 order by user_id",
+      [call],
+    );
+  const count = async (kind: string, user: string) =>
+    (
+      await rows<{ n: number }>("select count(*)::int as n from public.notifications where kind=$1 and user_id=$2", [
+        kind,
+        user,
+      ])
+    )[0].n;
+  const publishShift = (shift: string, users: string[]) =>
+    live.exec(`
+      set session_replication_role = replica;
+      insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,revision,status,assigned_by) values
+        ${users.map(u => `('${org}','${shift}','${u}',0,'PROPOSED','${chef}'), ('${org}','${shift}','${u}',1,'CONFIRMED','${chef}')`).join(", ")};
+      update public.schedule_shifts set published_revision=1, published_at=now()-interval '1 day' where id='${shift}';
+      set session_replication_role = origin;`);
+
+  beforeAll(async () => {
+    live = await freshDatabase();
+    const agents = [a1, a2, a3, a4, a5];
+    await live.exec(`
+      insert into auth.users(id) values ('${chef}'), ${agents.map(a => `('${a}')`).join(", ")};
+      insert into public.profiles(user_id,display_name) values ('${chef}','Chef'),
+        ${agents.map((a, i) => `('${a}','Agent ${["Un", "Deux", "Trois", "Quatre", "Cinq"][i]}')`).join(", ")};
+      insert into public.organizations(id,name) values ('${org}','Centre désistés');
+      insert into public.teams(id,organization_id,name) values ('${team}','${org}','Alpha');
+      insert into public.memberships values ('${org}','${chef}','${team}','GESTIONNAIRE',true),
+        ${agents.map(a => `('${org}','${a}','${team}','AGENT',true)`).join(", ")};
+      insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
+        select '${campaign}','${org}','${team}','Mois prochain', m, (m + interval '1 month - 1 day')::date,
+               now()-interval '10 days', now()+interval '1 day'
+          from (select date_trunc('month', (now() at time zone 'Europe/Paris')::date + interval '1 month')::date as m) t;
+      insert into public.campaign_participants(organization_id,campaign_id,user_id)
+        select '${org}', '${campaign}', u from unnest(array['${agents.join("','")}']::uuid[]) u;
+      insert into public.schedules(id,organization_id,campaign_id,team_id) values ('${schedule}','${org}','${campaign}','${team}');
+      insert into public.schedule_shifts(id,organization_id,schedule_id,date,shift_code)
+        select ('60000000-0000-0000-0000-0000000002' || case when code = 'DAY' then 'd' else 'e' end || d)::uuid,
+               '${org}', '${schedule}', c.starts_on + d, code
+          from public.availability_campaigns c, generate_series(1, 6) d, unnest(array['DAY','NIGHT']) code
+         where c.id = '${campaign}';
+      insert into public.staffing_requirements(organization_id,campaign_id,date,shift_code,headcount)
+        select '${org}', '${campaign}', s.date, s.shift_code, 2 from public.schedule_shifts s where s.schedule_id = '${schedule}';
+      -- Un à Quatre ont validé 24 h sur les six jours ; Cinq n'a rien validé.
+      set session_replication_role = replica;
+      insert into public.availability_entries(campaign_id,user_id,date,availability_type)
+        select '${campaign}', u, s.date, 'FULL_24H'
+          from unnest(array['${a1}','${a2}','${a3}','${a4}']::uuid[]) u,
+               (select distinct date from public.schedule_shifts where schedule_id = '${schedule}') s;
+      update public.campaign_participants set validated_at = now() - interval '1 hour'
+       where user_id in ('${a1}','${a2}','${a3}','${a4}');
+      set session_replication_role = origin;`);
+  }, 30000);
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it("écarte de l’appel tout agent dont un désistement a été accepté sur la garde, quel qu’en soit le chemin", async () => {
+    // Accepté depuis l'écran Désistements — decideWithdrawal() ne change que
+    // l'état —, puis retiré du brouillon, comme le blocage l'y oblige.
+    await publishShift(slot(1, "D"), [a1, a2]);
+    const simple = await withdraw(a1, slot(1, "D"));
+    await as(chef, "update public.shift_withdrawals set state='ACCEPTED' where id=$1", [simple.id]);
+    await as(chef, "delete from public.schedule_assignments where schedule_shift_id=$1 and user_id=$2 and revision=0", [
+      slot(1, "D"),
+      a1,
+    ]);
+    const preview = await one<{ p: { need: Record<string, unknown>; available: number } }>(
+      chef,
+      "select public.call_preview($1) as p",
+      [slot(1, "D")],
+    );
+    expect(preview.p.need).toMatchObject({ required: 2, kept: 1, missing_headcount: 1 });
+    expect(preview.p.available).toBe(2);
+    expect(await recipients(await openCall(slot(1, "D")))).toEqual([a3, a4]);
+    expect(await count("CALL_OPENED", a1)).toBe(0);
+    // « Accepter et chercher un remplaçant », l'appel annulé, puis un nouvel
+    // appel : l'agent n'est plus « leaving », il reste désisté.
+    await publishShift(slot(3, "D"), [a1, a2]);
+    const withCall = await withdraw(a1, slot(3, "D"));
+    const first = await openCall(slot(3, "D"), withCall.id);
+    expect(await recipients(first)).toEqual([a3, a4]);
+    await as(chef, "select public.cancel_call($1)", [first]);
+    expect(await recipients(await openCall(slot(3, "D")))).toEqual([a3, a4]);
+  });
+
+  it("rend leur place au brouillon aux retenus d’un appel annulé ou expiré ; la publication qui le résout n’y touche pas", async () => {
+    const cancelled = await openCall(slot(5, "D"));
+    await propose(a2, cancelled);
+    await select(cancelled, a2);
+    expect(await draftOf(slot(5, "D"))).toEqual([a2]);
+    await as(chef, "select public.cancel_call($1)", [cancelled]);
+    expect(await proposals(cancelled)).toEqual([{ user_id: a2, state: "DECLINED" }]);
+    expect(await draftOf(slot(5, "D"))).toEqual([]);
+    expect(await count("CALL_CLOSED", a2)).toBe(1);
+    const expired = await openCall(slot(5, "N"));
+    await propose(a3, expired);
+    await select(expired, a3);
+    expect(await draftOf(slot(5, "N"))).toEqual([a3]);
+    const [{ starts }] = await rows<{ starts: string }>(
+      "select (expires_at + interval '1 minute')::text as starts from public.shift_calls where id=$1",
+      [expired],
+    );
+    await rows("select private.generate_due_notifications($1)", [starts]);
+    expect(await rows("select state from public.shift_calls where id=$1", [expired])).toEqual([{ state: "EXPIRED" }]);
+    expect(await proposals(expired)).toEqual([{ user_id: a3, state: "DECLINED" }]);
+    expect(await draftOf(slot(5, "N"))).toEqual([]);
+    const resolved = await openCall(slot(6, "D"));
+    for (const who of [a2, a4]) {
+      await propose(who, resolved);
+      await select(resolved, who);
+    }
+    await as(chef, "select public.confirm_call($1)", [resolved]);
+    expect(await rows("select state, resolved_revision from public.shift_calls where id=$1", [resolved])).toEqual([
+      { state: "RESOLVED", resolved_revision: 1 },
+    ]);
+    expect(await draftOf(slot(6, "D"))).toEqual([a2, a4]);
+    expect(await proposals(resolved)).toEqual([
+      { user_id: a2, state: "CONFIRMED" },
+      { user_id: a4, state: "CONFIRMED" },
+    ]);
+  });
+});
+
+describe("Migration 20261027170000 — gardes d’application", () => {
+  const target = MIGRATIONS.indexOf("20261027170000_appels_desistes_fermeture.sql");
+  const migration = () =>
+    readFileSync(new URL(`../supabase/migrations/${MIGRATIONS[target]}`, import.meta.url), "utf8");
+  const upTo = async (count: number) => {
+    const db = new PGlite();
+    await db.exec(baseAuthSchema);
+    for (const m of MIGRATIONS.slice(0, count))
+      await db.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    return db;
+  };
+
+  it("refuse un second passage et un passage avant sa dépendance", async () => {
+    expect(target).toBe(MIGRATIONS.length - 1);
+    const applied = await upTo(target + 1);
+    await expect(applied.exec(migration())).rejects.toThrow("déjà été appliquée");
+    await applied.close();
+    const early = await upTo(target - 1);
+    await expect(early.exec(migration())).rejects.toThrow("20261027090000_verrou_repos.sql");
+    await early.close();
+  }, 90000);
+});
+
 // Lot D (21 octobre) : l'agenda abonné. La base ne garde que le condensat du
 // jeton ; le flux ne rend que les gardes publiées encore tenues, et rien dès que
 // l'abonnement ou l'agent cesse d'y avoir droit.
