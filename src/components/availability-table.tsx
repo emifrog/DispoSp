@@ -173,8 +173,10 @@ export function AvailabilityTable() {
         action={
           <div className="heading-buttons">
             {/* Excel passe par une route serveur : le classeur est construit là-bas,
-              et la bibliothèque ne descend dans aucun paquet du navigateur. */}
-            <Button asChild>
+              et la bibliothèque ne descend dans aucun paquet du navigateur. Les
+              trois sorties sont secondaires : cet écran se lit, il ne s'y décide
+              rien. */}
+            <Button variant="secondary" asChild>
               <a href={`/api/export?campagne=${campaignId}`} download>
                 <FileSpreadsheet size={17} />
                 Exporter en Excel

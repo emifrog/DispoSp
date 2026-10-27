@@ -190,7 +190,7 @@ export function Shell({ children, session }: { children: ReactNode; session: Att
             </button>
           </SignOutForm>
           <span className="version">
-            Création by Orionis Solution DispoSP <span>Dispo V1.6</span>
+            Création by Orionis Solution <span>Version 1.6</span>
           </span>
         </div>
       </aside>

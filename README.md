@@ -52,7 +52,7 @@ Voir [docs/DECISIONS_FONCTIONNELLES.md](docs/DECISIONS_FONCTIONNELLES.md). Jour 
 - Next.js App Router, React et TypeScript strict.
 - Tailwind CSS, composants Button/Dialog sur les primitives shadcn/Radix, icônes Lucide.
 - Registre visuel sobre : le titre d'un écran le nomme et sa ligne de contexte donne un fait — période, effectif, échéance — plutôt qu'une formule. Pas d'étiquette de rubrique, pas d'ombre décorative, un seul rayon d'angle pour les surfaces et les champs, et la couleur réservée au statut.
-- Roboto, chargée par `next/font` : la police est téléchargée à la construction et servie depuis l'application, donc aucune requête vers un tiers au chargement d'une page et aucune adresse IP d'agent transmise à Google. Une police de secours aux mêmes métriques évite le saut de texte.
+- Inter, chargée par `next/font` : la police est téléchargée à la construction et servie depuis l'application, donc aucune requête vers un tiers au chargement d'une page et aucune adresse IP d'agent transmise à Google. Une police de secours aux mêmes métriques évite le saut de texte.
 - TanStack Table pour la synthèse, virtualisée par TanStack Virtual : à 300 agents, environ 25 lignes sont rendues au lieu de 300, et les totaux du pied de tableau portent toujours sur l'ensemble des agents filtrés.
 - React Hook Form et Zod pour les campagnes et la validation du stockage.
 - `src/lib/domain.ts` : règles métier pures, calculs de couverture et commandes testables.

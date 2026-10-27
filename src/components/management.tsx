@@ -145,7 +145,8 @@ export function Campaigns() {
                 </span>
               </div>
               <div className="campaign-buttons">
-                <Button asChild onClick={() => setCampaignId(c.id)}>
+                {/* Le seul bouton plein de l'écran est « Nouvelle campagne », en tête. */}
+                <Button variant="secondary" asChild onClick={() => setCampaignId(c.id)}>
                   <Link href="/disponibilites">Consulter les réponses</Link>
                 </Button>
                 {/* Une campagne dont la clôture est passée ne rouvre pas en la

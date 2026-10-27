@@ -1,14 +1,15 @@
 import type { Metadata, Viewport } from "next";
-import { Roboto } from "next/font/google";
+import { Inter } from "next/font/google";
 import Script from "next/script";
 import { ServiceWorker } from "@/components/pwa";
 import "./globals.css";
 // Téléchargée à la construction et servie depuis l'application : aucune requête
 // vers un tiers au chargement d'une page, et rien à demander à l'utilisateur.
-const roboto = Roboto({
+// Inter est une police variable : un seul fichier porte toutes les graisses,
+// aucune liste à déclarer (next/font le recommande).
+const inter = Inter({
   subsets: ["latin"],
-  weight: ["400", "500", "700"],
-  variable: "--font-roboto",
+  variable: "--font-inter",
   display: "swap",
   fallback: ["Segoe UI", "Arial", "Helvetica", "sans-serif"],
 });
@@ -42,7 +43,7 @@ export const viewport: Viewport = {
 };
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="fr" className={roboto.variable}>
+    <html lang="fr" className={inter.variable}>
       <body>
         {children}
         <ServiceWorker />

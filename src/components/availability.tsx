@@ -168,7 +168,8 @@ export function Availability() {
         title="Mes disponibilités"
         description={`${monthLabel(campaign.month)} · saisie puis validation explicite de votre réponse.`}
         action={
-          <Button disabled={!open} onClick={openQuick}>
+          /* Le bouton plein de cet écran est « Valider », en bas de la saisie. */
+          <Button variant="secondary" disabled={!open} onClick={openQuick}>
             <Zap size={17} />
             Saisie rapide
           </Button>

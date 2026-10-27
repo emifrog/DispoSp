@@ -1,8 +1,8 @@
 @import "tailwindcss";
 @theme {
-  /* next/font sert Roboto depuis l'application et lui adjoint une police de
+  /* next/font sert Inter depuis l'application et lui adjoint une police de
      secours aux mêmes métriques : le texte ne saute pas au chargement. */
-  --font-sans: var(--font-roboto), sans-serif;
+  --font-sans: var(--font-inter), sans-serif;
 }
 :root {
   --blue: #1763ef;
@@ -314,18 +314,22 @@ label {
   background: #f2f5f9;
   border-radius: 5px;
 }
-/* L'administrateur est plein, et c'est le seul : à teinte égale, son étiquette
-   se confondait avec le gris de l'agent, et c'est précisément celle qu'on doit
-   reconnaître sans lire — savoir qui, dans une salle, peut changer un rôle.
-   Contrastes mesurés : 4,67 pour l'agent, 6,12 pour le gestionnaire, 14,86 pour
-   l'administrateur — au-dessus des 4,5 exigés d'un texte de cette taille. */
+/* L'administrateur se distingue, et c'est le seul : à teinte égale, son
+   étiquette se confondait avec le gris de l'agent, et c'est précisément celle
+   qu'on doit reconnaître sans lire — savoir qui, dans une salle, peut changer
+   un rôle. Plein bleu nuit, il passait pour un bouton de la barre du haut ;
+   bleu nuit en gras sur une teinte plus soutenue que le gris de l'agent, il
+   se reconnaît autant, sans rien promettre au clic. Contrastes mesurés : 4,67
+   pour l'agent, 6,12 pour le gestionnaire, 11,8 pour l'administrateur —
+   au-dessus des 4,5 exigés d'un texte de cette taille. */
 .role-tag.is-gestionnaire {
   color: #1350c4;
   background: #e8effc;
 }
 .role-tag.is-admin {
-  color: white;
-  background: var(--navy);
+  color: var(--navy);
+  background: #dfe6f1;
+  font-weight: 600;
 }
 .topbar-divider {
   height: 28px;

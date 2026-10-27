@@ -19,7 +19,7 @@ export const metadata: Metadata = { title: "Hors ligne" };
 // clair : 1,1:1, illisible sur un téléphone réglé en sombre. Le fond et
 // `color-scheme` sont donc posés ici, pour ne rien laisser au navigateur.
 const styles = `
-  .offline { max-width: 32rem; margin: 18vh auto 0; padding: 0 24px; font-family: Roboto, system-ui, -apple-system, "Segoe UI", sans-serif; color: #1d2a3a; line-height: 1.55; }
+  .offline { max-width: 32rem; margin: 18vh auto 0; padding: 0 24px; font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; color: #1d2a3a; line-height: 1.55; }
   .offline h1 { font-size: 1.45rem; font-weight: 600; margin: 0 0 12px; color: #08284a; }
   .offline p { margin: 0 0 12px; font-size: 15px; }
   .offline a { display: inline-block; margin-top: 10px; padding: 12px 20px; min-height: 24px; border-radius: 9px; background: #08284a; color: #fff; text-decoration: none; font-weight: 500; }
