@@ -262,7 +262,7 @@ Rien n'est perdu : la file garde le message et le renverra à la prochaine actio
 
 ### 4.7 La règle de repos
 
-**Préparer** — La migration `20261021090000` appliquée. Un agent d'essai publié sur une Nuit.
+**Préparer** — Les migrations `20261021090000` et `20261027090000` appliquées. Un agent d'essai publié sur une Nuit.
 
 **Faire** — L'affecter au Jour du lendemain, puis publier ce Jour.
 

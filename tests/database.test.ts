@@ -907,6 +907,8 @@ describe("Notifications ouvertes par 0005", () => {
   const agent = "30000000-0000-0000-0000-000000000031";
   const other = "30000000-0000-0000-0000-000000000032";
   const campaign = "40000000-0000-0000-0000-000000000030";
+  // Le jour de clôture, en UTC, dans trente jours : une date fixe périmerait.
+  const closeDay = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
   let live: PGlite;
   const be = async (id: string) => {
     await live.exec("reset role");
@@ -928,10 +930,11 @@ describe("Notifications ouvertes par 0005", () => {
         ('${org}','${agent}','${team}','AGENT',true),
         ('${org}','${other}','${team}','AGENT',true);`);
     await be(manager);
+    // Une clôture à venir, à 21:59:59 UTC : le même jour à Paris, pas le lendemain.
     await live.query(
       `insert into public.availability_campaigns(id,organization_id,team_id,name,starts_on,ends_on,opens_at,closes_at)
-       values ($1,$2,$3,'Disponibilités de novembre 2026','2026-11-01','2026-11-30',now()-interval '1 day', timestamptz '2026-10-25 21:59:59+00')`,
-      [campaign, org, team],
+       values ($1,$2,$3,'Disponibilités de novembre 2026','2026-11-01','2026-11-30',now()-interval '1 day', ($4 || 'T21:59:59Z')::timestamptz)`,
+      [campaign, org, team, closeDay],
     );
     await live.query(
       "insert into public.campaign_participants(organization_id,campaign_id,user_id) values ($1,$2,$3)",
@@ -950,8 +953,8 @@ describe("Notifications ouvertes par 0005", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].kind).toBe("CAMPAIGN_OPENED");
     expect(rows[0].subject).toBe("Campagne ouverte : Disponibilités de novembre 2026");
-    // 25/10 21:59:59 UTC, c’est encore le 25 à Paris — et non le 26.
-    expect(rows[0].body).toContain("25/10/2026");
+    // 21:59:59 UTC, c’est encore le même jour à Paris — et non le lendemain.
+    expect(rows[0].body).toContain(closeDay.split("-").reverse().join("/"));
     expect(rows[0].read_at).toBeNull();
   });
 
@@ -7432,6 +7435,46 @@ describe("Règle de repos — autant de repos que la garde a duré", () => {
       /^brouillon du \d\d\/\d\d, Nuit$/,
     );
   });
+
+  it("tient un verrou par agent affecté jusqu’à la fin de la publication", async () => {
+    // Deux publications de deux créneaux différents ne se voient pas l'une
+    // l'autre tant qu'elles n'ont pas validé : le verrou par agent les fait
+    // attendre. Une seule session ici — on vérifie qu'il est pris, et tenu
+    // jusqu'à la fin de la transaction.
+    await live.exec(`
+      insert into public.staffing_requirements(organization_id,campaign_id,date,shift_code,headcount)
+        select '${org}', '${campaign}', date, 'DAY', 1 from public.schedule_shifts where id = '${slot(5, "D")}';
+      set session_replication_role = replica;
+      insert into public.availability_entries(campaign_id,user_id,date,availability_type)
+        select '${campaign}', '${vingtQuatre}', date, 'DAY' from public.schedule_shifts where id = '${slot(5, "D")}';
+      insert into public.campaign_participants(organization_id,campaign_id,user_id)
+        select '${org}','${campaign}','${vingtQuatre}'
+         where not exists (select 1 from public.campaign_participants
+                            where campaign_id='${campaign}' and user_id='${vingtQuatre}');
+      update public.campaign_participants set validated_at = now()
+       where campaign_id='${campaign}' and user_id='${vingtQuatre}';
+      insert into public.schedule_assignments(organization_id,schedule_shift_id,user_id,revision,status,assigned_by)
+        values ('${org}','${slot(5, "D")}','${vingtQuatre}',0,'PROPOSED','${chef}');
+      set session_replication_role = origin;`);
+    const held = async () =>
+      (
+        await live.query<{ n: number }>(
+          `select count(*)::int as n from pg_locks
+            where locktype = 'advisory' and pid = pg_backend_pid() and objsubid = 2
+              and classid = hashtext('disposp:repos')::oid and objid = hashtext($1)::oid`,
+          [vingtQuatre],
+        )
+      ).rows[0].n;
+    await live.exec(`begin; select set_config('request.jwt.claim.sub', '${chef}', false); set role authenticated;`);
+    try {
+      expect(await held()).toBe(0);
+      await live.query("select public.publish_shift($1)", [slot(5, "D")]);
+      expect(await held()).toBe(1);
+    } finally {
+      await live.exec("commit; reset role;");
+    }
+    expect(await held()).toBe(0);
+  });
 });
 
 describe("Appels à remplacement et à renfort", () => {
@@ -7582,6 +7625,31 @@ describe("Appels à remplacement et à renfort", () => {
     expect(sollicitation.body).not.toMatch(/Agent Un|Motif privé/);
     expect(await notices("CALL_OPENED", a1)).toEqual([]);
     await expect(openCall(slot(2, "D"))).rejects.toThrow("A call is already open for this shift");
+  });
+
+  it("verrouille le candidat le temps de sa proposition, après le créneau et l’appel", async () => {
+    // Le même verrou que la publication : une publication en cours qui engage
+    // ce candidat ailleurs finit d'abord, et son repos est jugé contre elle.
+    const held = async () =>
+      (
+        await live.query<{ n: number }>(
+          `select count(*)::int as n from pg_locks
+            where locktype = 'advisory' and pid = pg_backend_pid() and objsubid = 2
+              and classid = hashtext('disposp:repos')::oid and objid = hashtext($1)::oid`,
+          [a3],
+        )
+      ).rows[0].n;
+    await live.exec("begin");
+    try {
+      await be(a3);
+      await live.query("select public.propose_for_call($1, $2, $3)", [call, false, null]);
+      expect(await held()).toBe(1);
+    } finally {
+      // Annulée : le test suivant fait cette proposition pour de bon.
+      await live.exec("rollback; reset role");
+    }
+    expect(await held()).toBe(0);
+    expect(await proposalOf(call, a3)).toBeUndefined();
   });
 
   it("enregistre la proposition sans rien affecter, et la refuse à qui n’est pas sollicité", async () => {
@@ -7956,6 +8024,29 @@ describe("Migration 20261021150000 — gardes d’application", () => {
     await applied.close();
     const early = await upTo(target - 1);
     await expect(early.exec(migration())).rejects.toThrow("20261021090000_appels_remplacement.sql");
+    await early.close();
+  }, 90000);
+});
+
+describe("Migration 20261027090000 — gardes d’application", () => {
+  const target = MIGRATIONS.indexOf("20261027090000_verrou_repos.sql");
+  const migration = () =>
+    readFileSync(new URL(`../supabase/migrations/${MIGRATIONS[target]}`, import.meta.url), "utf8");
+  const upTo = async (count: number) => {
+    const db = new PGlite();
+    await db.exec(baseAuthSchema);
+    for (const m of MIGRATIONS.slice(0, count))
+      await db.exec(readFileSync(new URL(`../supabase/migrations/${m}`, import.meta.url), "utf8"));
+    return db;
+  };
+
+  it("refuse un second passage et un passage avant sa dépendance", async () => {
+    expect(target).toBeGreaterThan(0);
+    const applied = await upTo(target + 1);
+    await expect(applied.exec(migration())).rejects.toThrow("déjà été appliquée");
+    await applied.close();
+    const early = await upTo(target - 1);
+    await expect(early.exec(migration())).rejects.toThrow("20261021150000_agenda_abonne.sql");
     await early.close();
   }, 90000);
 });
